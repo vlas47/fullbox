@@ -127,7 +127,11 @@
            href="?view=cards{% if request.GET.q %}&q={{ request.GET.q|urlencode }}{% endif %}{% if request.GET.sort %}&sort={{ request.GET.sort|urlencode }}{% endif %}{% if request.GET.dir %}&dir={{ request.GET.dir|urlencode }}{% endif %}{% if request.GET.page %}&page={{ request.GET.page|urlencode }}{% endif %}{% if request.GET.filter_field %}&filter_field={{ request.GET.filter_field|urlencode }}{% endif %}{% if request.GET.filter_value %}&filter_value={{ request.GET.filter_value|urlencode }}{% endif %}{% if request.GET.deleted %}&deleted={{ request.GET.deleted|urlencode }}{% endif %}">
           Карточки
         </a>
-        <a class="btn {% if show_deleted %}active{% endif %}" href="?view={{ view_mode }}&deleted=1">Удаленные</a>
+        {% if show_deleted %}
+          <a class="btn active" href="?view={{ view_mode }}">Все</a>
+        {% else %}
+          <a class="btn" href="?view={{ view_mode }}&deleted=1">Удаленные</a>
+        {% endif %}
         <a class="btn" href="/">Главная</a>
       </div>
     </header>
