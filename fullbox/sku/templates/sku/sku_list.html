@@ -124,6 +124,7 @@
            href="?view=cards{% if request.GET.q %}&q={{ request.GET.q|urlencode }}{% endif %}{% if request.GET.sort %}&sort={{ request.GET.sort|urlencode }}{% endif %}{% if request.GET.dir %}&dir={{ request.GET.dir|urlencode }}{% endif %}{% if request.GET.page %}&page={{ request.GET.page|urlencode }}{% endif %}{% if request.GET.filter_field %}&filter_field={{ request.GET.filter_field|urlencode }}{% endif %}{% if request.GET.filter_value %}&filter_value={{ request.GET.filter_value|urlencode }}{% endif %}">
           Карточки
         </a>
+        <a class="btn primary" href="/sku/new/">Создать SKU</a>
         <a class="btn" href="/">Главная</a>
       </div>
     </header>
@@ -461,8 +462,8 @@
             <tr>
               <td>
                 <div class="actions">
-                  <a class="act-btn" title="Редактировать" href="/admin/sku/sku/{{ item.id }}/change/">✎</a>
-                  <a class="act-btn" title="Создать новый на основе" href="{% url 'sku-clone' item.id %}">+</a>
+                  <a class="act-btn" title="Редактировать" href="/sku/{{ item.id }}/edit/">✎</a>
+                  <a class="act-btn" title="Создать новый на основе" href="/sku/{{ item.id }}/duplicate/">+</a>
                 </div>
               </td>
               <td>{{ item.sku_code }}</td>

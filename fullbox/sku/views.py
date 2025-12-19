@@ -1,10 +1,11 @@
 from django.db import models
 from django.http import JsonResponse
 from django.urls import reverse
-from django.views.generic import ListView
+from django.views.generic import ListView, CreateView, UpdateView
 from django.shortcuts import get_object_or_404, redirect
 
 from .models import SKU
+from .forms import SKUForm
 from audit.models import log_sku_change
 
 
@@ -216,3 +217,94 @@ def clone_sku(request, pk: int):
 
     admin_url = reverse("admin:sku_sku_change", args=[clone.pk])
     return redirect(admin_url)
+
+
+class SKUFormMixin:
+    model = SKU
+    form_class = SKUForm
+    template_name = "sku/sku_form.html"
+    success_url = "/sku/"
+
+    def form_valid(self, form):
+        response = super().form_valid(form)
+        action = getattr(self, "audit_action", "update")
+        log_sku_change(
+            action,
+            self.object,
+            user=self.request.user if self.request.user.is_authenticated else None,
+            description=f"{action} через UI",
+        )
+        return response
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        ctx["mode"] = getattr(self, "mode", "edit")
+        ctx["title"] = getattr(self, "title", "SKU")
+        ctx["submit_label"] = getattr(self, "submit_label", "Сохранить")
+        return ctx
+
+
+class SKUCreateView(SKUFormMixin, CreateView):
+    mode = "create"
+    title = "Создание SKU"
+    submit_label = "Создать"
+    audit_action = "create"
+
+
+class SKUUpdateView(SKUFormMixin, UpdateView):
+    mode = "edit"
+    title = "Редактирование SKU"
+    submit_label = "Сохранить"
+    audit_action = "update"
+
+
+class SKUDuplicateView(SKUFormMixin, CreateView):
+    mode = "duplicate"
+    title = "Копирование SKU"
+    submit_label = "Создать копию"
+    audit_action = "clone"
+
+    def get_initial(self):
+        orig = get_object_or_404(SKU, pk=self.kwargs["pk"])
+        initial = {
+            "name": orig.name,
+            "brand": orig.brand,
+            "agency": orig.agency_id,
+            "market": orig.market_id,
+            "color": orig.color,
+            "color_ref": orig.color_ref_id,
+            "size": orig.size,
+            "name_print": orig.name_print,
+            "img": orig.img,
+            "img_comment": orig.img_comment,
+            "gender": orig.gender,
+            "season": orig.season,
+            "additional_name": orig.additional_name,
+            "composition": orig.composition,
+            "made_in": orig.made_in,
+            "cr_product_date": orig.cr_product_date,
+            "end_product_date": orig.end_product_date,
+            "sign_akciz": orig.sign_akciz,
+            "tovar_category": orig.tovar_category,
+            "use_nds": orig.use_nds,
+            "vid_tovar": orig.vid_tovar,
+            "type_tovar": orig.type_tovar,
+            "stor_unit": orig.stor_unit_id,
+            "weight_kg": orig.weight_kg,
+            "volume": orig.volume,
+            "length_mm": orig.length_mm,
+            "width_mm": orig.width_mm,
+            "height_mm": orig.height_mm,
+            "honest_sign": orig.honest_sign,
+            "description": orig.description,
+            "source": orig.source,
+            "source_reference": None,
+        }
+        base_code = f"{orig.sku_code}-copy"
+        candidate = base_code
+        counter = 1
+        while SKU.objects.filter(sku_code=candidate).exists():
+            candidate = f"{base_code}{counter}"
+            counter += 1
+        initial["sku_code"] = candidate
+        return initial
