@@ -161,6 +161,7 @@ class SKU(models.Model):
         "Высота, мм", max_digits=10, decimal_places=1, blank=True, null=True
     )
     honest_sign = models.BooleanField("Честный знак", default=False)
+    deleted = models.BooleanField("Удален", default=False)
     description = models.TextField("Описание", blank=True, null=True)
     source = models.CharField(
         "Источник",
