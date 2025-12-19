@@ -1,5 +1,5 @@
 from django.db import models
-from django.http import JsonResponse
+from django.http import JsonResponse, HttpResponseRedirect
 from django.urls import reverse
 from django.views.generic import ListView, CreateView, UpdateView
 from django.shortcuts import get_object_or_404, redirect
@@ -74,6 +74,11 @@ class SKUListView(ListView):
 
     def get_queryset(self):
         qs = super().get_queryset()
+        show_deleted = self.request.GET.get('deleted') == '1'
+        if show_deleted:
+            qs = qs.filter(deleted=True)
+        else:
+            qs = qs.filter(deleted=False)
         search = self.request.GET.get('q')
         if search:
             qs = qs.filter(
@@ -133,6 +138,7 @@ class SKUListView(ListView):
         ctx['sort_info'] = sort_info
         ctx['filter_field'] = self.request.GET.get('filter_field') or ''
         ctx['filter_value'] = self.request.GET.get('filter_value') or ''
+        ctx['show_deleted'] = self.request.GET.get('deleted') == '1'
         return ctx
 
 
@@ -299,6 +305,7 @@ class SKUDuplicateView(SKUFormMixin, CreateView):
             "description": orig.description,
             "source": orig.source,
             "source_reference": None,
+            "deleted": False,
         }
         base_code = f"{orig.sku_code}-copy"
         candidate = base_code
@@ -308,3 +315,12 @@ class SKUDuplicateView(SKUFormMixin, CreateView):
             counter += 1
         initial["sku_code"] = candidate
         return initial
+
+
+def mark_deleted(request, pk: int):
+    sku = get_object_or_404(SKU, pk=pk)
+    if not sku.deleted:
+        sku.deleted = True
+        sku.save(update_fields=["deleted"])
+        log_sku_change("delete", sku, user=request.user if request.user.is_authenticated else None, description="Пометка как удаленный")
+    return HttpResponseRedirect("/sku/")

@@ -50,6 +50,7 @@
     .actions { display:flex; flex-direction:column; gap:6px; align-items:center; }
     .act-btn { display:inline-flex; align-items:center; justify-content:center; width:28px; height:28px; border:1px solid var(--stroke); border-radius:8px; background:rgba(255,255,255,0.04); color:var(--text); font-weight:700; font-size:14px; }
     .act-btn:hover { border-color: var(--gold); box-shadow:0 6px 14px rgba(214,163,0,0.2); }
+    .act-btn.danger { border-color: rgba(240,91,86,0.5); color:#ff7d7d; }
     .table-wrap { width:100%; overflow-x:auto; margin-top:16px; }
     table { min-width: 1800px; width:100%; border-collapse:collapse; }
     th, td {
@@ -115,17 +116,18 @@
           {% if request.GET.dir %}<input type="hidden" name="dir" value="{{ request.GET.dir }}">{% endif %}
           {% if request.GET.filter_field %}<input type="hidden" name="filter_field" value="{{ request.GET.filter_field }}">{% endif %}
           {% if request.GET.filter_value %}<input type="hidden" name="filter_value" value="{{ request.GET.filter_value }}">{% endif %}
+          {% if request.GET.deleted %}<input type="hidden" name="deleted" value="{{ request.GET.deleted }}">{% endif %}
           <button class="btn" type="submit">Искать</button>
         </form>
         <a class="btn {% if view_mode == 'table' %}active{% endif %}"
-           href="?view=table{% if request.GET.q %}&q={{ request.GET.q|urlencode }}{% endif %}{% if request.GET.sort %}&sort={{ request.GET.sort|urlencode }}{% endif %}{% if request.GET.dir %}&dir={{ request.GET.dir|urlencode }}{% endif %}{% if request.GET.page %}&page={{ request.GET.page|urlencode }}{% endif %}{% if request.GET.filter_field %}&filter_field={{ request.GET.filter_field|urlencode }}{% endif %}{% if request.GET.filter_value %}&filter_value={{ request.GET.filter_value|urlencode }}{% endif %}">
+           href="?view=table{% if request.GET.q %}&q={{ request.GET.q|urlencode }}{% endif %}{% if request.GET.sort %}&sort={{ request.GET.sort|urlencode }}{% endif %}{% if request.GET.dir %}&dir={{ request.GET.dir|urlencode }}{% endif %}{% if request.GET.page %}&page={{ request.GET.page|urlencode }}{% endif %}{% if request.GET.filter_field %}&filter_field={{ request.GET.filter_field|urlencode }}{% endif %}{% if request.GET.filter_value %}&filter_value={{ request.GET.filter_value|urlencode }}{% endif %}{% if request.GET.deleted %}&deleted={{ request.GET.deleted|urlencode }}{% endif %}">
           Таблица
         </a>
         <a class="btn {% if view_mode == 'cards' %}active{% endif %}"
-           href="?view=cards{% if request.GET.q %}&q={{ request.GET.q|urlencode }}{% endif %}{% if request.GET.sort %}&sort={{ request.GET.sort|urlencode }}{% endif %}{% if request.GET.dir %}&dir={{ request.GET.dir|urlencode }}{% endif %}{% if request.GET.page %}&page={{ request.GET.page|urlencode }}{% endif %}{% if request.GET.filter_field %}&filter_field={{ request.GET.filter_field|urlencode }}{% endif %}{% if request.GET.filter_value %}&filter_value={{ request.GET.filter_value|urlencode }}{% endif %}">
+           href="?view=cards{% if request.GET.q %}&q={{ request.GET.q|urlencode }}{% endif %}{% if request.GET.sort %}&sort={{ request.GET.sort|urlencode }}{% endif %}{% if request.GET.dir %}&dir={{ request.GET.dir|urlencode }}{% endif %}{% if request.GET.page %}&page={{ request.GET.page|urlencode }}{% endif %}{% if request.GET.filter_field %}&filter_field={{ request.GET.filter_field|urlencode }}{% endif %}{% if request.GET.filter_value %}&filter_value={{ request.GET.filter_value|urlencode }}{% endif %}{% if request.GET.deleted %}&deleted={{ request.GET.deleted|urlencode }}{% endif %}">
           Карточки
         </a>
-        <a class="btn primary" href="/sku/new/">Создать SKU</a>
+        <a class="btn {% if show_deleted %}active{% endif %}" href="?view={{ view_mode }}&deleted=1">Удаленные</a>
         <a class="btn" href="/">Главная</a>
       </div>
     </header>
@@ -465,6 +467,7 @@
                 <div class="actions">
                   <a class="act-btn" title="Редактировать" href="/sku/{{ item.id }}/edit/">✎</a>
                   <a class="act-btn" title="Создать новый на основе" href="/sku/{{ item.id }}/duplicate/">+</a>
+                  <a class="act-btn danger delete-btn" data-id="{{ item.id }}" title="Пометить как удаленный">🗑</a>
                 </div>
               </td>
               <td>{{ item.sku_code }}</td>
@@ -603,6 +606,7 @@
     const box = document.getElementById('suggest-box');
     const form = document.getElementById('search-form');
     let timer;
+    const deleteButtons = document.querySelectorAll('.delete-btn');
 
     function render(items) {
       if (!items.length) {
@@ -645,6 +649,15 @@
       if (!box.contains(e.target) && e.target !== input) {
         render([]);
       }
+    });
+
+    deleteButtons.forEach(btn => {
+      btn.addEventListener('click', () => {
+        const id = btn.dataset.id;
+        if (confirm('Пометить SKU как удаленный?')) {
+          window.location.href = `/sku/${id}/delete/`;
+        }
+      });
     });
   })();
 </script>
