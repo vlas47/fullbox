@@ -105,7 +105,13 @@
           <h3>Дополнительно</h3>
           <div class="grid">
             <div><label>Название для печати</label>{{ form.name_print.errors }}{% if form.name_print.errors %}{% render_field form.name_print class+="field-error" %}{% else %}{% render_field form.name_print %}{% endif %}</div>
-            <div><label>Код</label>{{ form.code.errors }}{% if form.code.errors %}{% render_field form.code class+="field-error" %}{% else %}{% render_field form.code %}{% endif %}</div>
+            <div>
+              <label>Код</label>
+              <div style="display:flex; gap:8px; align-items:center;">
+                {{ form.code.errors }}{% if form.code.errors %}{% render_field form.code class+="field-error" id="field-code" %}{% else %}{% render_field form.code id="field-code" %}{% endif %}
+                <button type="button" id="gen-code" class="btn" style="padding:8px 10px; min-width:40px;" title="Сгенерировать внутренний ШК">⚡</button>
+              </div>
+            </div>
             <div><label>Пол</label>{{ form.gender.errors }}{% if form.gender.errors %}{% render_field form.gender class+="field-error" %}{% else %}{% render_field form.gender %}{% endif %}</div>
             <div><label>Сезон</label>{{ form.season.errors }}{% if form.season.errors %}{% render_field form.season class+="field-error" %}{% else %}{% render_field form.season %}{% endif %}</div>
             <div><label>Доп. имя</label>{{ form.additional_name.errors }}{% if form.additional_name.errors %}{% render_field form.additional_name class+="field-error" %}{% else %}{% render_field form.additional_name %}{% endif %}</div>
@@ -146,4 +152,17 @@
     </div>
   </div>
 </body>
+<script>
+  (function(){
+    const genBtn = document.getElementById('gen-code');
+    const codeInput = document.getElementById('field-code');
+    if (genBtn && codeInput) {
+      genBtn.addEventListener('click', () => {
+        const now = Date.now().toString(36).toUpperCase();
+        const rand = Math.random().toString(36).substring(2, 6).toUpperCase();
+        codeInput.value = `INT-${now}-${rand}`;
+      });
+    }
+  })();
+</script>
 </html>
