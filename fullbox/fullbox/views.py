@@ -44,12 +44,16 @@ def dev_login(request, username):
     backend = "django.contrib.auth.backends.ModelBackend"
     user.backend = backend
     login(request, user, backend=backend)
+    next_url = request.GET.get("next")
+    if next_url and not next_url.startswith("/"):
+        next_url = None
+
     if username == "developer":
-        target = "/dev/"
+        target = next_url or "/dev/"
     elif username == "admin":
-        target = "/admin/"
+        target = next_url or "/admin/"
     else:
-        target = f"/cabinet/{username}/"
+        target = next_url or f"/cabinet/{username}/"
     return redirect(target)
 
 
