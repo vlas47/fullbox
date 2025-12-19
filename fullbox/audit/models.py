@@ -2,6 +2,20 @@ from django.conf import settings
 from django.db import models
 
 
+class AuditJournal(models.Model):
+    code = models.CharField("Код", max_length=64, unique=True)
+    name = models.CharField("Название", max_length=255)
+    description = models.TextField("Описание", blank=True)
+
+    class Meta:
+        verbose_name = "Журнал"
+        verbose_name_plural = "Журналы"
+        ordering = ["code"]
+
+    def __str__(self):
+        return self.name
+
+
 def sku_snapshot(sku):
     """Минимальный слепок SKU для лога."""
     if not sku:
@@ -29,6 +43,9 @@ class AuditEntry(models.Model):
         ("clone", "Клонирование"),
     ]
 
+    journal = models.ForeignKey(
+        AuditJournal, on_delete=models.CASCADE, related_name="entries", verbose_name="Журнал"
+    )
     action = models.CharField("Действие", max_length=32, choices=ACTION_CHOICES)
     sku = models.ForeignKey("sku.SKU", on_delete=models.SET_NULL, null=True, blank=True, related_name="audit_entries")
     user = models.ForeignKey(
@@ -47,9 +64,27 @@ class AuditEntry(models.Model):
         return f"{self.get_action_display()} {self.sku} ({self.created_at:%Y-%m-%d %H:%M})"
 
 
+def get_sku_journal():
+    return AuditJournal.objects.get_or_create(
+        code="sku",
+        defaults={
+            "name": "Изменения номенклатуры",
+            "description": "Фиксация всех операций с номенклатурой (создание, изменение, удаление, клонирование).",
+        },
+    )[0]
+
+
 def log_sku_change(action: str, sku, user=None, description: str = "", snapshot: dict | None = None):
     """Утилита для записи события по SKU."""
     snap = snapshot if snapshot is not None else sku_snapshot(sku)
-    AuditEntry.objects.create(action=action, sku=sku, user=user, description=description, snapshot=snap)
+    journal = get_sku_journal()
+    AuditEntry.objects.create(
+        journal=journal,
+        action=action,
+        sku=sku,
+        user=user,
+        description=description,
+        snapshot=snap,
+    )
 
 # Create your models here.
