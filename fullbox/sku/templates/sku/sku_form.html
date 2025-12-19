@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ title }} | FULLBOX</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root { --bg:#0b0b0f; --card:#14141f; --gold:#d6a300; --gold-soft:#e7c34a; --text:#e8e8ed; --muted:#9aa0b3; --stroke: rgba(255,255,255,0.08); }
+    * { box-sizing: border-box; }
+    body { margin:0; background:var(--bg); color:var(--text); font-family:'Space Grotesk',system-ui,sans-serif; }
+    a { color: inherit; text-decoration: none; }
+    .wrap { max-width: 1100px; margin: 0 auto; padding: 28px 18px 64px; }
+    header { display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; }
+    h1 { margin:0; letter-spacing:-0.5px; }
+    .muted { color: var(--muted); }
+    .controls { display:flex; gap:10px; flex-wrap:wrap; }
+    .btn { padding:10px 14px; border-radius:10px; border:1px solid var(--stroke); background:rgba(255,255,255,0.02); color:var(--text); font-weight:600; }
+    .btn:hover { border-color: var(--gold); box-shadow:0 10px 25px rgba(214,163,0,0.25); }
+    .btn.primary { background: linear-gradient(120deg,var(--gold),var(--gold-soft)); color: var(--bg); border-color: transparent; }
+    .card { background:var(--card); border:1px solid var(--stroke); border-radius:16px; padding:16px; box-shadow:0 18px 45px rgba(0,0,0,0.35); }
+    form { display:grid; gap:12px; }
+    .grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap:12px; }
+    label { display:block; font-weight:600; margin-bottom:6px; color:var(--muted); }
+    input, select, textarea { width:100%; padding:10px; border-radius:10px; border:1px solid var(--stroke); background:rgba(255,255,255,0.03); color:var(--text); }
+    textarea { resize:vertical; }
+    .row { display:grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap:12px; }
+    .pill { display:inline-flex; align-items:center; gap:6px; padding:6px 10px; border-radius:10px; border:1px solid var(--stroke); background:rgba(255,255,255,0.05); }
+    .section { border:1px solid var(--stroke); border-radius:14px; padding:12px; }
+    .section h3 { margin:0 0 10px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div>
+        <div class="muted">FULLBOX</div>
+        <h1>{{ title }}</h1>
+      </div>
+      <div class="controls">
+        <a class="btn" href="/sku/">К списку SKU</a>
+        <a class="btn" href="/dev/">Dev</a>
+      </div>
+    </header>
+
+    <div class="card">
+      <form method="post">
+        {% csrf_token %}
+        <div class="grid">
+          <div>
+            <label>Артикул *</label>
+            {{ form.sku_code }}
+          </div>
+          <div>
+            <label>Название *</label>
+            {{ form.name }}
+          </div>
+          <div>
+            <label>Бренд</label>
+            {{ form.brand }}
+          </div>
+          <div>
+            <label>Клиент</label>
+            {{ form.agency }}
+          </div>
+          <div>
+            <label>Маркет</label>
+            {{ form.market }}
+          </div>
+          <div>
+            <label>Источник</label>
+            {{ form.source }}
+          </div>
+          <div>
+            <label>Внешний ID</label>
+            {{ form.source_reference }}
+          </div>
+        </div>
+
+        <div class="section">
+          <h3>Характеристики</h3>
+          <div class="grid">
+            <div><label>Цвет (текст)</label>{{ form.color }}</div>
+            <div><label>Цвет (справочник)</label>{{ form.color_ref }}</div>
+            <div><label>Размер</label>{{ form.size }}</div>
+            <div><label>Вес, кг</label>{{ form.weight_kg }}</div>
+            <div><label>Объем</label>{{ form.volume }}</div>
+            <div><label>Длина, мм</label>{{ form.length_mm }}</div>
+            <div><label>Ширина, мм</label>{{ form.width_mm }}</div>
+            <div><label>Высота, мм</label>{{ form.height_mm }}</div>
+            <div><label>Склад</label>{{ form.stor_unit }}</div>
+          </div>
+        </div>
+
+        <div class="section">
+          <h3>Дополнительно</h3>
+          <div class="grid">
+            <div><label>Название для печати</label>{{ form.name_print }}</div>
+            <div><label>Код</label>{{ form.code }}</div>
+            <div><label>Пол</label>{{ form.gender }}</div>
+            <div><label>Сезон</label>{{ form.season }}</div>
+            <div><label>Доп. имя</label>{{ form.additional_name }}</div>
+            <div><label>Категория</label>{{ form.tovar_category }}</div>
+            <div><label>Вид товара</label>{{ form.vid_tovar }}</div>
+            <div><label>Тип товара</label>{{ form.type_tovar }}</div>
+            <div><label>Бренд/страна</label>{{ form.made_in }}</div>
+          </div>
+          <div class="grid">
+            <div><label>Состав</label>{{ form.composition }}</div>
+            <div><label>Дата произв.</label>{{ form.cr_product_date }}</div>
+            <div><label>Срок годн.</label>{{ form.end_product_date }}</div>
+          </div>
+          <div class="row">
+            <label class="pill">{{ form.honest_sign }} Честный знак</label>
+            <label class="pill">{{ form.use_nds }} НДС</label>
+            <label class="pill">{{ form.sign_akciz }} Акциз</label>
+          </div>
+        </div>
+
+        <div class="section">
+          <h3>Медиа и описания</h3>
+          <div class="grid">
+            <div><label>Ссылка на фото</label>{{ form.img }}</div>
+            <div><label>Комментарий к фото</label>{{ form.img_comment }}</div>
+          </div>
+          <div>
+            <label>Описание</label>
+            {{ form.description }}
+          </div>
+        </div>
+
+        <div style="display:flex; gap:10px; flex-wrap:wrap;">
+          <button type="submit" class="btn primary">{{ submit_label }}</button>
+          <a class="btn" href="/sku/">Отмена</a>
+        </div>
+      </form>
+    </div>
+  </div>
+</body>
+</html>
