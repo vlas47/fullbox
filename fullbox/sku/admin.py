@@ -11,6 +11,7 @@ from .models import (
     SKUPhoto,
     Store,
 )
+from audit.models import log_sku_change, sku_snapshot
 
 
 class SKUBarcodeInline(admin.TabularInline):
@@ -46,6 +47,16 @@ class SKUAdmin(admin.ModelAdmin):
     list_filter = ("source", "honest_sign", "use_nds", "market", "color_ref")
     inlines = [SKUBarcodeInline, SKUPhotoInline, MarketplaceBindingInline]
     ordering = ("sku_code",)
+
+    def save_model(self, request, obj, form, change):
+        action = "update" if change else "create"
+        super().save_model(request, obj, form, change)
+        log_sku_change(action, obj, user=request.user, description="Сохранение через админку")
+
+    def delete_model(self, request, obj):
+        snapshot = sku_snapshot(obj)
+        log_sku_change("delete", obj, user=request.user, description="Удаление через админку", snapshot=snapshot)
+        super().delete_model(request, obj)
 
 
 @admin.register(SKUBarcode)
