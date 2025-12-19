@@ -42,3 +42,7 @@ DB_PASSWORD=<Пароль_для_fullbox>
 DB_HOST=127.0.0.1
 DB_PORT=5432
 ```
+
+## GitHub
+- Репозиторий: `git@github.com:vlas47/fullbox.git`, ветка `main`.
+- Ключ для пуша: `~/.ssh/id_ed25519` (добавлен в GitHub), при необходимости: `GIT_SSH_COMMAND="ssh -i ~/.ssh/id_ed25519"`.
