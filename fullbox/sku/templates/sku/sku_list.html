@@ -485,7 +485,7 @@
               <td>{{ item.color_ref|default:"-" }}</td>
               <td>{{ item.size|default:"-" }}</td>
               <td>{{ item.name_print|default:"-" }}</td>
-              <td>{% if item.code %}<div class="barcode">*{{ item.code }}*</div>{% else %}-{% endif %}</td>
+              <td>{% if item.code %}{{ item.code }}{% else %}-{% endif %}</td>
               <td>
                 {% for bc in item.barcodes.all %}
                   <span class="pill">{{ bc.value }}{% if bc.is_primary %}*{% endif %}</span>
