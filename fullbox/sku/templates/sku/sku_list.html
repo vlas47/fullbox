@@ -104,6 +104,7 @@
         <h1>Номенклатура</h1>
       </div>
       <div class="controls">
+        <a class="btn primary" href="/sku/new/">Создать SKU</a>
         <form method="get" class="search" id="search-form" style="display:flex; gap:8px; flex-wrap:wrap;">
           <div style="position:relative; flex:1; min-width:260px;">
             <input id="search-input" type="text" name="q" value="{{ request.GET.q }}" placeholder="Поиск по артикулу/названию/ШК" autocomplete="off" style="width:100%;">
