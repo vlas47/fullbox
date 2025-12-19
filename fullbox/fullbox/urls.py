@@ -16,6 +16,7 @@ Including another URLconf
 """
 from django.contrib import admin
 from django.urls import path, include
+from django.views.generic import RedirectView
 from django.views.generic import TemplateView
 from fullbox import views
 
@@ -25,6 +26,7 @@ urlpatterns = [
     path('login-menu/', views.login_menu, name='login-menu'),
     path('dev-login/<str:username>/', views.dev_login, name='dev-login'),
     path('cabinet/<str:role>/', views.role_cabinet, name='role-cabinet'),
+    path('admin/audit/', RedirectView.as_view(pattern_name='admin:audit_auditjournal_changelist', permanent=False)),
     path('admin/', admin.site.urls),
     path('orders/', include('orders.urls')),
     path('sku/', include('sku.urls')),
