@@ -98,7 +98,7 @@
                   <span class="muted">—</span>
                 {% endif %}
               </td>
-              <td>{{ entry.sku.name if entry.sku else "-" }}</td>
+              <td>{% if entry.sku %}{{ entry.sku.name }}{% else %}-{% endif %}</td>
               <td>{{ entry.user|default:"-" }}</td>
               <td>{{ entry.description|default:"-" }}</td>
             </tr>
