@@ -95,7 +95,9 @@
     .data-list li { display:flex; gap:6px; align-items:flex-start; }
     .data-list strong { color: var(--text); min-width:180px; }
     .desc { color:var(--muted); line-height:1.5; font-size:14px; }
+    .barcode { font-family: 'Libre Barcode 39', monospace; font-size: 48px; line-height:1; color:#e8e8ed; letter-spacing:2px; }
   </style>
+  <link href="https://fonts.googleapis.com/css2?family=Libre+Barcode+39&display=swap" rel="stylesheet">
 </head>
 <body>
   <div class="wrap">
@@ -483,7 +485,7 @@
               <td>{{ item.color_ref|default:"-" }}</td>
               <td>{{ item.size|default:"-" }}</td>
               <td>{{ item.name_print|default:"-" }}</td>
-              <td>{{ item.code|default:"-" }}</td>
+              <td>{% if item.code %}<div class="barcode">*{{ item.code }}*</div>{% else %}-{% endif %}</td>
               <td>
                 {% for bc in item.barcodes.all %}
                   <span class="pill">{{ bc.value }}{% if bc.is_primary %}*{% endif %}</span>
@@ -554,7 +556,7 @@
                       <span class="pill">{{ bc.value }}{% if bc.is_primary %}*{% endif %}</span>
                     {% empty %}<span class="muted">-</span>{% endfor %}
                   </li>
-                  <li><strong>Код:</strong> {{ item.code|default:"-" }}</li>
+                  <li><strong>Код:</strong> {% if item.code %}<span class="barcode" style="font-size:32px; line-height:1;">*{{ item.code }}*</span>{% else %}<span class="muted">-</span>{% endif %}</li>
                   <li><strong>Цвет:</strong> {{ item.color|default:"-" }}{% if item.color_ref %} ({{ item.color_ref }}){% endif %}</li>
                   <li><strong>Размер:</strong> {{ item.size|default:"-" }}</li>
                   <li><strong>Пол / Сезон:</strong> {{ item.gender|default:"-" }} / {{ item.season|default:"-" }}</li>
