@@ -1,0 +1,639 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Номенклатура | FULLBOX</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root { --bg:#0b0b0f; --card:#14141f; --gold:#d6a300; --gold-soft:#e7c34a; --text:#e8e8ed; --muted:#9aa0b3; --stroke: rgba(255,255,255,0.08); }
+    * { box-sizing: border-box; }
+    body { margin:0; background:var(--bg); color:var(--text); font-family:'Space Grotesk',system-ui,sans-serif; }
+    a { color: inherit; text-decoration: none; }
+    .wrap { max-width: 100%; width: 100%; margin: 0 auto; padding: 28px 18px 64px; }
+    header { display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; }
+    h1 { margin:0; letter-spacing:-0.5px; }
+    .muted { color: var(--muted); }
+    .controls { display:flex; gap:10px; flex-wrap:wrap; }
+    .btn { padding:10px 14px; border-radius:10px; border:1px solid var(--stroke); background:rgba(255,255,255,0.02); color:var(--text); font-weight:600; }
+    .btn:hover { border-color: var(--gold); box-shadow:0 10px 25px rgba(214,163,0,0.25); }
+    .btn.active { background: linear-gradient(120deg,var(--gold),var(--gold-soft)); color: var(--bg); border-color: transparent; }
+    .search { position:relative; }
+    .search input { padding:10px; border-radius:10px; border:1px solid var(--stroke); background:rgba(255,255,255,0.03); color:var(--text); min-width:260px; }
+    .suggest-box {
+      position:absolute;
+      top: calc(100% + 6px);
+      left:0;
+      width:100%;
+      background: var(--card);
+      border:1px solid var(--stroke);
+      border-radius: 12px;
+      box-shadow:0 14px 40px rgba(0,0,0,0.35);
+      z-index:10;
+      display:none;
+    }
+    .suggest-box.open { display:block; }
+    .suggest-item {
+      width:100%;
+      border:0;
+      background:transparent;
+      color:var(--text);
+      text-align:left;
+      padding:10px 12px;
+      cursor:pointer;
+      font-family:'Space Grotesk',system-ui,sans-serif;
+      font-size:14px;
+    }
+    .suggest-item:hover { background:rgba(255,255,255,0.05); }
+    .table-wrap { width:100%; overflow-x:auto; margin-top:16px; }
+    table { min-width: 1800px; width:100%; border-collapse:collapse; }
+    th, td {
+      border-bottom:1px solid var(--stroke);
+      border-right:1px solid var(--stroke);
+      padding:10px;
+      text-align:left;
+    }
+    th:last-child, td:last-child { border-right:0; }
+    tbody tr:nth-child(odd) { background: rgba(255,255,255,0.02); }
+    tbody tr:nth-child(even) { background: rgba(255,255,255,0.04); }
+    th { color: var(--muted); font-weight:600; white-space: nowrap; }
+    th .sort-label { display:inline-flex; align-items:center; gap:6px; color:inherit; }
+    th .sort-label:hover { color: var(--text); }
+    .sort-icon { display:inline-flex; flex-direction:column; gap:2px; line-height:1; }
+    .sort-icon .arrow { width:0; height:0; border-left:5px solid transparent; border-right:5px solid transparent; opacity:0.45; }
+    .sort-icon .arrow.up { border-bottom:7px solid var(--muted); }
+    .sort-icon .arrow.down { border-top:7px solid var(--muted); }
+    th.sortable.active .sort-icon .arrow { opacity:1; }
+    th.sortable.active.asc .arrow.up { border-bottom-color: var(--gold); }
+    th.sortable.active.desc .arrow.down { border-top-color: var(--gold); }
+    .filter-toggle { display:inline-flex; align-items:center; justify-content:center; width:22px; height:22px; border:1px solid var(--stroke); border-radius:6px; background:rgba(255,255,255,0.02); margin-left:6px; cursor:pointer; }
+    .filter-toggle:hover { border-color: var(--gold); }
+    details.filter { display:inline-block; position:relative; }
+    details.filter[open] > summary { border-color: var(--gold); }
+    .filter-panel { position:absolute; top:26px; right:0; min-width:220px; padding:12px; background:var(--card); border:1px solid var(--stroke); border-radius:12px; box-shadow:0 14px 40px rgba(0,0,0,0.35); z-index:20; }
+    .filter-panel input[type="text"] { width:100%; padding:8px; border-radius:10px; border:1px solid var(--stroke); background:rgba(255,255,255,0.03); color:var(--text); }
+    .filter-actions { display:flex; gap:8px; margin-top:8px; }
+    .btn.tiny { padding:8px 10px; font-size:13px; }
+    .pill { display:inline-block; padding:4px 8px; border-radius:999px; background:rgba(255,255,255,0.04); border:1px solid var(--stroke); margin-right:4px; }
+    .cards { display:grid; grid-template-columns: repeat(auto-fit, minmax(520px, 1fr)); gap:18px; margin-top:18px; }
+    .card { background:var(--card); border:1px solid var(--stroke); border-radius:16px; padding:16px; box-shadow:0 18px 45px rgba(0,0,0,0.35); display:grid; gap:12px; }
+    .top-row { display:grid; grid-template-columns: 1fr 1fr; gap:12px; }
+    .bottom-row { display:grid; grid-template-columns: 1fr 1fr; gap:12px; }
+    .block { border:1px solid var(--stroke); border-radius:12px; padding:12px; background:rgba(255,255,255,0.01); min-height:160px; display:flex; flex-direction:column; gap:10px; }
+    .block h4 { margin:0; font-size:15px; letter-spacing:0.2px; }
+    .thumb { width:100%; aspect-ratio: 4 / 3; max-height: 320px; border-radius:12px; border:1px solid var(--stroke); background:#0f1118 center/cover no-repeat; }
+    .row { display:flex; flex-wrap:wrap; gap:8px; color:var(--muted); font-size:14px; }
+    .tag { display:inline-flex; align-items:center; gap:6px; padding:6px 10px; border-radius:10px; border:1px solid var(--stroke); background:rgba(255,255,255,0.03); }
+    .meta { margin-top:6px; color:var(--muted); font-size:13px; }
+    .data-list { list-style:none; padding:0; margin:0; display:grid; gap:6px; }
+    .data-list li { display:flex; gap:6px; align-items:flex-start; }
+    .data-list strong { color: var(--text); min-width:180px; }
+    .desc { color:var(--muted); line-height:1.5; font-size:14px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div>
+        <div class="muted">FULLBOX</div>
+        <h1>Номенклатура</h1>
+      </div>
+      <div class="controls">
+        <form method="get" class="search" id="search-form" style="display:flex; gap:8px; flex-wrap:wrap;">
+          <div style="position:relative; flex:1; min-width:260px;">
+            <input id="search-input" type="text" name="q" value="{{ request.GET.q }}" placeholder="Поиск по артикулу/названию/ШК" autocomplete="off" style="width:100%;">
+            <div class="suggest-box" id="suggest-box"></div>
+          </div>
+          <input type="hidden" name="view" value="{{ view_mode }}">
+          {% if request.GET.sort %}<input type="hidden" name="sort" value="{{ request.GET.sort }}">{% endif %}
+          {% if request.GET.dir %}<input type="hidden" name="dir" value="{{ request.GET.dir }}">{% endif %}
+          {% if request.GET.filter_field %}<input type="hidden" name="filter_field" value="{{ request.GET.filter_field }}">{% endif %}
+          {% if request.GET.filter_value %}<input type="hidden" name="filter_value" value="{{ request.GET.filter_value }}">{% endif %}
+          <button class="btn" type="submit">Искать</button>
+        </form>
+        <a class="btn {% if view_mode == 'table' %}active{% endif %}"
+           href="?view=table{% if request.GET.q %}&q={{ request.GET.q|urlencode }}{% endif %}{% if request.GET.sort %}&sort={{ request.GET.sort|urlencode }}{% endif %}{% if request.GET.dir %}&dir={{ request.GET.dir|urlencode }}{% endif %}{% if request.GET.page %}&page={{ request.GET.page|urlencode }}{% endif %}{% if request.GET.filter_field %}&filter_field={{ request.GET.filter_field|urlencode }}{% endif %}{% if request.GET.filter_value %}&filter_value={{ request.GET.filter_value|urlencode }}{% endif %}">
+          Таблица
+        </a>
+        <a class="btn {% if view_mode == 'cards' %}active{% endif %}"
+           href="?view=cards{% if request.GET.q %}&q={{ request.GET.q|urlencode }}{% endif %}{% if request.GET.sort %}&sort={{ request.GET.sort|urlencode }}{% endif %}{% if request.GET.dir %}&dir={{ request.GET.dir|urlencode }}{% endif %}{% if request.GET.page %}&page={{ request.GET.page|urlencode }}{% endif %}{% if request.GET.filter_field %}&filter_field={{ request.GET.filter_field|urlencode }}{% endif %}{% if request.GET.filter_value %}&filter_value={{ request.GET.filter_value|urlencode }}{% endif %}">
+          Карточки
+        </a>
+        <a class="btn" href="/">Главная</a>
+      </div>
+    </header>
+
+    {% if view_mode == 'table' %}
+      <datalist id="list-sku_code">{% for item in items %}<option value="{{ item.sku_code }}">{% endfor %}</datalist>
+      <datalist id="list-name">{% for item in items %}<option value="{{ item.name }}">{% endfor %}</datalist>
+      <datalist id="list-brand">{% for item in items %}<option value="{{ item.brand }}">{% endfor %}</datalist>
+      <datalist id="list-agency">{% for item in items %}<option value="{{ item.agency }}">{% endfor %}</datalist>
+      <datalist id="list-market">{% for item in items %}<option value="{{ item.market }}">{% endfor %}</datalist>
+      <datalist id="list-color">{% for item in items %}<option value="{{ item.color }}">{% endfor %}</datalist>
+      <datalist id="list-color_ref">{% for item in items %}<option value="{{ item.color_ref }}">{% endfor %}</datalist>
+      <datalist id="list-size">{% for item in items %}<option value="{{ item.size }}">{% endfor %}</datalist>
+      <datalist id="list-name_print">{% for item in items %}<option value="{{ item.name_print }}">{% endfor %}</datalist>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th class="sortable {% if sort_info.sku_code.active %}active {{ sort_info.sku_code.dir }}{% endif %}">
+                <a class="sort-label" href="{{ sort_info.sku_code.url }}">Артикул
+                  <span class="sort-icon"><span class="arrow up"></span><span class="arrow down"></span></span>
+                </a>
+                <details class="filter">
+                  <summary class="filter-toggle" title="Фильтр">⌄</summary>
+                  <div class="filter-panel">
+                    <form method="get">
+                      <input type="hidden" name="view" value="{{ view_mode }}">
+                      {% if request.GET.sort %}<input type="hidden" name="sort" value="{{ request.GET.sort }}">{% endif %}
+                      {% if request.GET.dir %}<input type="hidden" name="dir" value="{{ request.GET.dir }}">{% endif %}
+                      {% if request.GET.q %}<input type="hidden" name="q" value="{{ request.GET.q }}">{% endif %}
+                      <input type="hidden" name="filter_field" value="sku_code">
+                      <input list="list-sku_code" type="text" name="filter_value" placeholder="Артикул" value="{% if filter_field == 'sku_code' %}{{ filter_value }}{% endif %}">
+                      <div class="filter-actions">
+                        <button class="btn tiny" type="submit">Применить</button>
+                        <a class="btn tiny" href="?view={{ view_mode }}{% if request.GET.q %}&q={{ request.GET.q|urlencode }}{% endif %}{% if request.GET.sort %}&sort={{ request.GET.sort|urlencode }}{% endif %}{% if request.GET.dir %}&dir={{ request.GET.dir|urlencode }}{% endif %}">Сброс</a>
+                      </div>
+                    </form>
+                  </div>
+                </details>
+              </th>
+              <th class="sortable {% if sort_info.name.active %}active {{ sort_info.name.dir }}{% endif %}">
+                <a class="sort-label" href="{{ sort_info.name.url }}">Наименование
+                  <span class="sort-icon"><span class="arrow up"></span><span class="arrow down"></span></span>
+                </a>
+                <details class="filter">
+                  <summary class="filter-toggle" title="Фильтр">⌄</summary>
+                  <div class="filter-panel">
+                    <form method="get">
+                      <input type="hidden" name="view" value="{{ view_mode }}">
+                      {% if request.GET.sort %}<input type="hidden" name="sort" value="{{ request.GET.sort }}">{% endif %}
+                      {% if request.GET.dir %}<input type="hidden" name="dir" value="{{ request.GET.dir }}">{% endif %}
+                      {% if request.GET.q %}<input type="hidden" name="q" value="{{ request.GET.q }}">{% endif %}
+                      <input type="hidden" name="filter_field" value="name">
+                      <input list="list-name" type="text" name="filter_value" placeholder="Наименование" value="{% if filter_field == 'name' %}{{ filter_value }}{% endif %}">
+                      <div class="filter-actions">
+                        <button class="btn tiny" type="submit">Применить</button>
+                        <a class="btn tiny" href="?view={{ view_mode }}{% if request.GET.q %}&q={{ request.GET.q|urlencode }}{% endif %}{% if request.GET.sort %}&sort={{ request.GET.sort|urlencode }}{% endif %}{% if request.GET.dir %}&dir={{ request.GET.dir|urlencode }}{% endif %}">Сброс</a>
+                      </div>
+                    </form>
+                  </div>
+                </details>
+              </th>
+              <th class="sortable {% if sort_info.brand.active %}active {{ sort_info.brand.dir }}{% endif %}">
+                <a class="sort-label" href="{{ sort_info.brand.url }}">Бренд
+                  <span class="sort-icon"><span class="arrow up"></span><span class="arrow down"></span></span>
+                </a>
+                <details class="filter">
+                  <summary class="filter-toggle" title="Фильтр">⌄</summary>
+                  <div class="filter-panel">
+                    <form method="get">
+                      <input type="hidden" name="view" value="{{ view_mode }}">
+                      {% if request.GET.sort %}<input type="hidden" name="sort" value="{{ request.GET.sort }}">{% endif %}
+                      {% if request.GET.dir %}<input type="hidden" name="dir" value="{{ request.GET.dir }}">{% endif %}
+                      {% if request.GET.q %}<input type="hidden" name="q" value="{{ request.GET.q }}">{% endif %}
+                      <input type="hidden" name="filter_field" value="brand">
+                      <input list="list-brand" type="text" name="filter_value" placeholder="Бренд" value="{% if filter_field == 'brand' %}{{ filter_value }}{% endif %}">
+                      <div class="filter-actions">
+                        <button class="btn tiny" type="submit">Применить</button>
+                        <a class="btn tiny" href="?view={{ view_mode }}{% if request.GET.q %}&q={{ request.GET.q|urlencode }}{% endif %}{% if request.GET.sort %}&sort={{ request.GET.sort|urlencode }}{% endif %}{% if request.GET.dir %}&dir={{ request.GET.dir|urlencode }}{% endif %}">Сброс</a>
+                      </div>
+                    </form>
+                  </div>
+                </details>
+              </th>
+              <th class="sortable {% if sort_info.agency.active %}active {{ sort_info.agency.dir }}{% endif %}">
+                <a class="sort-label" href="{{ sort_info.agency.url }}">Клиент
+                  <span class="sort-icon"><span class="arrow up"></span><span class="arrow down"></span></span>
+                </a>
+                <details class="filter">
+                  <summary class="filter-toggle" title="Фильтр">⌄</summary>
+                  <div class="filter-panel">
+                    <form method="get">
+                      <input type="hidden" name="view" value="{{ view_mode }}">
+                      {% if request.GET.sort %}<input type="hidden" name="sort" value="{{ request.GET.sort }}">{% endif %}
+                      {% if request.GET.dir %}<input type="hidden" name="dir" value="{{ request.GET.dir }}">{% endif %}
+                      {% if request.GET.q %}<input type="hidden" name="q" value="{{ request.GET.q }}">{% endif %}
+                      <input type="hidden" name="filter_field" value="agency">
+                      <input list="list-agency" type="text" name="filter_value" placeholder="Клиент" value="{% if filter_field == 'agency' %}{{ filter_value }}{% endif %}">
+                      <div class="filter-actions">
+                        <button class="btn tiny" type="submit">Применить</button>
+                        <a class="btn tiny" href="?view={{ view_mode }}{% if request.GET.q %}&q={{ request.GET.q|urlencode }}{% endif %}{% if request.GET.sort %}&sort={{ request.GET.sort|urlencode }}{% endif %}{% if request.GET.dir %}&dir={{ request.GET.dir|urlencode }}{% endif %}">Сброс</a>
+                      </div>
+                    </form>
+                  </div>
+                </details>
+              </th>
+              <th class="sortable {% if sort_info.market.active %}active {{ sort_info.market.dir }}{% endif %}">
+                <a class="sort-label" href="{{ sort_info.market.url }}">Маркет
+                  <span class="sort-icon"><span class="arrow up"></span><span class="arrow down"></span></span>
+                </a>
+                <details class="filter">
+                  <summary class="filter-toggle" title="Фильтр">⌄</summary>
+                  <div class="filter-panel">
+                    <form method="get">
+                      <input type="hidden" name="view" value="{{ view_mode }}">
+                      {% if request.GET.sort %}<input type="hidden" name="sort" value="{{ request.GET.sort }}">{% endif %}
+                      {% if request.GET.dir %}<input type="hidden" name="dir" value="{{ request.GET.dir }}">{% endif %}
+                      {% if request.GET.q %}<input type="hidden" name="q" value="{{ request.GET.q }}">{% endif %}
+                      <input type="hidden" name="filter_field" value="market">
+                      <input list="list-market" type="text" name="filter_value" placeholder="Маркет" value="{% if filter_field == 'market' %}{{ filter_value }}{% endif %}">
+                      <div class="filter-actions">
+                        <button class="btn tiny" type="submit">Применить</button>
+                        <a class="btn tiny" href="?view={{ view_mode }}{% if request.GET.q %}&q={{ request.GET.q|urlencode }}{% endif %}{% if request.GET.sort %}&sort={{ request.GET.sort|urlencode }}{% endif %}{% if request.GET.dir %}&dir={{ request.GET.dir|urlencode }}{% endif %}">Сброс</a>
+                      </div>
+                    </form>
+                  </div>
+                </details>
+              </th>
+              <th class="sortable {% if sort_info.color.active %}active {{ sort_info.color.dir }}{% endif %}">
+                <a class="sort-label" href="{{ sort_info.color.url }}">Цвет (текст)
+                  <span class="sort-icon"><span class="arrow up"></span><span class="arrow down"></span></span>
+                </a>
+                <details class="filter">
+                  <summary class="filter-toggle" title="Фильтр">⌄</summary>
+                  <div class="filter-panel">
+                    <form method="get">
+                      <input type="hidden" name="view" value="{{ view_mode }}">
+                      {% if request.GET.sort %}<input type="hidden" name="sort" value="{{ request.GET.sort }}">{% endif %}
+                      {% if request.GET.dir %}<input type="hidden" name="dir" value="{{ request.GET.dir }}">{% endif %}
+                      {% if request.GET.q %}<input type="hidden" name="q" value="{{ request.GET.q }}">{% endif %}
+                      <input type="hidden" name="filter_field" value="color">
+                      <input list="list-color" type="text" name="filter_value" placeholder="Цвет" value="{% if filter_field == 'color' %}{{ filter_value }}{% endif %}">
+                      <div class="filter-actions">
+                        <button class="btn tiny" type="submit">Применить</button>
+                        <a class="btn tiny" href="?view={{ view_mode }}{% if request.GET.q %}&q={{ request.GET.q|urlencode }}{% endif %}{% if request.GET.sort %}&sort={{ request.GET.sort|urlencode }}{% endif %}{% if request.GET.dir %}&dir={{ request.GET.dir|urlencode }}{% endif %}">Сброс</a>
+                      </div>
+                    </form>
+                  </div>
+                </details>
+              </th>
+              <th class="sortable {% if sort_info.color_ref.active %}active {{ sort_info.color_ref.dir }}{% endif %}">
+                <a class="sort-label" href="{{ sort_info.color_ref.url }}">Цвет (спр.)
+                  <span class="sort-icon"><span class="arrow up"></span><span class="arrow down"></span></span>
+                </a>
+                <details class="filter">
+                  <summary class="filter-toggle" title="Фильтр">⌄</summary>
+                  <div class="filter-panel">
+                    <form method="get">
+                      <input type="hidden" name="view" value="{{ view_mode }}">
+                      {% if request.GET.sort %}<input type="hidden" name="sort" value="{{ request.GET.sort }}">{% endif %}
+                      {% if request.GET.dir %}<input type="hidden" name="dir" value="{{ request.GET.dir }}">{% endif %}
+                      {% if request.GET.q %}<input type="hidden" name="q" value="{{ request.GET.q }}">{% endif %}
+                      <input type="hidden" name="filter_field" value="color_ref">
+                      <input list="list-color_ref" type="text" name="filter_value" placeholder="Цвет из справочника" value="{% if filter_field == 'color_ref' %}{{ filter_value }}{% endif %}">
+                      <div class="filter-actions">
+                        <button class="btn tiny" type="submit">Применить</button>
+                        <a class="btn tiny" href="?view={{ view_mode }}{% if request.GET.q %}&q={{ request.GET.q|urlencode }}{% endif %}{% if request.GET.sort %}&sort={{ request.GET.sort|urlencode }}{% endif %}{% if request.GET.dir %}&dir={{ request.GET.dir|urlencode }}{% endif %}">Сброс</a>
+                      </div>
+                    </form>
+                  </div>
+                </details>
+              </th>
+              <th class="sortable {% if sort_info.size.active %}active {{ sort_info.size.dir }}{% endif %}">
+                <a class="sort-label" href="{{ sort_info.size.url }}">Размер
+                  <span class="sort-icon"><span class="arrow up"></span><span class="arrow down"></span></span>
+                </a>
+                <details class="filter">
+                  <summary class="filter-toggle" title="Фильтр">⌄</summary>
+                  <div class="filter-panel">
+                    <form method="get">
+                      <input type="hidden" name="view" value="{{ view_mode }}">
+                      {% if request.GET.sort %}<input type="hidden" name="sort" value="{{ request.GET.sort }}">{% endif %}
+                      {% if request.GET.dir %}<input type="hidden" name="dir" value="{{ request.GET.dir }}">{% endif %}
+                      {% if request.GET.q %}<input type="hidden" name="q" value="{{ request.GET.q }}">{% endif %}
+                      <input type="hidden" name="filter_field" value="size">
+                      <input list="list-size" type="text" name="filter_value" placeholder="Размер" value="{% if filter_field == 'size' %}{{ filter_value }}{% endif %}">
+                      <div class="filter-actions">
+                        <button class="btn tiny" type="submit">Применить</button>
+                        <a class="btn tiny" href="?view={{ view_mode }}{% if request.GET.q %}&q={{ request.GET.q|urlencode }}{% endif %}{% if request.GET.sort %}&sort={{ request.GET.sort|urlencode }}{% endif %}{% if request.GET.dir %}&dir={{ request.GET.dir|urlencode }}{% endif %}">Сброс</a>
+                      </div>
+                    </form>
+                  </div>
+                </details>
+              </th>
+              <th class="sortable {% if sort_info.name_print.active %}active {{ sort_info.name_print.dir }}{% endif %}">
+                <a class="sort-label" href="{{ sort_info.name_print.url }}">Название для печати
+                  <span class="sort-icon"><span class="arrow up"></span><span class="arrow down"></span></span>
+                </a>
+                <details class="filter">
+                  <summary class="filter-toggle" title="Фильтр">⌄</summary>
+                  <div class="filter-panel">
+                    <form method="get">
+                      <input type="hidden" name="view" value="{{ view_mode }}">
+                      {% if request.GET.sort %}<input type="hidden" name="sort" value="{{ request.GET.sort }}">{% endif %}
+                      {% if request.GET.dir %}<input type="hidden" name="dir" value="{{ request.GET.dir }}">{% endif %}
+                      {% if request.GET.q %}<input type="hidden" name="q" value="{{ request.GET.q }}">{% endif %}
+                      <input type="hidden" name="filter_field" value="name_print">
+                      <input list="list-name_print" type="text" name="filter_value" placeholder="Название для печати" value="{% if filter_field == 'name_print' %}{{ filter_value }}{% endif %}">
+                      <div class="filter-actions">
+                        <button class="btn tiny" type="submit">Применить</button>
+                        <a class="btn tiny" href="?view={{ view_mode }}{% if request.GET.q %}&q={{ request.GET.q|urlencode }}{% endif %}{% if request.GET.sort %}&sort={{ request.GET.sort|urlencode }}{% endif %}{% if request.GET.dir %}&dir={{ request.GET.dir|urlencode }}{% endif %}">Сброс</a>
+                      </div>
+                    </form>
+                  </div>
+                </details>
+              </th>
+              <th class="sortable {% if sort_info.code.active %}active {{ sort_info.code.dir }}{% endif %}">
+                <a class="sort-label" href="{{ sort_info.code.url }}">Код
+                  <span class="sort-icon"><span class="arrow up"></span><span class="arrow down"></span></span>
+                </a>
+              </th>
+              <th>ШК</th>
+              <th>Фото</th>
+              <th class="sortable {% if sort_info.gender.active %}active {{ sort_info.gender.dir }}{% endif %}">
+                <a class="sort-label" href="{{ sort_info.gender.url }}">Пол
+                  <span class="sort-icon"><span class="arrow up"></span><span class="arrow down"></span></span>
+                </a>
+              </th>
+              <th class="sortable {% if sort_info.season.active %}active {{ sort_info.season.dir }}{% endif %}">
+                <a class="sort-label" href="{{ sort_info.season.url }}">Сезон
+                  <span class="sort-icon"><span class="arrow up"></span><span class="arrow down"></span></span>
+                </a>
+              </th>
+              <th class="sortable {% if sort_info.additional_name.active %}active {{ sort_info.additional_name.dir }}{% endif %}">
+                <a class="sort-label" href="{{ sort_info.additional_name.url }}">Доп. имя
+                  <span class="sort-icon"><span class="arrow up"></span><span class="arrow down"></span></span>
+                </a>
+              </th>
+              <th class="sortable {% if sort_info.composition.active %}active {{ sort_info.composition.dir }}{% endif %}">
+                <a class="sort-label" href="{{ sort_info.composition.url }}">Состав
+                  <span class="sort-icon"><span class="arrow up"></span><span class="arrow down"></span></span>
+                </a>
+              </th>
+              <th class="sortable {% if sort_info.made_in.active %}active {{ sort_info.made_in.dir }}{% endif %}">
+                <a class="sort-label" href="{{ sort_info.made_in.url }}">Страна
+                  <span class="sort-icon"><span class="arrow up"></span><span class="arrow down"></span></span>
+                </a>
+              </th>
+              <th class="sortable {% if sort_info.cr_product_date.active %}active {{ sort_info.cr_product_date.dir }}{% endif %}">
+                <a class="sort-label" href="{{ sort_info.cr_product_date.url }}">Дата произв.
+                  <span class="sort-icon"><span class="arrow up"></span><span class="arrow down"></span></span>
+                </a>
+              </th>
+              <th class="sortable {% if sort_info.end_product_date.active %}active {{ sort_info.end_product_date.dir }}{% endif %}">
+                <a class="sort-label" href="{{ sort_info.end_product_date.url }}">Срок годн.
+                  <span class="sort-icon"><span class="arrow up"></span><span class="arrow down"></span></span>
+                </a>
+              </th>
+              <th class="sortable {% if sort_info.sign_akciz.active %}active {{ sort_info.sign_akciz.dir }}{% endif %}">
+                <a class="sort-label" href="{{ sort_info.sign_akciz.url }}">Акциз
+                  <span class="sort-icon"><span class="arrow up"></span><span class="arrow down"></span></span>
+                </a>
+              </th>
+              <th class="sortable {% if sort_info.tovar_category.active %}active {{ sort_info.tovar_category.dir }}{% endif %}">
+                <a class="sort-label" href="{{ sort_info.tovar_category.url }}">Категория
+                  <span class="sort-icon"><span class="arrow up"></span><span class="arrow down"></span></span>
+                </a>
+              </th>
+              <th class="sortable {% if sort_info.use_nds.active %}active {{ sort_info.use_nds.dir }}{% endif %}">
+                <a class="sort-label" href="{{ sort_info.use_nds.url }}">НДС
+                  <span class="sort-icon"><span class="arrow up"></span><span class="arrow down"></span></span>
+                </a>
+              </th>
+              <th class="sortable {% if sort_info.vid_tovar.active %}active {{ sort_info.vid_tovar.dir }}{% endif %}">
+                <a class="sort-label" href="{{ sort_info.vid_tovar.url }}">Вид товара
+                  <span class="sort-icon"><span class="arrow up"></span><span class="arrow down"></span></span>
+                </a>
+              </th>
+              <th class="sortable {% if sort_info.type_tovar.active %}active {{ sort_info.type_tovar.dir }}{% endif %}">
+                <a class="sort-label" href="{{ sort_info.type_tovar.url }}">Тип товара
+                  <span class="sort-icon"><span class="arrow up"></span><span class="arrow down"></span></span>
+                </a>
+              </th>
+              <th class="sortable {% if sort_info.stor_unit.active %}active {{ sort_info.stor_unit.dir }}{% endif %}">
+                <a class="sort-label" href="{{ sort_info.stor_unit.url }}">Склад
+                  <span class="sort-icon"><span class="arrow up"></span><span class="arrow down"></span></span>
+                </a>
+              </th>
+              <th class="sortable {% if sort_info.weight_kg.active %}active {{ sort_info.weight_kg.dir }}{% endif %}">
+                <a class="sort-label" href="{{ sort_info.weight_kg.url }}">Вес, кг
+                  <span class="sort-icon"><span class="arrow up"></span><span class="arrow down"></span></span>
+                </a>
+              </th>
+              <th class="sortable {% if sort_info.volume.active %}active {{ sort_info.volume.dir }}{% endif %}">
+                <a class="sort-label" href="{{ sort_info.volume.url }}">Объем
+                  <span class="sort-icon"><span class="arrow up"></span><span class="arrow down"></span></span>
+                </a>
+              </th>
+              <th class="sortable {% if sort_info.length_mm.active %}active {{ sort_info.length_mm.dir }}{% endif %}">
+                <a class="sort-label" href="{{ sort_info.length_mm.url }}">Габариты (Д/Ш/В), мм
+                  <span class="sort-icon"><span class="arrow up"></span><span class="arrow down"></span></span>
+                </a>
+              </th>
+              <th class="sortable {% if sort_info.honest_sign.active %}active {{ sort_info.honest_sign.dir }}{% endif %}">
+                <a class="sort-label" href="{{ sort_info.honest_sign.url }}">Честный знак
+                  <span class="sort-icon"><span class="arrow up"></span><span class="arrow down"></span></span>
+                </a>
+              </th>
+              <th class="sortable {% if sort_info.source.active %}active {{ sort_info.source.dir }}{% endif %}">
+                <a class="sort-label" href="{{ sort_info.source.url }}">Источник
+                  <span class="sort-icon"><span class="arrow up"></span><span class="arrow down"></span></span>
+                </a>
+              </th>
+              <th class="sortable {% if sort_info.source_reference.active %}active {{ sort_info.source_reference.dir }}{% endif %}">
+                <a class="sort-label" href="{{ sort_info.source_reference.url }}">Внешний ID
+                  <span class="sort-icon"><span class="arrow up"></span><span class="arrow down"></span></span>
+                </a>
+              </th>
+              <th>Описание/коммент</th>
+              <th class="sortable {% if sort_info.created_at.active %}active {{ sort_info.created_at.dir }}{% endif %}">
+                <a class="sort-label" href="{{ sort_info.created_at.url }}">Создано
+                  <span class="sort-icon"><span class="arrow up"></span><span class="arrow down"></span></span>
+                </a>
+              </th>
+              <th class="sortable {% if sort_info.updated_at.active %}active {{ sort_info.updated_at.dir }}{% endif %}">
+                <a class="sort-label" href="{{ sort_info.updated_at.url }}">Обновлено
+                  <span class="sort-icon"><span class="arrow up"></span><span class="arrow down"></span></span>
+                </a>
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for item in items %}
+            <tr>
+              <td>{{ item.sku_code }}</td>
+              <td>{{ item.name }}</td>
+              <td>{{ item.brand|default:"-" }}</td>
+              <td>{{ item.agency|default:"-" }}</td>
+              <td>{{ item.market|default:"-" }}</td>
+              <td>{{ item.color|default:"-" }}</td>
+              <td>{{ item.color_ref|default:"-" }}</td>
+              <td>{{ item.size|default:"-" }}</td>
+              <td>{{ item.name_print|default:"-" }}</td>
+              <td>{{ item.code|default:"-" }}</td>
+              <td>
+                {% for bc in item.barcodes.all %}
+                  <span class="pill">{{ bc.value }}{% if bc.is_primary %}*{% endif %}</span>
+                {% empty %}-{% endfor %}
+              </td>
+              <td>{% if item.photos.all %}{% with photo=item.photos.all.0 %}<a href="{{ photo.url }}" target="_blank">Ссылка</a>{% endwith %}{% else %}-{% endif %}</td>
+              <td>{{ item.gender|default:"-" }}</td>
+              <td>{{ item.season|default:"-" }}</td>
+              <td>{{ item.additional_name|default:"-" }}</td>
+              <td>{{ item.composition|default:"-" }}</td>
+              <td>{{ item.made_in|default:"-" }}</td>
+              <td>{{ item.cr_product_date|date:"d.m.Y"|default:"-" }}</td>
+              <td>{{ item.end_product_date|date:"d.m.Y"|default:"-" }}</td>
+              <td>{{ item.sign_akciz|yesno:"Да,Нет" }}</td>
+              <td>{{ item.tovar_category|default:"-" }}</td>
+              <td>{{ item.use_nds|yesno:"Да,Нет" }}</td>
+              <td>{{ item.vid_tovar|default:"-" }}</td>
+              <td>{{ item.type_tovar|default:"-" }}</td>
+              <td>{{ item.stor_unit|default:"-" }}</td>
+              <td>{{ item.weight_kg|default:"-" }}</td>
+              <td>{{ item.volume|default:"-" }}</td>
+              <td>{% if item.length_mm %}{{ item.length_mm }} / {{ item.width_mm }} / {{ item.height_mm }}{% else %}-{% endif %}</td>
+              <td>{{ item.honest_sign|yesno:"Да,Нет" }}</td>
+              <td>{{ item.get_source_display }}</td>
+              <td>{{ item.source_reference|default:"-" }}</td>
+              <td>{{ item.description|default:item.img_comment|default:"-" }}</td>
+              <td>{{ item.created_at|date:"d.m.Y H:i" }}</td>
+              <td>{{ item.updated_at|date:"d.m.Y H:i" }}</td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="34">Пока нет SKU</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <div class="cards">
+        {% for item in items %}
+          <div class="card">
+            <div class="top-row" style="grid-template-columns:35% 65%;">
+              <div class="block">
+                <h4>Фото</h4>
+                {% if item.photos.all %}
+                  {% with photo=item.photos.all.0 %}<div class="thumb full" style="background-image:url('{{ photo.url }}');"></div>{% endwith %}
+                {% else %}
+                  <div class="thumb full"></div>
+                {% endif %}
+              </div>
+              <div class="block">
+                <h4>Данные товара</h4>
+                <div class="row" style="justify-content:space-between; align-items:center;">
+                  <div class="muted" style="font-size:12px;">{{ item.get_source_display }}</div>
+                  <div class="row" style="gap:6px;">
+                    {% if item.honest_sign %}<div class="tag">Честный знак</div>{% endif %}
+                    {% if item.use_nds %}<div class="tag">НДС</div>{% endif %}
+                    {% if item.sign_akciz %}<div class="tag">Акциз</div>{% endif %}
+                  </div>
+                </div>
+                <h3 style="margin:4px 0 6px;">{{ item.name }}</h3>
+                <div class="muted" style="font-size:13px;">Артикул: {{ item.sku_code }}{% if item.brand %} · {{ item.brand }}{% endif %}</div>
+                <div class="muted" style="font-size:13px;">Клиент: {{ item.agency|default:"-" }} · Маркет: {{ item.market|default:"-" }}</div>
+                <ul class="data-list">
+                  <li><strong>Артикул:</strong> {{ item.sku_code }}</li>
+                  <li><strong>Бренд:</strong> {{ item.brand|default:"-" }}</li>
+                  <li><strong>Название для печати:</strong> {{ item.name_print|default:"-" }}</li>
+                  <li><strong>Штрихкоды:</strong>
+                    {% for bc in item.barcodes.all %}
+                      <span class="pill">{{ bc.value }}{% if bc.is_primary %}*{% endif %}</span>
+                    {% empty %}<span class="muted">-</span>{% endfor %}
+                  </li>
+                  <li><strong>Код:</strong> {{ item.code|default:"-" }}</li>
+                  <li><strong>Цвет:</strong> {{ item.color|default:"-" }}{% if item.color_ref %} ({{ item.color_ref }}){% endif %}</li>
+                  <li><strong>Размер:</strong> {{ item.size|default:"-" }}</li>
+                  <li><strong>Пол / Сезон:</strong> {{ item.gender|default:"-" }} / {{ item.season|default:"-" }}</li>
+                  <li><strong>Состав:</strong> {{ item.composition|default:"-" }}</li>
+                  <li><strong>Страна:</strong> {{ item.made_in|default:"-" }}</li>
+                  <li><strong>Вес / Объем:</strong> {{ item.weight_kg|default:"-" }} / {{ item.volume|default:"-" }}</li>
+                  <li><strong>Габариты (Д/Ш/В):</strong> {% if item.length_mm %}{{ item.length_mm }} / {{ item.width_mm }} / {{ item.height_mm }} мм{% else %}-{% endif %}</li>
+                  <li><strong>Категория / вид / тип:</strong> {{ item.tovar_category|default:"-" }} / {{ item.vid_tovar|default:"-" }} / {{ item.type_tovar|default:"-" }}</li>
+                  <li><strong>Доп. имя:</strong> {{ item.additional_name|default:"-" }}</li>
+                  <li><strong>Дата произв. / срок:</strong> {{ item.cr_product_date|date:"d.m.Y"|default:"-" }} / {{ item.end_product_date|date:"d.m.Y"|default:"-" }}</li>
+                  <li><strong>Склад:</strong> {{ item.stor_unit|default:"-" }}</li>
+                  <li><strong>Внешний ID:</strong> {{ item.source_reference|default:"-" }}</li>
+                  <li><strong>НДС:</strong> {{ item.use_nds|yesno:"Да,Нет" }}</li>
+                  <li><strong>Акциз:</strong> {{ item.sign_akciz|yesno:"Да,Нет" }}</li>
+                  <li><strong>Честный знак:</strong> {{ item.honest_sign|yesno:"Да,Нет" }}</li>
+                </ul>
+                {% if item.description %}<div class="desc">{{ item.description }}</div>{% elif item.img_comment %}<div class="desc">{{ item.img_comment }}</div>{% endif %}
+              </div>
+            </div>
+            <div class="bottom-row">
+              <div class="block">
+                <h4>Привязки к маркетплейсам</h4>
+                {% if item.marketplace_bindings.all %}
+                  <div class="row">
+                    {% for mp in item.marketplace_bindings.all %}
+                      <span class="tag">{{ mp.marketplace }} · {{ mp.external_id }}</span>
+                    {% endfor %}
+                  </div>
+                {% else %}
+                  <div class="muted">Нет привязок</div>
+                {% endif %}
+              </div>
+              <div class="block">
+                <h4>История и метаданные</h4>
+                <div class="meta">Создано: {{ item.created_at|date:"d.m.Y H:i" }}</div>
+                <div class="meta">Обновлено: {{ item.updated_at|date:"d.m.Y H:i" }}</div>
+                <div class="meta">Источник: {{ item.get_source_display }}</div>
+              </div>
+            </div>
+          </div>
+        {% empty %}
+          <div class="card">Пока нет SKU</div>
+        {% endfor %}
+      </div>
+    {% endif %}
+
+    <div class="meta">Всего: {{ page_obj.paginator.count }}</div>
+  </div>
+</body>
+<script>
+  (function() {
+    const input = document.getElementById('search-input');
+    const box = document.getElementById('suggest-box');
+    const form = document.getElementById('search-form');
+    let timer;
+
+    function render(items) {
+      if (!items.length) {
+        box.classList.remove('open');
+        box.innerHTML = '';
+        return;
+      }
+      box.innerHTML = items.map(item => (
+        `<button type="button" class="suggest-item" data-value="${item.value.replace(/"/g, '&quot;')}">${item.label}</button>`
+      )).join('');
+      box.classList.add('open');
+    }
+
+    async function fetchSuggest(query) {
+      const res = await fetch(`/sku/suggest/?q=${encodeURIComponent(query)}`);
+      if (!res.ok) return render([]);
+      const data = await res.json();
+      render(data.items || []);
+    }
+
+    input.addEventListener('input', () => {
+      const q = input.value.trim();
+      if (timer) clearTimeout(timer);
+      if (q.length < 2) {
+        render([]);
+        return;
+      }
+      timer = setTimeout(() => fetchSuggest(q), 180);
+    });
+
+    box.addEventListener('click', (e) => {
+      const btn = e.target.closest('.suggest-item');
+      if (!btn) return;
+      input.value = btn.dataset.value;
+      render([]);
+      form.submit();
+    });
+
+    document.addEventListener('click', (e) => {
+      if (!box.contains(e.target) && e.target !== input) {
+        render([]);
+      }
+    });
+  })();
+</script>
+</html>
