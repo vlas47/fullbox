@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Заявки</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    :root { --bg: #0b0b0f; --card:#14141f; --gold:#d6a300; --muted:#9aa0b3; --stroke: rgba(255,255,255,0.08); --text:#e8e8ed; }
+    body { margin:0; background:var(--bg); color:var(--text); font-family:'Space Grotesk',system-ui,sans-serif; }
+    a { color: inherit; text-decoration: none; }
+    .wrap { max-width: 1100px; margin: 0 auto; padding: 24px 18px 64px; }
+    header { display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; }
+    .btn-row { display:flex; gap:10px; flex-wrap:wrap; }
+    .tab { padding:10px 14px; border-radius:10px; border:1px solid var(--stroke); background:rgba(255,255,255,0.02); color:var(--text); font-weight:600; }
+    .tab.active { border-color: var(--gold); color: var(--bg); background: linear-gradient(120deg,var(--gold),#e7c34a); box-shadow:0 10px 30px rgba(214,163,0,0.25); }
+    .card { background:var(--card); border:1px solid var(--stroke); border-radius:16px; padding:16px; box-shadow:0 20px 40px rgba(0,0,0,0.25); }
+    h1 { margin:0 0 6px; letter-spacing:-0.5px; }
+    .muted { color: var(--muted); }
+    table { width:100%; border-collapse:collapse; margin-top:12px; }
+    th, td { border-bottom:1px solid var(--stroke); padding:10px; text-align:left; }
+    th { color: var(--muted); font-weight:600; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div>
+        <div class="muted">FULBOX</div>
+        <h1>Заявки</h1>
+      </div>
+      <div class="btn-row">
+        <a class="tab {% if active_tab == 'journal' %}active{% endif %}" href="/orders/">Журнал заявок</a>
+        <a class="tab {% if active_tab == 'receiving' %}active{% endif %}" href="/orders/receiving/">Приемка</a>
+        <a class="tab {% if active_tab == 'processing' %}active{% endif %}" href="/orders/processing/">Обработка</a>
+        <a class="tab {% if active_tab == 'shipping' %}active{% endif %}" href="/orders/shipping/">Отгрузка</a>
+        <a class="tab {% if active_tab == 'other' %}active{% endif %}" href="/orders/other/">Прочее</a>
+        <a class="tab" href="/">На главную</a>
+      </div>
+    </header>
+
+    <div class="card">
+      {% if active_tab == 'journal' %}
+        <h3>Журнал заявок</h3>
+        <p class="muted">Пока пусто. Здесь будет список всех заявок с фильтрами и статусами.</p>
+        <table>
+          <thead><tr><th>№</th><th>Тип</th><th>Клиент</th><th>Статус</th><th>Дата</th></tr></thead>
+          <tbody>
+            <tr><td colspan="5" class="muted">Нет данных</td></tr>
+          </tbody>
+        </table>
+      {% elif active_tab == 'receiving' %}
+        <h3>Заявка на приемку</h3>
+        <p class="muted">Форма создания приемки будет здесь.</p>
+      {% elif active_tab == 'processing' %}
+        <h3>Заявка на обработку</h3>
+        <p class="muted">Форма создания обработки будет здесь.</p>
+      {% elif active_tab == 'shipping' %}
+        <h3>Заявка на отгрузку</h3>
+        <p class="muted">Форма создания отгрузки будет здесь.</p>
+      {% else %}
+        <h3>Прочие заявки</h3>
+        <p class="muted">Общие заявки и обращения.</p>
+      {% endif %}
+    </div>
+  </div>
+</body>
+</html>

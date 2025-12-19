@@ -1,0 +1,9 @@
+Общее
+Веб система работает на apex oracle
+интеграция идет через fast api
+
+это рабочая область апекса 
+https://lk.ffullbox.ru/ords/r/apex/workspace-sign-in/oracle-apex-sign-in?session=4976673451063
+схема fullbox
+логин USER1
+пароль FB_USER1!

@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>FULLBOX | Вход разработчика</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root { --bg: #0b0b0f; --card:#14141f; --gold:#d6a300; --gold-soft:#e7c34a; --text:#e8e8ed; --muted:#9aa0b3; --stroke: rgba(255,255,255,0.08); }
+    * { box-sizing: border-box; }
+    body { margin:0; background:var(--bg); color:var(--text); font-family:'Space Grotesk',system-ui,sans-serif; }
+    .wrap { max-width: 720px; margin: 0 auto; padding: 32px 18px 64px; }
+    .card { background:var(--card); border:1px solid var(--stroke); border-radius:18px; padding:20px; box-shadow:0 20px 50px rgba(0,0,0,0.4); }
+    h1 { margin:0 0 12px; letter-spacing:-0.5px; }
+    .muted { color: var(--muted); }
+    .grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(160px,1fr)); gap:12px; margin-top:16px; }
+    .btn { display:block; text-align:center; padding:12px; border-radius:12px; border:1px solid var(--stroke); background: rgba(255,255,255,0.03); color:var(--text); font-weight:600; text-decoration:none; transition: all .2s ease; }
+    .btn:hover { border-color: var(--gold); box-shadow:0 10px 25px rgba(214,163,0,0.25); transform: translateY(-2px); }
+    .btn.primary { background: linear-gradient(120deg,var(--gold),var(--gold-soft)); color: var(--bg); border-color: transparent; }
+    .header { display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; }
+    .logo { display:flex; align-items:center; gap:10px; }
+    .logo-mark { width:44px; height:44px; border-radius:12px; border:1px solid var(--stroke); display:grid; place-items:center; background:linear-gradient(135deg, rgba(214,163,0,0.2), rgba(20,20,31,0.8)); color:var(--gold); font-weight:700; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <div class="header">
+        <div class="logo">
+          <div class="logo-mark">FX</div>
+          <div>
+            <div style="font-weight:700; letter-spacing:1px;">FULLBOX</div>
+            <div class="muted">Вход для разработки</div>
+          </div>
+        </div>
+        <a class="btn" href="/">На главную</a>
+      </div>
+      <h1>Быстрый вход</h1>
+      <p class="muted">Кнопки авторизуют соответствующим пользователем (для разработки).</p>
+      <div class="grid">
+        {% for user in users %}
+          <a class="btn" href="/dev-login/{{ user.username }}/">{{ user.label }}</a>
+        {% empty %}
+          <div class="muted">Пользователи не найдены</div>
+        {% endfor %}
+      </div>
+      <div style="margin-top:16px;">
+        <a class="btn primary" href="/admin/">Открыть админку</a>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
