@@ -7,6 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+  {% load widget_tweaks %}
   <style>
     :root { --bg:#0b0b0f; --card:#14141f; --gold:#d6a300; --gold-soft:#e7c34a; --text:#e8e8ed; --muted:#9aa0b3; --stroke: rgba(255,255,255,0.08); }
     * { box-sizing: border-box; }
@@ -30,6 +31,7 @@
     .pill { display:inline-flex; align-items:center; gap:6px; padding:6px 10px; border-radius:10px; border:1px solid var(--stroke); background:rgba(255,255,255,0.05); }
     .section { border:1px solid var(--stroke); border-radius:14px; padding:12px; }
     .section h3 { margin:0 0 10px; }
+    .field-error { border-color: var(--gold-soft); box-shadow: 0 0 0 1px rgba(231,195,74,0.4); background:rgba(231,195,74,0.08); }
   </style>
 </head>
 <body>
@@ -48,69 +50,74 @@
     <div class="card">
       <form method="post">
         {% csrf_token %}
+        {% if form.non_field_errors %}
+          <div class="section" style="border-color: rgba(240,91,86,0.5); color:#ff7d7d;">
+            {{ form.non_field_errors }}
+          </div>
+        {% endif %}
         <div class="grid">
           <div>
             <label>Артикул *</label>
-            {{ form.sku_code }}
+            {{ form.sku_code.errors }}{{ form.sku_code|add_class:"field-error" if form.sku_code.errors else form.sku_code }}
           </div>
           <div>
             <label>Название *</label>
-            {{ form.name }}
+            {{ form.name.errors }}{{ form.name|add_class:"field-error" if form.name.errors else form.name }}
           </div>
           <div>
             <label>Бренд</label>
-            {{ form.brand }}
+            {{ form.brand.errors }}{{ form.brand|add_class:"field-error" if form.brand.errors else form.brand }}
           </div>
           <div>
             <label>Клиент</label>
-            {{ form.agency }}
+            {{ form.agency.errors }}{{ form.agency|add_class:"field-error" if form.agency.errors else form.agency }}
           </div>
           <div>
             <label>Маркет</label>
-            {{ form.market }}
+            {{ form.market.errors }}{{ form.market|add_class:"field-error" if form.market.errors else form.market }}
           </div>
           <div>
             <label>Источник</label>
-            {{ form.source }}
+            {{ form.source.errors }}{{ form.source|add_class:"field-error" if form.source.errors else form.source }}
           </div>
           <div>
             <label>Внешний ID</label>
-            {{ form.source_reference }}
+            {{ form.source_reference.errors }}{{ form.source_reference|add_class:"field-error" if form.source_reference.errors else form.source_reference }}
           </div>
         </div>
 
         <div class="section">
           <h3>Характеристики</h3>
           <div class="grid">
-            <div><label>Цвет (текст)</label>{{ form.color }}</div>
-            <div><label>Цвет (справочник)</label>{{ form.color_ref }}</div>
-            <div><label>Размер</label>{{ form.size }}</div>
-            <div><label>Вес, кг</label>{{ form.weight_kg }}</div>
-            <div><label>Объем</label>{{ form.volume }}</div>
-            <div><label>Длина, мм</label>{{ form.length_mm }}</div>
-            <div><label>Ширина, мм</label>{{ form.width_mm }}</div>
-            <div><label>Высота, мм</label>{{ form.height_mm }}</div>
-            <div><label>Склад</label>{{ form.stor_unit }}</div>
+            <div><label>Цвет (текст)</label>{{ form.color.errors }}{{ form.color|add_class:"field-error" if form.color.errors else form.color }}</div>
+            <div><label>Цвет (справочник)</label>{{ form.color_ref.errors }}{{ form.color_ref|add_class:"field-error" if form.color_ref.errors else form.color_ref }}</div>
+            <div><label>Размер</label>{{ form.size.errors }}{{ form.size|add_class:"field-error" if form.size.errors else form.size }}</div>
+            <div><label>Вес, кг</label>{{ form.weight_kg.errors }}{{ form.weight_kg|add_class:"field-error" if form.weight_kg.errors else form.weight_kg }}</div>
+            <div><label>Объем</label>{{ form.volume.errors }}{{ form.volume|add_class:"field-error" if form.volume.errors else form.volume }}</div>
+            <div><label>Длина, мм</label>{{ form.length_mm.errors }}{{ form.length_mm|add_class:"field-error" if form.length_mm.errors else form.length_mm }}</div>
+            <div><label>Ширина, мм</label>{{ form.width_mm.errors }}{{ form.width_mm|add_class:"field-error" if form.width_mm.errors else form.width_mm }}</div>
+            <div><label>Высота, мм</label>{{ form.height_mm.errors }}{{ form.height_mm|add_class:"field-error" if form.height_mm.errors else form.height_mm }}</div>
+            <div><label>Склад</label>{{ form.stor_unit.errors }}{{ form.stor_unit|add_class:"field-error" if form.stor_unit.errors else form.stor_unit }}</div>
           </div>
         </div>
 
         <div class="section">
           <h3>Дополнительно</h3>
           <div class="grid">
-            <div><label>Название для печати</label>{{ form.name_print }}</div>
-            <div><label>Код</label>{{ form.code }}</div>
-            <div><label>Пол</label>{{ form.gender }}</div>
-            <div><label>Сезон</label>{{ form.season }}</div>
-            <div><label>Доп. имя</label>{{ form.additional_name }}</div>
-            <div><label>Категория</label>{{ form.tovar_category }}</div>
-            <div><label>Вид товара</label>{{ form.vid_tovar }}</div>
-            <div><label>Тип товара</label>{{ form.type_tovar }}</div>
-            <div><label>Бренд/страна</label>{{ form.made_in }}</div>
+            <div><label>Название для печати</label>{{ form.name_print.errors }}{{ form.name_print|add_class:"field-error" if form.name_print.errors else form.name_print }}</div>
+            <div><label>Код</label>{{ form.code.errors }}{{ form.code|add_class:"field-error" if form.code.errors else form.code }}</div>
+            <div><label>Пол</label>{{ form.gender.errors }}{{ form.gender|add_class:"field-error" if form.gender.errors else form.gender }}</div>
+            <div><label>Сезон</label>{{ form.season.errors }}{{ form.season|add_class:"field-error" if form.season.errors else form.season }}</div>
+            <div><label>Доп. имя</label>{{ form.additional_name.errors }}{{ form.additional_name|add_class:"field-error" if form.additional_name.errors else form.additional_name }}</div>
+            <div><label>Категория</label>{{ form.tovar_category.errors }}{{ form.tovar_category|add_class:"field-error" if form.tovar_category.errors else form.tovar_category }}</div>
+            <div><label>Вид товара</label>{{ form.vid_tovar.errors }}{{ form.vid_tovar|add_class:"field-error" if form.vid_tovar.errors else form.vid_tovar }}</div>
+            <div><label>Тип товара</label>{{ form.type_tovar.errors }}{{ form.type_tovar|add_class:"field-error" if form.type_tovar.errors else form.type_tovar }}</div>
+            <div><label>Бренд/страна</label>{{ form.made_in.errors }}{{ form.made_in|add_class:"field-error" if form.made_in.errors else form.made_in }}</div>
           </div>
           <div class="grid">
-            <div><label>Состав</label>{{ form.composition }}</div>
-            <div><label>Дата произв.</label>{{ form.cr_product_date }}</div>
-            <div><label>Срок годн.</label>{{ form.end_product_date }}</div>
+            <div><label>Состав</label>{{ form.composition.errors }}{{ form.composition|add_class:"field-error" if form.composition.errors else form.composition }}</div>
+            <div><label>Дата произв.</label>{{ form.cr_product_date.errors }}{{ form.cr_product_date|add_class:"field-error" if form.cr_product_date.errors else form.cr_product_date }}</div>
+            <div><label>Срок годн.</label>{{ form.end_product_date.errors }}{{ form.end_product_date|add_class:"field-error" if form.end_product_date.errors else form.end_product_date }}</div>
           </div>
           <div class="row">
             <label class="pill">{{ form.honest_sign }} Честный знак</label>
@@ -122,12 +129,12 @@
         <div class="section">
           <h3>Медиа и описания</h3>
           <div class="grid">
-            <div><label>Ссылка на фото</label>{{ form.img }}</div>
-            <div><label>Комментарий к фото</label>{{ form.img_comment }}</div>
+            <div><label>Ссылка на фото</label>{{ form.img.errors }}{{ form.img|add_class:"field-error" if form.img.errors else form.img }}</div>
+            <div><label>Комментарий к фото</label>{{ form.img_comment.errors }}{{ form.img_comment|add_class:"field-error" if form.img_comment.errors else form.img_comment }}</div>
           </div>
           <div>
             <label>Описание</label>
-            {{ form.description }}
+            {{ form.description.errors }}{{ form.description|add_class:"field-error" if form.description.errors else form.description }}
           </div>
         </div>
 
