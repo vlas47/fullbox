@@ -47,6 +47,9 @@
       font-size:14px;
     }
     .suggest-item:hover { background:rgba(255,255,255,0.05); }
+    .actions { display:flex; gap:8px; align-items:center; }
+    .act-btn { display:inline-flex; align-items:center; justify-content:center; width:28px; height:28px; border:1px solid var(--stroke); border-radius:8px; background:rgba(255,255,255,0.04); color:var(--text); font-weight:700; font-size:14px; }
+    .act-btn:hover { border-color: var(--gold); box-shadow:0 6px 14px rgba(214,163,0,0.2); }
     .table-wrap { width:100%; overflow-x:auto; margin-top:16px; }
     table { min-width: 1800px; width:100%; border-collapse:collapse; }
     th, td {
@@ -139,6 +142,7 @@
         <table>
           <thead>
             <tr>
+              <th>Действия</th>
               <th class="sortable {% if sort_info.sku_code.active %}active {{ sort_info.sku_code.dir }}{% endif %}">
                 <a class="sort-label" href="{{ sort_info.sku_code.url }}">Артикул
                   <span class="sort-icon"><span class="arrow up"></span><span class="arrow down"></span></span>
@@ -455,6 +459,12 @@
           <tbody>
             {% for item in items %}
             <tr>
+              <td>
+                <div class="actions">
+                  <a class="act-btn" title="Редактировать" href="/admin/sku/sku/{{ item.id }}/change/">✎</a>
+                  <a class="act-btn" title="Создать новый на основе" href="{% url 'sku-clone' item.id %}">+</a>
+                </div>
+              </td>
               <td>{{ item.sku_code }}</td>
               <td>{{ item.name }}</td>
               <td>{{ item.brand|default:"-" }}</td>

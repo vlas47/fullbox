@@ -1,6 +1,8 @@
 from django.db import models
 from django.http import JsonResponse
+from django.urls import reverse
 from django.views.generic import ListView
+from django.shortcuts import get_object_or_404, redirect
 
 from .models import SKU
 
@@ -155,3 +157,59 @@ def suggest_sku(request):
         for sku in qs
     ]
     return JsonResponse({"items": items})
+
+
+def clone_sku(request, pk: int):
+    """Создает копию SKU и отправляет в админку для редактирования."""
+    orig = get_object_or_404(SKU, pk=pk)
+
+    base_code = f"{orig.sku_code}-copy"
+    new_code = base_code
+    counter = 1
+    while SKU.objects.filter(sku_code=new_code).exists():
+        new_code = f"{base_code}{counter}"
+        counter += 1
+
+    clone = SKU.objects.create(
+        sku_code=new_code,
+        name=orig.name,
+        brand=orig.brand,
+        market=orig.market,
+        agency=orig.agency,
+        color=orig.color,
+        color_ref=orig.color_ref,
+        size=orig.size,
+        name_print=orig.name_print,
+        code=None,
+        img=orig.img,
+        img_comment=orig.img_comment,
+        gender=orig.gender,
+        season=orig.season,
+        additional_name=orig.additional_name,
+        composition=orig.composition,
+        made_in=orig.made_in,
+        cr_product_date=orig.cr_product_date,
+        end_product_date=orig.end_product_date,
+        sign_akciz=orig.sign_akciz,
+        tovar_category=orig.tovar_category,
+        use_nds=orig.use_nds,
+        vid_tovar=orig.vid_tovar,
+        type_tovar=orig.type_tovar,
+        stor_unit=orig.stor_unit,
+        weight_kg=orig.weight_kg,
+        volume=orig.volume,
+        length_mm=orig.length_mm,
+        width_mm=orig.width_mm,
+        height_mm=orig.height_mm,
+        honest_sign=orig.honest_sign,
+        description=orig.description,
+        source=orig.source,
+        source_reference=None,
+    )
+
+    # Копируем фото (без уникальных ограничений)
+    for photo in orig.photos.all():
+        clone.photos.create(url=photo.url, sort_order=photo.sort_order)
+
+    admin_url = reverse("admin:sku_sku_change", args=[clone.pk])
+    return redirect(admin_url)
