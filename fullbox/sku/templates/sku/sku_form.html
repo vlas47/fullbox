@@ -58,66 +58,66 @@
         <div class="grid">
           <div>
             <label>Артикул *</label>
-            {{ form.sku_code.errors }}{{ form.sku_code|add_class:"field-error" if form.sku_code.errors else form.sku_code }}
+            {{ form.sku_code.errors }}{% if form.sku_code.errors %}{% render_field form.sku_code class+="field-error" %}{% else %}{% render_field form.sku_code %}{% endif %}
           </div>
           <div>
             <label>Название *</label>
-            {{ form.name.errors }}{{ form.name|add_class:"field-error" if form.name.errors else form.name }}
+            {{ form.name.errors }}{% if form.name.errors %}{% render_field form.name class+="field-error" %}{% else %}{% render_field form.name %}{% endif %}
           </div>
           <div>
             <label>Бренд</label>
-            {{ form.brand.errors }}{{ form.brand|add_class:"field-error" if form.brand.errors else form.brand }}
+            {{ form.brand.errors }}{% if form.brand.errors %}{% render_field form.brand class+="field-error" %}{% else %}{% render_field form.brand %}{% endif %}
           </div>
           <div>
             <label>Клиент</label>
-            {{ form.agency.errors }}{{ form.agency|add_class:"field-error" if form.agency.errors else form.agency }}
+            {{ form.agency.errors }}{% if form.agency.errors %}{% render_field form.agency class+="field-error" %}{% else %}{% render_field form.agency %}{% endif %}
           </div>
           <div>
             <label>Маркет</label>
-            {{ form.market.errors }}{{ form.market|add_class:"field-error" if form.market.errors else form.market }}
+            {{ form.market.errors }}{% if form.market.errors %}{% render_field form.market class+="field-error" %}{% else %}{% render_field form.market %}{% endif %}
           </div>
           <div>
             <label>Источник</label>
-            {{ form.source.errors }}{{ form.source|add_class:"field-error" if form.source.errors else form.source }}
+            {{ form.source.errors }}{% if form.source.errors %}{% render_field form.source class+="field-error" %}{% else %}{% render_field form.source %}{% endif %}
           </div>
           <div>
             <label>Внешний ID</label>
-            {{ form.source_reference.errors }}{{ form.source_reference|add_class:"field-error" if form.source_reference.errors else form.source_reference }}
+            {{ form.source_reference.errors }}{% if form.source_reference.errors %}{% render_field form.source_reference class+="field-error" %}{% else %}{% render_field form.source_reference %}{% endif %}
           </div>
         </div>
 
         <div class="section">
           <h3>Характеристики</h3>
           <div class="grid">
-            <div><label>Цвет (текст)</label>{{ form.color.errors }}{{ form.color|add_class:"field-error" if form.color.errors else form.color }}</div>
-            <div><label>Цвет (справочник)</label>{{ form.color_ref.errors }}{{ form.color_ref|add_class:"field-error" if form.color_ref.errors else form.color_ref }}</div>
-            <div><label>Размер</label>{{ form.size.errors }}{{ form.size|add_class:"field-error" if form.size.errors else form.size }}</div>
-            <div><label>Вес, кг</label>{{ form.weight_kg.errors }}{{ form.weight_kg|add_class:"field-error" if form.weight_kg.errors else form.weight_kg }}</div>
-            <div><label>Объем</label>{{ form.volume.errors }}{{ form.volume|add_class:"field-error" if form.volume.errors else form.volume }}</div>
-            <div><label>Длина, мм</label>{{ form.length_mm.errors }}{{ form.length_mm|add_class:"field-error" if form.length_mm.errors else form.length_mm }}</div>
-            <div><label>Ширина, мм</label>{{ form.width_mm.errors }}{{ form.width_mm|add_class:"field-error" if form.width_mm.errors else form.width_mm }}</div>
-            <div><label>Высота, мм</label>{{ form.height_mm.errors }}{{ form.height_mm|add_class:"field-error" if form.height_mm.errors else form.height_mm }}</div>
-            <div><label>Склад</label>{{ form.stor_unit.errors }}{{ form.stor_unit|add_class:"field-error" if form.stor_unit.errors else form.stor_unit }}</div>
+            <div><label>Цвет (текст)</label>{{ form.color.errors }}{% if form.color.errors %}{% render_field form.color class+="field-error" %}{% else %}{% render_field form.color %}{% endif %}</div>
+            <div><label>Цвет (справочник)</label>{{ form.color_ref.errors }}{% if form.color_ref.errors %}{% render_field form.color_ref class+="field-error" %}{% else %}{% render_field form.color_ref %}{% endif %}</div>
+            <div><label>Размер</label>{{ form.size.errors }}{% if form.size.errors %}{% render_field form.size class+="field-error" %}{% else %}{% render_field form.size %}{% endif %}</div>
+            <div><label>Вес, кг</label>{{ form.weight_kg.errors }}{% if form.weight_kg.errors %}{% render_field form.weight_kg class+="field-error" %}{% else %}{% render_field form.weight_kg %}{% endif %}</div>
+            <div><label>Объем</label>{{ form.volume.errors }}{% if form.volume.errors %}{% render_field form.volume class+="field-error" %}{% else %}{% render_field form.volume %}{% endif %}</div>
+            <div><label>Длина, мм</label>{{ form.length_mm.errors }}{% if form.length_mm.errors %}{% render_field form.length_mm class+="field-error" %}{% else %}{% render_field form.length_mm %}{% endif %}</div>
+            <div><label>Ширина, мм</label>{{ form.width_mm.errors }}{% if form.width_mm.errors %}{% render_field form.width_mm class+="field-error" %}{% else %}{% render_field form.width_mm %}{% endif %}</div>
+            <div><label>Высота, мм</label>{{ form.height_mm.errors }}{% if form.height_mm.errors %}{% render_field form.height_mm class+="field-error" %}{% else %}{% render_field form.height_mm %}{% endif %}</div>
+            <div><label>Склад</label>{{ form.stor_unit.errors }}{% if form.stor_unit.errors %}{% render_field form.stor_unit class+="field-error" %}{% else %}{% render_field form.stor_unit %}{% endif %}</div>
           </div>
         </div>
 
         <div class="section">
           <h3>Дополнительно</h3>
           <div class="grid">
-            <div><label>Название для печати</label>{{ form.name_print.errors }}{{ form.name_print|add_class:"field-error" if form.name_print.errors else form.name_print }}</div>
-            <div><label>Код</label>{{ form.code.errors }}{{ form.code|add_class:"field-error" if form.code.errors else form.code }}</div>
-            <div><label>Пол</label>{{ form.gender.errors }}{{ form.gender|add_class:"field-error" if form.gender.errors else form.gender }}</div>
-            <div><label>Сезон</label>{{ form.season.errors }}{{ form.season|add_class:"field-error" if form.season.errors else form.season }}</div>
-            <div><label>Доп. имя</label>{{ form.additional_name.errors }}{{ form.additional_name|add_class:"field-error" if form.additional_name.errors else form.additional_name }}</div>
-            <div><label>Категория</label>{{ form.tovar_category.errors }}{{ form.tovar_category|add_class:"field-error" if form.tovar_category.errors else form.tovar_category }}</div>
-            <div><label>Вид товара</label>{{ form.vid_tovar.errors }}{{ form.vid_tovar|add_class:"field-error" if form.vid_tovar.errors else form.vid_tovar }}</div>
-            <div><label>Тип товара</label>{{ form.type_tovar.errors }}{{ form.type_tovar|add_class:"field-error" if form.type_tovar.errors else form.type_tovar }}</div>
-            <div><label>Бренд/страна</label>{{ form.made_in.errors }}{{ form.made_in|add_class:"field-error" if form.made_in.errors else form.made_in }}</div>
+            <div><label>Название для печати</label>{{ form.name_print.errors }}{% if form.name_print.errors %}{% render_field form.name_print class+="field-error" %}{% else %}{% render_field form.name_print %}{% endif %}</div>
+            <div><label>Код</label>{{ form.code.errors }}{% if form.code.errors %}{% render_field form.code class+="field-error" %}{% else %}{% render_field form.code %}{% endif %}</div>
+            <div><label>Пол</label>{{ form.gender.errors }}{% if form.gender.errors %}{% render_field form.gender class+="field-error" %}{% else %}{% render_field form.gender %}{% endif %}</div>
+            <div><label>Сезон</label>{{ form.season.errors }}{% if form.season.errors %}{% render_field form.season class+="field-error" %}{% else %}{% render_field form.season %}{% endif %}</div>
+            <div><label>Доп. имя</label>{{ form.additional_name.errors }}{% if form.additional_name.errors %}{% render_field form.additional_name class+="field-error" %}{% else %}{% render_field form.additional_name %}{% endif %}</div>
+            <div><label>Категория</label>{{ form.tovar_category.errors }}{% if form.tovar_category.errors %}{% render_field form.tovar_category class+="field-error" %}{% else %}{% render_field form.tovar_category %}{% endif %}</div>
+            <div><label>Вид товара</label>{{ form.vid_tovar.errors }}{% if form.vid_tovar.errors %}{% render_field form.vid_tovar class+="field-error" %}{% else %}{% render_field form.vid_tovar %}{% endif %}</div>
+            <div><label>Тип товара</label>{{ form.type_tovar.errors }}{% if form.type_tovar.errors %}{% render_field form.type_tovar class+="field-error" %}{% else %}{% render_field form.type_tovar %}{% endif %}</div>
+            <div><label>Бренд/страна</label>{{ form.made_in.errors }}{% if form.made_in.errors %}{% render_field form.made_in class+="field-error" %}{% else %}{% render_field form.made_in %}{% endif %}</div>
           </div>
           <div class="grid">
-            <div><label>Состав</label>{{ form.composition.errors }}{{ form.composition|add_class:"field-error" if form.composition.errors else form.composition }}</div>
-            <div><label>Дата произв.</label>{{ form.cr_product_date.errors }}{{ form.cr_product_date|add_class:"field-error" if form.cr_product_date.errors else form.cr_product_date }}</div>
-            <div><label>Срок годн.</label>{{ form.end_product_date.errors }}{{ form.end_product_date|add_class:"field-error" if form.end_product_date.errors else form.end_product_date }}</div>
+            <div><label>Состав</label>{{ form.composition.errors }}{% if form.composition.errors %}{% render_field form.composition class+="field-error" %}{% else %}{% render_field form.composition %}{% endif %}</div>
+            <div><label>Дата произв.</label>{{ form.cr_product_date.errors }}{% if form.cr_product_date.errors %}{% render_field form.cr_product_date class+="field-error" %}{% else %}{% render_field form.cr_product_date %}{% endif %}</div>
+            <div><label>Срок годн.</label>{{ form.end_product_date.errors }}{% if form.end_product_date.errors %}{% render_field form.end_product_date class+="field-error" %}{% else %}{% render_field form.end_product_date %}{% endif %}</div>
           </div>
           <div class="row">
             <label class="pill">{{ form.honest_sign }} Честный знак</label>
@@ -129,12 +129,12 @@
         <div class="section">
           <h3>Медиа и описания</h3>
           <div class="grid">
-            <div><label>Ссылка на фото</label>{{ form.img.errors }}{{ form.img|add_class:"field-error" if form.img.errors else form.img }}</div>
-            <div><label>Комментарий к фото</label>{{ form.img_comment.errors }}{{ form.img_comment|add_class:"field-error" if form.img_comment.errors else form.img_comment }}</div>
+            <div><label>Ссылка на фото</label>{{ form.img.errors }}{% if form.img.errors %}{% render_field form.img class+="field-error" %}{% else %}{% render_field form.img %}{% endif %}</div>
+            <div><label>Комментарий к фото</label>{{ form.img_comment.errors }}{% if form.img_comment.errors %}{% render_field form.img_comment class+="field-error" %}{% else %}{% render_field form.img_comment %}{% endif %}</div>
           </div>
           <div>
             <label>Описание</label>
-            {{ form.description.errors }}{{ form.description|add_class:"field-error" if form.description.errors else form.description }}
+            {{ form.description.errors }}{% if form.description.errors %}{% render_field form.description class+="field-error" %}{% else %}{% render_field form.description %}{% endif %}
           </div>
         </div>
 
