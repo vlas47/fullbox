@@ -1,4 +1,5 @@
 from django.db import models
+from django.db.models import Q
 
 
 class Agency(models.Model):
@@ -112,7 +113,7 @@ class SKU(models.Model):
         ("marketplace", "Синхронизация маркетплейс"),
     ]
 
-    sku_code = models.CharField("Артикул", max_length=64, unique=True)
+    sku_code = models.CharField("Артикул", max_length=64)
     name = models.CharField("Наименование", max_length=255)
     brand = models.CharField("Бренд", max_length=255, blank=True, null=True)
     market = models.ForeignKey(
@@ -179,6 +180,13 @@ class SKU(models.Model):
         verbose_name = "SKU"
         verbose_name_plural = "Номенклатура"
         ordering = ["sku_code"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["agency", "sku_code"],
+                condition=Q(deleted=False),
+                name="uniq_sku_code_per_agency_active",
+            )
+        ]
 
     def __str__(self) -> str:
         return f"{self.sku_code} - {self.name}"
