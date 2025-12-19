@@ -5,6 +5,7 @@ from django.views.generic import ListView
 from django.shortcuts import get_object_or_404, redirect
 
 from .models import SKU
+from audit.models import log_sku_change
 
 
 class SKUListView(ListView):
@@ -210,6 +211,8 @@ def clone_sku(request, pk: int):
     # Копируем фото (без уникальных ограничений)
     for photo in orig.photos.all():
         clone.photos.create(url=photo.url, sort_order=photo.sort_order)
+
+    log_sku_change("clone", clone, user=request.user if request.user.is_authenticated else None, description=f"Копия из {orig.sku_code}")
 
     admin_url = reverse("admin:sku_sku_change", args=[clone.pk])
     return redirect(admin_url)
