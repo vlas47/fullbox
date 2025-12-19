@@ -32,7 +32,7 @@ class Agency(models.Model):
         ordering = ["agn_name"]
 
     def __str__(self) -> str:
-        return self.agn_name
+        return self.agn_name or f"Клиент {self.id}"
 
 
 class Market(models.Model):
@@ -81,7 +81,7 @@ class Store(models.Model):
         ordering = ["id"]
 
     def __str__(self) -> str:
-        return self.stor_name
+        return self.stor_name or f"Склад {self.id}"
 
 
 class MarketCredential(models.Model):
