@@ -106,10 +106,10 @@
           <div class="grid">
             <div><label>Название для печати</label>{{ form.name_print.errors }}{% if form.name_print.errors %}{% render_field form.name_print class+="field-error" %}{% else %}{% render_field form.name_print %}{% endif %}</div>
             <div>
-              <label>Код</label>
+              <label>Код <span class="muted" style="font-weight:400;">(внутренний Code128/QR)</span></label>
               <div style="display:flex; gap:8px; align-items:center;">
                 {{ form.code.errors }}{% if form.code.errors %}{% render_field form.code class+="field-error" id="field-code" %}{% else %}{% render_field form.code id="field-code" %}{% endif %}
-                <button type="button" id="gen-code" class="btn" style="padding:8px 10px; min-width:40px;" title="Сгенерировать внутренний ШК">⚡</button>
+                <button type="button" id="gen-code" class="btn" style="padding:8px 10px; min-width:40px;" title="Сгенерировать внутренний ШК (Code128/QR)">⚡</button>
               </div>
             </div>
             <div><label>Пол</label>{{ form.gender.errors }}{% if form.gender.errors %}{% render_field form.gender class+="field-error" %}{% else %}{% render_field form.gender %}{% endif %}</div>
@@ -158,9 +158,9 @@
     const codeInput = document.getElementById('field-code');
     if (genBtn && codeInput) {
       genBtn.addEventListener('click', () => {
-        const now = Date.now().toString(36).toUpperCase();
-        const rand = Math.random().toString(36).substring(2, 6).toUpperCase();
-        codeInput.value = `INT-${now}-${rand}`;
+        const ts = Date.now().toString(36).toUpperCase();
+        const rand = Math.random().toString(36).substring(2, 8).toUpperCase();
+        codeInput.value = `C128-${ts}-${rand}`;
       });
     }
   })();
