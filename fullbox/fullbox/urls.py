@@ -28,6 +28,7 @@ urlpatterns = [
     path('cabinet/<str:role>/', views.role_cabinet, name='role-cabinet'),
     path('admin/audit/', RedirectView.as_view(pattern_name='admin:audit_auditjournal_changelist', permanent=False)),
     path('admin/', admin.site.urls),
+    path('scanner-test/', TemplateView.as_view(template_name='scanner_test.html'), name='scanner-test'),
     path('orders/', include('orders.urls')),
     path('client/', include('client_cabinet.urls')),
     path('sku/', include('sku.urls')),
