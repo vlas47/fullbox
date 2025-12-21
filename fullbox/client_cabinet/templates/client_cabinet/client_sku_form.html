@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ title }} | {{ agency.agn_name|default:"Клиент" }}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+  {% load widget_tweaks %}
+  <style>
+    :root { --bg:#0b0b0f; --card:#14141f; --gold:#d6a300; --gold-soft:#e7c34a; --text:#e8e8ed; --muted:#9aa0b3; --stroke: rgba(255,255,255,0.08); }
+    * { box-sizing: border-box; }
+    body { margin:0; background:var(--bg); color:var(--text); font-family:'Space Grotesk',system-ui,sans-serif; }
+    a { color: inherit; text-decoration: none; }
+    .wrap { max-width: 1100px; margin: 0 auto; padding: 28px 18px 64px; }
+    header { display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; }
+    h1 { margin:0; letter-spacing:-0.5px; }
+    .muted { color: var(--muted); }
+    .controls { display:flex; gap:10px; flex-wrap:wrap; }
+    .btn { padding:10px 14px; border-radius:10px; border:1px solid var(--stroke); background:rgba(255,255,255,0.02); color:var(--text); font-weight:600; }
+    .btn:hover { border-color: var(--gold); box-shadow:0 10px 25px rgba(214,163,0,0.25); }
+    .btn.primary { background: linear-gradient(120deg,var(--gold),var(--gold-soft)); color: var(--bg); border-color: transparent; }
+    .card { background:var(--card); border:1px solid var(--stroke); border-radius:16px; padding:16px; box-shadow:0 18px 45px rgba(0,0,0,0.35); }
+    form { display:grid; gap:12px; }
+    .grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap:12px; }
+    label { display:block; font-weight:600; margin-bottom:6px; color:var(--muted); }
+    input, select, textarea { width:100%; padding:10px; border-radius:10px; border:1px solid var(--stroke); background:rgba(255,255,255,0.03); color:var(--text); }
+    textarea { resize:vertical; }
+    .row { display:grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap:12px; }
+    .pill { display:inline-flex; align-items:center; gap:6px; padding:6px 10px; border-radius:10px; border:1px solid var(--stroke); background:rgba(255,255,255,0.05); }
+    .section { border:1px solid var(--stroke); border-radius:14px; padding:12px; }
+    .section h3 { margin:0 0 10px; }
+    .field-error { border-color: var(--gold-soft); box-shadow: 0 0 0 1px rgba(231,195,74,0.4); background:rgba(231,195,74,0.08); }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div>
+        <div class="muted">FULLBOX · {{ agency.agn_name|default:"Клиент" }}</div>
+        <h1>{{ title }}</h1>
+        <div class="pill">Идем обратно в список клиента</div>
+      </div>
+      <div class="controls">
+        <a class="btn" href="/client/{{ agency.id }}/sku/">К номенклатуре клиента</a>
+        <a class="btn" href="/client/dashboard/?client={{ agency.id }}">Кабинет клиента</a>
+      </div>
+    </header>
+
+    <div class="card">
+      <form method="post">
+        {% csrf_token %}
+        {% if form.non_field_errors %}
+          <div class="section" style="border-color: rgba(240,91,86,0.5); color:#ff7d7d;">
+            {{ form.non_field_errors }}
+          </div>
+        {% endif %}
+        <div class="grid">
+          <div>
+            <label>Артикул *</label>
+            {{ form.sku_code.errors }}{% if form.sku_code.errors %}{% render_field form.sku_code class+="field-error" %}{% else %}{% render_field form.sku_code %}{% endif %}
+          </div>
+          <div>
+            <label>Название *</label>
+            {{ form.name.errors }}{% if form.name.errors %}{% render_field form.name class+="field-error" %}{% else %}{% render_field form.name %}{% endif %}
+          </div>
+          <div>
+            <label>Бренд</label>
+            {{ form.brand.errors }}{% if form.brand.errors %}{% render_field form.brand class+="field-error" %}{% else %}{% render_field form.brand %}{% endif %}
+          </div>
+          <div>
+            <label>Клиент</label>
+            {% render_field form.agency readonly="readonly" %}
+          </div>
+          <div>
+            <label>Маркет</label>
+            {{ form.market.errors }}{% if form.market.errors %}{% render_field form.market class+="field-error" %}{% else %}{% render_field form.market %}{% endif %}
+          </div>
+          <div>
+            <label>Источник</label>
+            {{ form.source.errors }}{% if form.source.errors %}{% render_field form.source class+="field-error" %}{% else %}{% render_field form.source %}{% endif %}
+          </div>
+          <div>
+            <label>Внешний ID</label>
+            {{ form.source_reference.errors }}{% if form.source_reference.errors %}{% render_field form.source_reference class+="field-error" %}{% else %}{% render_field form.source_reference %}{% endif %}
+          </div>
+        </div>
+
+        <div class="section">
+          <h3>Характеристики</h3>
+          <div class="grid">
+            <div><label>Цвет (текст)</label>{{ form.color.errors }}{% if form.color.errors %}{% render_field form.color class+="field-error" %}{% else %}{% render_field form.color %}{% endif %}</div>
+            <div><label>Цвет (справочник)</label>{{ form.color_ref.errors }}{% if form.color_ref.errors %}{% render_field form.color_ref class+="field-error" %}{% else %}{% render_field form.color_ref %}{% endif %}</div>
+            <div><label>Размер</label>{{ form.size.errors }}{% if form.size.errors %}{% render_field form.size class+="field-error" %}{% else %}{% render_field form.size %}{% endif %}</div>
+            <div><label>Вес, кг</label>{{ form.weight_kg.errors }}{% if form.weight_kg.errors %}{% render_field form.weight_kg class+="field-error" %}{% else %}{% render_field form.weight_kg %}{% endif %}</div>
+            <div><label>Объем</label>{{ form.volume.errors }}{% if form.volume.errors %}{% render_field form.volume class+="field-error" %}{% else %}{% render_field form.volume %}{% endif %}</div>
+            <div><label>Длина, мм</label>{{ form.length_mm.errors }}{% if form.length_mm.errors %}{% render_field form.length_mm class+="field-error" %}{% else %}{% render_field form.length_mm %}{% endif %}</div>
+            <div><label>Ширина, мм</label>{{ form.width_mm.errors }}{% if form.width_mm.errors %}{% render_field form.width_mm class+="field-error" %}{% else %}{% render_field form.width_mm %}{% endif %}</div>
+            <div><label>Высота, мм</label>{{ form.height_mm.errors }}{% if form.height_mm.errors %}{% render_field form.height_mm class+="field-error" %}{% else %}{% render_field form.height_mm %}{% endif %}</div>
+            <div><label>Склад</label>{{ form.stor_unit.errors }}{% if form.stor_unit.errors %}{% render_field form.stor_unit class+="field-error" %}{% else %}{% render_field form.stor_unit %}{% endif %}</div>
+          </div>
+        </div>
+
+        <div class="section">
+          <h3>Дополнительно</h3>
+          <div class="grid">
+            <div><label>Название для печати</label>{{ form.name_print.errors }}{% if form.name_print.errors %}{% render_field form.name_print class+="field-error" %}{% else %}{% render_field form.name_print %}{% endif %}</div>
+            <div>
+              <label>Код <span class="muted" style="font-weight:400;">(внутренний Code128/QR)</span></label>
+              <div style="display:flex; gap:8px; align-items:center;">
+                {{ form.code.errors }}{% if form.code.errors %}{% render_field form.code class+="field-error" id="field-code" %}{% else %}{% render_field form.code id="field-code" %}{% endif %}
+                <button type="button" id="gen-code" class="btn" style="padding:8px 10px; min-width:40px;" title="Сгенерировать внутренний ШК (Code128/QR)">?</button>
+              </div>
+            </div>
+            <div><label>Пол</label>{{ form.gender.errors }}{% if form.gender.errors %}{% render_field form.gender class+="field-error" %}{% else %}{% render_field form.gender %}{% endif %}</div>
+            <div><label>Сезон</label>{{ form.season.errors }}{% if form.season.errors %}{% render_field form.season class+="field-error" %}{% else %}{% render_field form.season %}{% endif %}</div>
+            <div><label>Доп. имя</label>{{ form.additional_name.errors }}{% if form.additional_name.errors %}{% render_field form.additional_name class+="field-error" %}{% else %}{% render_field form.additional_name %}{% endif %}</div>
+            <div><label>Категория</label>{{ form.tovar_category.errors }}{% if form.tovar_category.errors %}{% render_field form.tovar_category class+="field-error" %}{% else %}{% render_field form.tovar_category %}{% endif %}</div>
+            <div><label>Вид товара</label>{{ form.vid_tovar.errors }}{% if form.vid_tovar.errors %}{% render_field form.vid_tovar class+="field-error" %}{% else %}{% render_field form.vid_tovar %}{% endif %}</div>
+            <div><label>Тип товара</label>{{ form.type_tovar.errors }}{% if form.type_tovar.errors %}{% render_field form.type_tovar class+="field-error" %}{% else %}{% render_field form.type_tovar %}{% endif %}</div>
+            <div><label>Бренд/страна</label>{{ form.made_in.errors }}{% if form.made_in.errors %}{% render_field form.made_in class+="field-error" %}{% else %}{% render_field form.made_in %}{% endif %}</div>
+          </div>
+          <div class="grid">
+            <div><label>Состав</label>{{ form.composition.errors }}{% if form.composition.errors %}{% render_field form.composition class+="field-error" %}{% else %}{% render_field form.composition %}{% endif %}</div>
+            <div><label>Дата произв.</label>{{ form.cr_product_date.errors }}{% if form.cr_product_date.errors %}{% render_field form.cr_product_date class+="field-error" %}{% else %}{% render_field form.cr_product_date %}{% endif %}</div>
+            <div><label>Срок годн.</label>{{ form.end_product_date.errors }}{% if form.end_product_date.errors %}{% render_field form.end_product_date class+="field-error" %}{% else %}{% render_field form.end_product_date %}{% endif %}</div>
+          </div>
+          <div class="row">
+            <label class="pill">{{ form.honest_sign }} Честный знак</label>
+            <label class="pill">{{ form.use_nds }} НДС</label>
+            <label class="pill">{{ form.sign_akciz }} Акциз</label>
+          </div>
+        </div>
+
+        <div class="section">
+          <h3>Медиа и описания</h3>
+          <div class="grid">
+            <div><label>Ссылка на фото</label>{{ form.img.errors }}{% if form.img.errors %}{% render_field form.img class+="field-error" %}{% else %}{% render_field form.img %}{% endif %}</div>
+            <div><label>Комментарий к фото</label>{{ form.img_comment.errors }}{% if form.img_comment.errors %}{% render_field form.img_comment class+="field-error" %}{% else %}{% render_field form.img_comment %}{% endif %}</div>
+          </div>
+          <div>
+            <label>Описание</label>
+            {{ form.description.errors }}{% if form.description.errors %}{% render_field form.description class+="field-error" %}{% else %}{% render_field form.description %}{% endif %}
+          </div>
+        </div>
+
+        <div style="display:flex; gap:10px; flex-wrap:wrap;">
+          <button type="submit" class="btn primary">{{ submit_label }}</button>
+          <a class="btn" href="/client/{{ agency.id }}/sku/">Отмена</a>
+        </div>
+      </form>
+    </div>
+  </div>
+</body>
+<script>
+  (function(){
+    const genBtn = document.getElementById('gen-code');
+    const codeInput = document.getElementById('field-code');
+    if (genBtn && codeInput) {
+      genBtn.addEventListener('click', () => {
+        const ts = Date.now().toString(36).toUpperCase();
+        const rand = Math.random().toString(36).substring(2, 8).toUpperCase();
+        codeInput.value = `C128-${ts}-${rand}`;
+      });
+    }
+  })();
+</script>
+</html>

@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Кабинет клиента | FULLBOX</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root { --bg:#0b0b0f; --card:#14141f; --gold:#d6a300; --gold-soft:#e7c34a; --text:#e8e8ed; --muted:#9aa0b3; --stroke: rgba(255,255,255,0.08); }
+    * { box-sizing: border-box; }
+    body { margin:0; background:var(--bg); color:var(--text); font-family:'Space Grotesk',system-ui,sans-serif; }
+    a { color: inherit; text-decoration: none; }
+    .wrap { max-width: 1200px; margin: 0 auto; padding: 28px 18px 64px; }
+    header { display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; }
+    h1 { margin:0; letter-spacing:-0.4px; }
+    .muted { color: var(--muted); }
+    .btn { padding:10px 14px; border-radius:10px; border:1px solid var(--stroke); background:rgba(255,255,255,0.02); color:var(--text); font-weight:600; }
+    .btn:hover { border-color: var(--gold); box-shadow:0 10px 25px rgba(214,163,0,0.25); }
+    .btn.primary { background: linear-gradient(120deg,var(--gold),var(--gold-soft)); color: var(--bg); border-color: transparent; }
+    .grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap:12px; margin-top:16px; }
+    .card { background:var(--card); border:1px solid var(--stroke); border-radius:16px; padding:16px; box-shadow:0 18px 45px rgba(0,0,0,0.35); display:grid; gap:8px; }
+    .stat { display:flex; justify-content:space-between; align-items:center; }
+    .value { font-size:26px; font-weight:700; }
+    .badge { display:inline-flex; align-items:center; gap:6px; padding:6px 10px; border-radius:999px; border:1px solid var(--stroke); background:rgba(255,255,255,0.03); color:var(--muted); font-size:13px; }
+    .list { list-style:none; margin:0; padding:0; display:grid; gap:8px; }
+    .row { display:flex; justify-content:space-between; gap:8px; align-items:center; }
+    .tag { display:inline-flex; align-items:center; gap:6px; padding:6px 10px; border-radius:10px; border:1px solid var(--stroke); background:rgba(255,255,255,0.04); }
+    .pill { display:inline-flex; align-items:center; gap:6px; padding:6px 10px; border-radius:999px; border:1px solid var(--stroke); background:rgba(214,163,0,0.12); color:var(--gold); font-weight:600; }
+    .actions { display:flex; gap:10px; flex-wrap:wrap; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div>
+        <div class="muted">FULLBOX</div>
+        <h1>Кабинет клиента</h1>
+        <div class="muted">Контур MVP: заявки, остатки, счета и уведомления</div>
+        {% if selected_client %}
+          <div class="pill" style="margin-top:8px;">Клиент: {{ selected_client.agn_name|default:"Без названия" }}{% if selected_client.inn %} · ИНН {{ selected_client.inn }}{% endif %}</div>
+        {% endif %}
+      </div>
+      <div class="actions">
+        <a class="btn primary" href="/orders/">Создать заявку</a>
+        {% if selected_client %}
+          <a class="btn" href="/client/{{ selected_client.id }}/sku/">Номенклатура</a>
+          <a class="btn" href="/client/{{ selected_client.id }}/receiving/new/">Заявка на приемку</a>
+        {% else %}
+          <a class="btn" href="/sku/">Номенклатура</a>
+        {% endif %}
+        <a class="btn" href="/">На главную</a>
+      </div>
+    </header>
+
+    <div class="grid">
+      <div class="card">
+        <div class="stat">
+          <div>
+            <div class="muted">Баланс</div>
+            <div class="value">+125 400 ₽</div>
+          </div>
+          <span class="badge">Оплачен до 15.01</span>
+        </div>
+        <div class="row">
+          <span class="tag">Лимит: 300 000 ₽</span>
+          <span class="tag">Доступно: 174 600 ₽</span>
+        </div>
+        <a class="btn" href="#">Перейти к счетам и оплатам</a>
+      </div>
+
+      <div class="card">
+        <div class="stat">
+          <div>
+            <div class="muted">Заявки</div>
+            <div class="value">8 активных</div>
+          </div>
+          <span class="pill">Новых: 2</span>
+        </div>
+        <ul class="list">
+          <li class="row"><span>Приемка</span><span class="badge">3 в работе</span></li>
+          <li class="row"><span>Обработка</span><span class="badge">2 запланировано</span></li>
+          <li class="row"><span>Отгрузка</span><span class="badge">3 готовится</span></li>
+        </ul>
+        <div class="actions">
+          <a class="btn primary" href="/orders/">Открыть журнал</a>
+          <a class="btn" href="/orders/receiving/">Новая приемка</a>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="stat">
+          <div>
+            <div class="muted">Остатки</div>
+            <div class="value">12 480 ед.</div>
+          </div>
+          <span class="badge">3 склада</span>
+        </div>
+        <ul class="list">
+          <li class="row"><span>КГТ (зона А)</span><span class="tag">4 120</span></li>
+          <li class="row"><span>WB/фулфилмент</span><span class="tag">6 900</span></li>
+          <li class="row"><span>Возвраты</span><span class="tag">1 460</span></li>
+        </ul>
+        <a class="btn" href="#">Перейти к остаткам и партиям</a>
+      </div>
+    </div>
+
+    <div class="grid">
+      <div class="card">
+        <div class="stat" style="margin-bottom:6px;">
+          <div>
+            <div class="muted">Уведомления</div>
+            <div class="value">3</div>
+          </div>
+          <span class="badge">e-mail + кабинет</span>
+        </div>
+        <ul class="list">
+          <li class="row"><span>Отгрузка #2203 ожидает подтверждение ТК</span><span class="badge">Сейчас</span></li>
+          <li class="row"><span>Счет #904 оплачен</span><span class="badge">Сегодня</span></li>
+          <li class="row"><span>Партия 15/12 размещена</span><span class="badge">Вчера</span></li>
+        </ul>
+        <a class="btn" href="#">Все уведомления</a>
+      </div>
+
+      <div class="card">
+        <div class="stat" style="margin-bottom:8px;">
+          <div>
+            <div class="muted">Быстрые действия</div>
+            <div class="value">Куда пойдем?</div>
+          </div>
+          <span class="badge">MVP</span>
+        </div>
+        <div class="actions">
+          <a class="btn primary" href="/sku/new/">Добавить SKU</a>
+          <a class="btn" href="/audit/">История SKU</a>
+          <a class="btn" href="/orders/shipping/">Создать отгрузку</a>
+          <a class="btn" href="/dev/">Dev</a>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

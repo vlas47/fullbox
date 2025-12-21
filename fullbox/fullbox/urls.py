@@ -29,6 +29,7 @@ urlpatterns = [
     path('admin/audit/', RedirectView.as_view(pattern_name='admin:audit_auditjournal_changelist', permanent=False)),
     path('admin/', admin.site.urls),
     path('orders/', include('orders.urls')),
+    path('client/', include('client_cabinet.urls')),
     path('sku/', include('sku.urls')),
     path('audit/', include('audit.urls')),
 ]

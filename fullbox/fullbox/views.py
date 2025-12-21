@@ -1,6 +1,7 @@
 from django.contrib.auth import get_user_model, login
 from django.http import HttpResponseRedirect
 from django.shortcuts import redirect, render
+from sku.models import Agency
 
 
 DEV_USERS = [
@@ -30,7 +31,8 @@ def login_menu(request):
         for username, label in DEV_USERS
         if username in existing
     ]
-    return render(request, "login_menu.html", {"users": items})
+    agencies = Agency.objects.order_by("agn_name")
+    return render(request, "login_menu.html", {"users": items, "agencies": agencies})
 
 
 def dev_login(request, username):

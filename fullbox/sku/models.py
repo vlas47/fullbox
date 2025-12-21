@@ -5,7 +5,7 @@ from django.db.models import Q
 class Agency(models.Model):
     """Клиент/агент из fb_agns."""
 
-    id = models.PositiveIntegerField(primary_key=True)
+    id = models.AutoField(primary_key=True)
     agn_name = models.CharField("Организация", max_length=255, blank=True, null=True)
     inn = models.CharField("ИНН", max_length=32, blank=True, null=True)
     kpp = models.CharField("КПП", max_length=32, blank=True, null=True)
@@ -26,6 +26,7 @@ class Agency(models.Model):
     bank_koresp_account = models.CharField("Корр. счет", max_length=64, blank=True, null=True)
     contract_numb = models.CharField("Номер договора", max_length=64, blank=True, null=True)
     contract_link = models.CharField("Ссылка на договор", max_length=255, blank=True, null=True)
+    archived = models.BooleanField("Архивирован", default=False)
 
     class Meta:
         verbose_name = "Клиент"

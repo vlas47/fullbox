@@ -41,10 +41,11 @@ class SKUAdmin(admin.ModelAdmin):
         "size",
         "honest_sign",
         "use_nds",
+        "deleted",
         "updated_at",
     )
     search_fields = ("sku_code", "name", "barcodes__value", "brand")
-    list_filter = ("source", "honest_sign", "use_nds", "market", "color_ref")
+    list_filter = ("source", "honest_sign", "use_nds", "market", "color_ref", "deleted")
     inlines = [SKUBarcodeInline, SKUPhotoInline, MarketplaceBindingInline]
     ordering = ("sku_code",)
 
