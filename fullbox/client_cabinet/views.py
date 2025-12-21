@@ -364,26 +364,18 @@ class ClientReceivingCreateView(TemplateView):
     def post(self, request, *args, **kwargs):
         # TODO: сохранить заявку; пока только отображаем успех и пишем в аудит
         payload = {
-            "eta": request.POST.get("eta"),
-            "eta_comment": request.POST.get("eta_comment"),
-            "boxes": request.POST.get("boxes"),
+            "email": request.POST.get("email"),
+            "org": request.POST.get("org"),
+            "car_number": request.POST.get("car_number"),
+            "fio": request.POST.get("fio"),
+            "eta_date": request.POST.get("eta_date"),
+            "places_qty": request.POST.get("places_qty"),
+            "sku_count": request.POST.get("sku_count"),
+            "cargo_desc": request.POST.get("cargo_desc"),
+            "goods_type": request.POST.get("goods_type"),
+            "marketplaces": request.POST.getlist("mp[]"),
+            "mp_other": request.POST.get("mp_other"),
             "comment": request.POST.get("comment"),
-            "items": [
-                {
-                    "sku": sku,
-                    "name": name,
-                    "barcode": bc,
-                    "qty": qty,
-                    "comment": comm,
-                }
-                for sku, name, bc, qty, comm in zip(
-                    request.POST.getlist("sku[]"),
-                    request.POST.getlist("name[]"),
-                    request.POST.getlist("barcode[]"),
-                    request.POST.getlist("qty[]"),
-                    request.POST.getlist("comment[]"),
-                )
-            ],
             "files": [f.name for f in request.FILES.getlist("files")],
         }
         order_id = f"rcv-{uuid.uuid4().hex[:8]}"
