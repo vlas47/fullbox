@@ -41,8 +41,10 @@
       <h1>Быстрый вход</h1>
       <p class="muted">Кнопки авторизуют соответствующим пользователем (для разработки).</p>
       <div class="grid">
-        {% for user in users %}
-          {% if user.username in 'director accountant head_manager manager storekeeper picker' %}
+                {% for user in users %}
+          {% if user.username == "head_manager" %}
+            <a class="btn" href="/dev-login/head_manager/?next=/head-manager/">{{ user.label }}</a>
+          {% elif user.username in "director accountant manager storekeeper picker" %}
             <span class="btn disabled" style="opacity:0.5; cursor:not-allowed;">{{ user.label }}</span>
           {% else %}
             <a class="btn" href="/dev-login/{{ user.username }}/">{{ user.label }}</a>
@@ -72,3 +74,4 @@
   </div>
 </body>
 </html>
+
