@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import AuditEntry, AuditJournal
+from .models import AuditEntry, AuditJournal, OrderAuditEntry
 
 
 @admin.register(AuditJournal)
@@ -15,4 +15,12 @@ class AuditEntryAdmin(admin.ModelAdmin):
     list_display = ("created_at", "journal", "action", "sku", "user", "description")
     list_filter = ("action", "user", "journal")
     search_fields = ("sku__sku_code", "sku__name", "description", "journal__name", "journal__code")
+    ordering = ("-created_at",)
+
+
+@admin.register(OrderAuditEntry)
+class OrderAuditEntryAdmin(admin.ModelAdmin):
+    list_display = ("created_at", "order_type", "order_id", "action", "agency", "user", "description")
+    list_filter = ("action", "order_type", "agency")
+    search_fields = ("order_id", "description", "agency__agn_name")
     ordering = ("-created_at",)
