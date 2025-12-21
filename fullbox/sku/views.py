@@ -91,6 +91,9 @@ class SKUListView(ListView):
         if filter_field in self.filter_fields and filter_value:
             lookup = self.filter_fields[filter_field]
             qs = qs.filter(**{f"{lookup}__icontains": filter_value}).distinct()
+        agency_filter = self.request.GET.get('agency')
+        if agency_filter:
+            qs = qs.filter(agency_id=agency_filter)
         sort_key = self.request.GET.get('sort', self.default_sort)
         direction = self.request.GET.get('dir', 'asc')
         sort_field = self.sort_fields.get(sort_key, self.sort_fields[self.default_sort])
@@ -139,6 +142,9 @@ class SKUListView(ListView):
         ctx['filter_field'] = self.request.GET.get('filter_field') or ''
         ctx['filter_value'] = self.request.GET.get('filter_value') or ''
         ctx['show_deleted'] = self.request.GET.get('deleted') == '1'
+        agency_filter = self.request.GET.get('agency') or ''
+        ctx['agency_filter'] = agency_filter
+        ctx['hide_client_column'] = bool(agency_filter)
         return ctx
 
 

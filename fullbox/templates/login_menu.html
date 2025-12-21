@@ -51,6 +51,20 @@
           <div class="muted">Пользователи не найдены</div>
         {% endfor %}
       </div>
+
+      <div style="margin-top:16px; padding:12px; border:1px solid var(--stroke); border-radius:14px; background:rgba(255,255,255,0.02);">
+        <div class="muted" style="margin-bottom:8px; font-weight:600;">Личный кабинет клиента (dev)</div>
+        <form method="get" action="/client/dashboard/" style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+          <a class="btn" href="/client/dashboard/">Открыть кабинет без выбора</a>
+          <select name="client" class="btn" style="padding:9px 12px; background:rgba(255,255,255,0.03); color:var(--text); border-radius:10px; border:1px solid var(--stroke); min-width:240px;">
+            <option value="">Выбрать клиента (dev)</option>
+            {% for agency in agencies %}
+              <option value="{{ agency.id }}">{{ agency.agn_name|default:agency.inn|default:"Клиент" }}</option>
+            {% endfor %}
+          </select>
+          <button class="btn primary" type="submit">Открыть выбранный</button>
+        </form>
+      </div>
       <div style="margin-top:16px;">
         <a class="btn primary" href="/admin/">Открыть админку</a>
       </div>

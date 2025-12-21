@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Номенклатура | {{ agency.agn_name|default:"Клиент" }}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root { --bg:#0b0b0f; --card:#14141f; --gold:#d6a300; --gold-soft:#e7c34a; --text:#e8e8ed; --muted:#9aa0b3; --stroke: rgba(255,255,255,0.08); }
+    * { box-sizing: border-box; }
+    body { margin:0; background:var(--bg); color:var(--text); font-family:'Space Grotesk',system-ui,sans-serif; }
+    a { color: inherit; text-decoration: none; }
+    .wrap { max-width: 1100px; margin: 0 auto; padding: 28px 18px 64px; }
+    header { display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; }
+    h1 { margin:0; letter-spacing:-0.4px; }
+    .muted { color: var(--muted); }
+    .btn { padding:10px 14px; border-radius:10px; border:1px solid var(--stroke); background:rgba(255,255,255,0.02); color:var(--text); font-weight:600; }
+    .btn:hover { border-color: var(--gold); box-shadow:0 10px 25px rgba(214,163,0,0.25); }
+    .btn.primary { background: linear-gradient(120deg,var(--gold),var(--gold-soft)); color: var(--bg); border-color: transparent; }
+    .search { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+    .search input { padding:10px; border-radius:10px; border:1px solid var(--stroke); background:rgba(255,255,255,0.03); color:var(--text); min-width:260px; }
+    .cards { display:grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap:14px; margin-top:18px; }
+    .card { background:var(--card); border:1px solid var(--stroke); border-radius:16px; padding:16px; box-shadow:0 18px 45px rgba(0,0,0,0.35); display:grid; gap:10px; }
+    .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+    .tag { display:inline-flex; align-items:center; gap:6px; padding:6px 10px; border-radius:10px; border:1px solid var(--stroke); background:rgba(255,255,255,0.03); }
+    .pill { display:inline-flex; align-items:center; gap:6px; padding:6px 10px; border-radius:999px; border:1px solid var(--stroke); background:rgba(214,163,0,0.12); color:var(--gold); font-weight:600; }
+    .meta { color:var(--muted); font-size:13px; }
+    .thumb { width:100%; aspect-ratio: 4 / 3; border-radius:12px; border:1px solid var(--stroke); background:#0f1118 center/cover no-repeat; }
+    .actions { display:flex; gap:6px; align-items:center; }
+    .act-btn { display:inline-flex; align-items:center; justify-content:center; width:32px; height:32px; border:1px solid var(--stroke); border-radius:8px; background:rgba(255,255,255,0.04); color:var(--text); font-weight:700; font-size:16px; }
+    .act-btn:hover { border-color: var(--gold); box-shadow:0 6px 14px rgba(214,163,0,0.2); }
+    .act-btn.danger { border-color: rgba(240,91,86,0.5); color:#ff7d7d; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div>
+        <div class="muted">FULLBOX · Клиент</div>
+        <h1>Номенклатура</h1>
+        <div class="pill">{{ agency.agn_name|default:"Клиент" }}{% if agency.inn %} · ИНН {{ agency.inn }}{% endif %}</div>
+      </div>
+      <div class="row">
+        <a class="btn" href="/client/dashboard/?client={{ agency.id }}">В кабинет</a>
+        <a class="btn primary" href="/sku/new/">Создать SKU</a>
+        <a class="btn" href="/">На главную</a>
+      </div>
+    </header>
+
+    <form method="get" class="search">
+      <input type="text" name="q" value="{{ search_value }}" placeholder="Поиск по артикулу/названию/ШК">
+      <input type="hidden" name="view" value="{{ view_mode }}">
+      <button class="btn primary" type="submit">Искать</button>
+      <a class="btn" href="?">Сброс</a>
+      <div class="row" style="margin-left:auto;">
+        <a class="btn {% if view_mode == 'cards' %}primary{% endif %}" href="?view=cards{% if search_value %}&q={{ search_value|urlencode }}{% endif %}">Карточки</a>
+        <a class="btn {% if view_mode == 'table' %}primary{% endif %}" href="?view=table{% if search_value %}&q={{ search_value|urlencode }}{% endif %}">Таблица</a>
+      </div>
+    </form>
+
+    {% if view_mode == 'table' %}
+      <div style="overflow-x:auto; margin-top:16px;">
+        <table style="width:100%; border-collapse:collapse; min-width:900px;">
+          <thead>
+            <tr>
+              <th style="text-align:left; padding:10px; border-bottom:1px solid var(--stroke);">Действия</th>
+              <th style="text-align:left; padding:10px; border-bottom:1px solid var(--stroke);">Артикул</th>
+              <th style="text-align:left; padding:10px; border-bottom:1px solid var(--stroke);">Название</th>
+              <th style="text-align:left; padding:10px; border-bottom:1px solid var(--stroke);">Бренд</th>
+              <th style="text-align:left; padding:10px; border-bottom:1px solid var(--stroke);">Маркет</th>
+              <th style="text-align:left; padding:10px; border-bottom:1px solid var(--stroke);">ШК</th>
+              <th style="text-align:left; padding:10px; border-bottom:1px solid var(--stroke);">Обновлено</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for item in items %}
+              <tr style="border-bottom:1px solid var(--stroke);">
+                <td style="padding:10px;">
+                  <div class="actions">
+                    <a class="act-btn" title="Редактировать" href="/client/{{ agency.id }}/sku/{{ item.id }}/edit/">✎</a>
+                    <a class="act-btn" title="Создать копию" href="/client/{{ agency.id }}/sku/{{ item.id }}/duplicate/">⧉</a>
+                    <a class="act-btn danger delete-btn" data-id="{{ item.id }}" title="Пометить как удаленный">🗑</a>
+                  </div>
+                </td>
+                <td style="padding:10px;">{{ item.sku_code }}</td>
+                <td style="padding:10px;">{{ item.name }}</td>
+                <td style="padding:10px;">{{ item.brand|default:"-" }}</td>
+                <td style="padding:10px;">{{ item.market|default:"-" }}</td>
+                <td style="padding:10px;">
+                  {% if item.barcodes.all %}{% for bc in item.barcodes.all|slice:":1" %}{{ bc.value }}{% endfor %}{% else %}-{% endif %}
+                </td>
+                <td style="padding:10px;">{{ item.updated_at|date:"d.m.Y H:i" }}</td>
+              </tr>
+            {% empty %}
+              <tr><td colspan="6" style="padding:12px;">Нет товаров</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <div class="cards">
+        {% for item in items %}
+          <div class="card">
+            <div class="actions" style="justify-content:flex-end;">
+              <a class="act-btn" title="Редактировать" href="/client/{{ agency.id }}/sku/{{ item.id }}/edit/">✎</a>
+              <a class="act-btn" title="Создать копию" href="/client/{{ agency.id }}/sku/{{ item.id }}/duplicate/">⧉</a>
+              <a class="act-btn danger delete-btn" data-id="{{ item.id }}" title="Пометить как удаленный">🗑</a>
+            </div>
+            <div class="row" style="justify-content:space-between;">
+              <div>
+                <div class="muted">Артикул</div>
+                <h3 style="margin:0;">{{ item.sku_code }}</h3>
+                <div class="meta">Обновлено: {{ item.updated_at|date:"d.m.Y H:i" }}</div>
+              </div>
+              {% if item.brand %}<span class="pill">{{ item.brand }}</span>{% endif %}
+            </div>
+            <div>{{ item.name }}</div>
+            <div class="row">
+              {% if item.market %}<span class="tag">Маркет: {{ item.market }}</span>{% endif %}
+              {% if item.barcodes.all %}{% for bc in item.barcodes.all|slice:":1" %}<span class="tag">ШК: {{ bc.value }}</span>{% endfor %}{% endif %}
+              {% if item.color %}<span class="tag">Цвет: {{ item.color }}</span>{% endif %}
+              {% if item.size %}<span class="tag">Размер: {{ item.size }}</span>{% endif %}
+              {% if item.honest_sign %}<span class="pill">Честный знак</span>{% endif %}
+            </div>
+            {% if item.img %}
+              <div class="thumb" style="background-image:url('{{ item.img }}');"></div>
+            {% endif %}
+            {% if item.description %}<div class="meta">{{ item.description }}</div>{% endif %}
+          </div>
+        {% empty %}
+          <div class="muted">Нет товаров</div>
+        {% endfor %}
+      </div>
+    {% endif %}
+
+    <div class="row" style="margin-top:16px; justify-content:space-between;">
+      <div class="muted">Стр. {{ page_obj.number }} из {{ page_obj.paginator.num_pages }}</div>
+      <div class="row">
+        {% if page_obj.has_previous %}
+          <a class="btn" href="?page={{ page_obj.previous_page_number }}{% if search_value %}&q={{ search_value|urlencode }}{% endif %}">Назад</a>
+        {% endif %}
+        {% if page_obj.has_next %}
+          <a class="btn" href="?page={{ page_obj.next_page_number }}{% if search_value %}&q={{ search_value|urlencode }}{% endif %}">Вперёд</a>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</body>
+<script>
+  (function(){
+    const deleteBtns = document.querySelectorAll('.delete-btn');
+    const nextUrl = encodeURIComponent(window.location.pathname + window.location.search);
+    deleteBtns.forEach(btn => {
+      btn.addEventListener('click', () => {
+        const id = btn.dataset.id;
+        if (confirm('Пометить SKU как удаленный?')) {
+          window.location.href = `/sku/${id}/delete/?next=${nextUrl}`;
+        }
+      });
+    });
+  })();
+</script>
+</html>

@@ -219,6 +219,7 @@
                   </div>
                 </details>
               </th>
+              {% if not hide_client_column %}
               <th class="sortable {% if sort_info.agency.active %}active {{ sort_info.agency.dir }}{% endif %}">
                 <a class="sort-label" href="{{ sort_info.agency.url }}">Клиент
                   <span class="sort-icon"><span class="arrow up"></span><span class="arrow down"></span></span>
@@ -241,6 +242,7 @@
                   </div>
                 </details>
               </th>
+              {% endif %}
               <th class="sortable {% if sort_info.market.active %}active {{ sort_info.market.dir }}{% endif %}">
                 <a class="sort-label" href="{{ sort_info.market.url }}">Маркет
                   <span class="sort-icon"><span class="arrow up"></span><span class="arrow down"></span></span>
@@ -471,15 +473,18 @@
             <tr>
               <td>
                 <div class="actions">
+                  <a class="act-btn" title="Создать новый SKU" href="/sku/new/">＋</a>
                   <a class="act-btn" title="Редактировать" href="/sku/{{ item.id }}/edit/">✎</a>
-                  <a class="act-btn" title="Создать новый на основе" href="/sku/{{ item.id }}/duplicate/">+</a>
+                  <a class="act-btn" title="Создать копию" href="/sku/{{ item.id }}/duplicate/">⧉</a>
                   <a class="act-btn danger delete-btn" data-id="{{ item.id }}" title="Пометить как удаленный">🗑</a>
                 </div>
               </td>
               <td>{{ item.sku_code }}</td>
               <td>{{ item.name }}</td>
               <td>{{ item.brand|default:"-" }}</td>
+              {% if not hide_client_column %}
               <td>{{ item.agency|default:"-" }}</td>
+              {% endif %}
               <td>{{ item.market|default:"-" }}</td>
               <td>{{ item.color|default:"-" }}</td>
               <td>{{ item.color_ref|default:"-" }}</td>
@@ -546,7 +551,9 @@
                 </div>
                 <h3 style="margin:4px 0 6px;">{{ item.name }}</h3>
                 <div class="muted" style="font-size:13px;">Артикул: {{ item.sku_code }}{% if item.brand %} · {{ item.brand }}{% endif %}</div>
-                <div class="muted" style="font-size:13px;">Клиент: {{ item.agency|default:"-" }} · Маркет: {{ item.market|default:"-" }}</div>
+            <div class="muted" style="font-size:13px;">
+              {% if not hide_client_column %}Клиент: {{ item.agency|default:"-" }} · {% endif %}Маркет: {{ item.market|default:"-" }}
+            </div>
                 <ul class="data-list">
                   <li><strong>Артикул:</strong> {{ item.sku_code }}</li>
                   <li><strong>Бренд:</strong> {{ item.brand|default:"-" }}</li>

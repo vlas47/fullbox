@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Заявка на приемку | {{ agency.agn_name|default:"Клиент" }}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg:#ede7f6; --card:#fff; --primary:#673ab7; --primary-light:#ede7f6;
+      --text:#212121; --muted:#666; --stroke:#dcd6f0; --danger:#e53935;
+    }
+    * { box-sizing: border-box; }
+    body { margin:0; background:var(--primary-light); color:var(--text); font-family:'Space Grotesk',system-ui,sans-serif; }
+    a { color: inherit; text-decoration: none; }
+    .wrap { max-width: 980px; margin: 32px auto 64px; padding: 0 16px; }
+    header { display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:16px; }
+    h1 { margin:0; letter-spacing:-0.2px; }
+    .muted { color: var(--muted); }
+    .btn { padding:10px 14px; border-radius:8px; border:1px solid var(--stroke); background:#f5f0ff; color:var(--text); font-weight:600; cursor:pointer; }
+    .btn.primary { background: var(--primary); color:#fff; border-color: var(--primary); }
+    .btn.danger { background: var(--danger); color:#fff; border-color: var(--danger); }
+    .btn.link { background:transparent; border:none; color:var(--primary); padding:0; }
+    .card { background:var(--card); border:1px solid var(--stroke); border-radius:12px; padding:18px; box-shadow:0 12px 32px rgba(0,0,0,0.08); }
+    .section { border-top:1px solid var(--stroke); padding-top:14px; margin-top:4px; }
+    .section h3 { margin:0 0 10px; }
+    form { display:grid; gap:16px; }
+    .grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap:12px; }
+    label { display:block; font-weight:600; margin-bottom:6px; color:var(--muted); }
+    input, select, textarea { width:100%; padding:10px; border-radius:8px; border:1px solid var(--stroke); background:#fff; color:var(--text); }
+    textarea { resize:vertical; }
+    .required { color: var(--danger); margin-left:4px; }
+    table { width:100%; border-collapse:collapse; }
+    th, td { padding:8px; border:1px solid var(--stroke); }
+    th { background:#f5f0ff; text-align:left; }
+    .actions { display:flex; gap:6px; align-items:center; }
+    .success { background:#e8f5e9; border:1px solid #a5d6a7; color:#2e7d32; border-radius:10px; padding:12px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div>
+        <div class="muted">FULLBOX · {{ agency.agn_name|default:"Клиент" }}</div>
+        <h1>Заявка на приемку</h1>
+        <div class="muted">Поля с <span class="required">*</span> обязательны.</div>
+      </div>
+      <div style="display:flex; gap:10px; flex-wrap:wrap;">
+        <a class="btn" href="/client/{{ agency.id }}/sku/">Номенклатура клиента</a>
+        <a class="btn" href="/client/dashboard/?client={{ agency.id }}">Кабинет клиента</a>
+      </div>
+    </header>
+
+    {% if submitted %}
+      <div class="success">Черновик заявки на приемку отправлен. Мы свяжемся с вами для уточнения деталей.</div>
+    {% endif %}
+
+    <div class="card">
+      <form method="post" enctype="multipart/form-data">
+        {% csrf_token %}
+
+        <div class="section">
+          <h3>Дата/время прибытия <span class="required">*</span></h3>
+          <div class="grid">
+            <div>
+              <label>Плановая дата/время</label>
+              <input type="datetime-local" name="eta" required>
+              <div class="muted" style="font-size:13px;">Не раньше текущего времени минус X часов</div>
+            </div>
+            <div>
+              <label>Комментарий по времени</label>
+              <input type="text" name="eta_comment" placeholder="Слот, окно, тайминг...">
+            </div>
+          </div>
+        </div>
+
+        <div class="section">
+          <h3>Состав поставки <span class="required">*</span></h3>
+          <div class="muted" style="margin-bottom:8px;">Добавьте хотя бы одну позицию. Если SKU нет, заведите его в номенклатуре.</div>
+          <table id="items-table">
+            <thead>
+              <tr>
+                <th>Артикул (SKU)<span class="required">*</span></th>
+                <th>Наименование</th>
+                <th>ШК</th>
+                <th>Кол-во (план)<span class="required">*</span></th>
+                <th>Комментарий</th>
+                <th>Действия</th>
+              </tr>
+            </thead>
+            <tbody id="items-body">
+              <tr class="item-row">
+                <td>
+                  <select name="sku[]" class="sku-select" required>
+                    <option value="">Выберите SKU</option>
+                    {% for sku in skus %}
+                      <option value="{{ sku.id }}" data-name="{{ sku.name }}" data-bc="{% if sku.barcodes.all %}{{ sku.barcodes.all.0.value }}{% endif %}">{{ sku.sku_code }} — {{ sku.name }}</option>
+                    {% endfor %}
+                  </select>
+                </td>
+                <td><input type="text" name="name[]" readonly placeholder="Автозаполнение"></td>
+                <td><input type="text" name="barcode[]" readonly placeholder="Автозаполнение"></td>
+                <td><input type="number" name="qty[]" min="1" step="1" required></td>
+                <td><input type="text" name="comment[]" placeholder="Комментарий к позиции"></td>
+                <td class="actions">
+                  <button class="btn danger remove-row" type="button">Удалить</button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+          <div style="margin-top:8px;">
+            <button class="btn" type="button" id="add-row">+ Добавить строку</button>
+          </div>
+        </div>
+
+        <div class="section">
+          <h3>Короба</h3>
+          <div class="grid">
+            <div>
+              <label>Ожидаемое количество коробов</label>
+              <input type="number" name="boxes" min="0" step="1" placeholder="0">
+            </div>
+          </div>
+        </div>
+
+        <div class="section">
+          <h3>Документы</h3>
+          <input type="file" name="files" multiple>
+          <div class="muted" style="font-size:13px;">Можно приложить сопроводительные файлы (прайс, спецификации, ТТН).</div>
+        </div>
+
+        <div class="section">
+          <h3>Комментарий</h3>
+          <textarea name="comment" rows="3" placeholder="Любая дополнительная информация"></textarea>
+        </div>
+
+        <div style="display:flex; gap:10px; flex-wrap:wrap;">
+          <button type="submit" class="btn primary">Отправить черновик</button>
+          <a class="btn" href="/client/dashboard/?client={{ agency.id }}">Отмена</a>
+        </div>
+      </form>
+    </div>
+  </div>
+</body>
+<script>
+  (function(){
+    const tableBody = document.getElementById('items-body');
+    const addBtn = document.getElementById('add-row');
+
+    function wireRow(row) {
+      const select = row.querySelector('.sku-select');
+      const nameInput = row.querySelector('input[name="name[]"]');
+      const bcInput = row.querySelector('input[name="barcode[]"]');
+      const remove = row.querySelector('.remove-row');
+
+      select.addEventListener('change', () => {
+        const option = select.options[select.selectedIndex];
+        nameInput.value = option.getAttribute('data-name') || '';
+        bcInput.value = option.getAttribute('data-bc') || '';
+      });
+
+      remove.addEventListener('click', () => {
+        if (document.querySelectorAll('.item-row').length > 1) {
+          row.remove();
+        } else {
+          alert('Нужна минимум одна позиция.');
+        }
+      });
+    }
+
+    addBtn.addEventListener('click', () => {
+      const tmpl = tableBody.querySelector('.item-row').cloneNode(true);
+      tmpl.querySelectorAll('input').forEach(i => { i.value = ''; });
+      tmpl.querySelectorAll('select').forEach(s => { s.selectedIndex = 0; });
+      wireRow(tmpl);
+      tableBody.appendChild(tmpl);
+    });
+
+    tableBody.querySelectorAll('.item-row').forEach(wireRow);
+  })();
+</script>
+</html>
