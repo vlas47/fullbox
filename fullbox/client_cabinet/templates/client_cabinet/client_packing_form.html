@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Заявка на упаковку | {{ agency.agn_name|default:"Клиент" }}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg:#ede7f6; --card:#fff; --primary:#673ab7; --primary-light:#ede7f6;
+      --text:#212121; --muted:#666; --stroke:#dcd6f0; --danger:#e53935;
+    }
+    * { box-sizing: border-box; }
+    body { margin:0; background:var(--primary-light); color:var(--text); font-family:'Space Grotesk',system-ui,sans-serif; }
+    a { color: inherit; text-decoration: none; }
+    .wrap { max-width: 980px; margin: 32px auto 64px; padding: 0 16px; }
+    header { display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:16px; }
+    h1 { margin:0; letter-spacing:-0.2px; }
+    .muted { color: var(--muted); }
+    .btn { padding:10px 14px; border-radius:8px; border:1px solid var(--stroke); background:#f5f0ff; color:var(--text); font-weight:600; cursor:pointer; }
+    .btn.primary { background: var(--primary); color:#fff; border-color: var(--primary); }
+    .card { background:var(--card); border:1px solid var(--stroke); border-radius:12px; padding:18px; box-shadow:0 12px 32px rgba(0,0,0,0.08); }
+    form { display:grid; gap:16px; }
+    .grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap:12px; }
+    label { display:block; font-weight:600; margin-bottom:6px; color:var(--muted); }
+    input, select, textarea { width:100%; padding:10px; border-radius:8px; border:1px solid var(--stroke); background:#fff; color:var(--text); }
+    textarea { resize:vertical; }
+    .section { border-top:1px solid var(--stroke); padding-top:14px; margin-top:4px; }
+    .section h3 { margin:0 0 10px; }
+    .required { color: var(--danger); margin-left:4px; }
+    .muted-note { color:var(--muted); font-size:13px; }
+    .success { background:#e8f5e9; border:1px solid #a5d6a7; color:#2e7d32; border-radius:10px; padding:12px; }
+    .inline { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div>
+        <div class="muted">FULLBOX · {{ agency.agn_name|default:"Клиент" }}</div>
+        <h1>Заявка на упаковку товара</h1>
+        <div class="muted">Заполните форму, обязательные поля помечены <span class="required">*</span>.</div>
+      </div>
+      <div style="display:flex; gap:10px; flex-wrap:wrap;">
+        <a class="btn" href="/client/{{ agency.id }}/sku/">Номенклатура клиента</a>
+        <a class="btn" href="/client/dashboard/?client={{ agency.id }}">Кабинет клиента</a>
+      </div>
+    </header>
+
+    {% if submitted %}
+      <div class="success">Черновик заявки на упаковку отправлен. Мы свяжемся с вами для уточнения деталей.</div>
+    {% endif %}
+
+    <div class="card">
+      <form method="post" enctype="multipart/form-data">
+        {% csrf_token %}
+
+        <div class="section">
+          <h3>Контакты</h3>
+          <div class="grid">
+            <div>
+              <label>Email <span class="required">*</span></label>
+              <input type="email" name="email" required placeholder="name@example.com">
+            </div>
+            <div>
+              <label>ФИО <span class="required">*</span></label>
+              <input type="text" name="fio" required placeholder="Введите ваше ФИО">
+            </div>
+            <div>
+              <label>Организация</label>
+              <input type="text" name="org" value="{{ agency.agn_name }}">
+            </div>
+          </div>
+        </div>
+
+        <div class="section">
+          <h3>План и маркетплейсы</h3>
+          <div class="grid">
+            <div>
+              <label>Плановая дата выполнения <span class="required">*</span></label>
+              <input type="date" name="plan_date" required>
+              <div class="muted-note">Мин. 3 дня на упаковку.</div>
+            </div>
+            <div>
+              <label>На какие маркетплейсы <span class="required">*</span></label>
+              <div class="inline">
+                <label><input type="checkbox" name="mp[]" value="Wildberries"> Wildberries</label>
+                <label><input type="checkbox" name="mp[]" value="OZON"> OZON</label>
+                <label><input type="checkbox" name="mp[]" value="Яндекс Маркет"> Яндекс Маркет</label>
+                <label><input type="checkbox" name="mp[]" value="СберМегаМаркет"> СберМегамаркет</label>
+                <label><input type="checkbox" name="mp[]" value="Другое"> Другое</label>
+              </div>
+              <input type="text" name="mp_other" placeholder="Другое (уточните)">
+            </div>
+          </div>
+        </div>
+
+        <div class="section">
+          <h3>Материалы и файлы</h3>
+          <label>Загрузите отчёт с перечнем номенклатур</label>
+          <input type="file" name="files_report" multiple>
+          <div class="muted-note">До 5 файлов, до 100 МБ каждый. Можно скачать шаблон и загрузить обратно.</div>
+          <label style="margin-top:10px;">Шаблон (для скачивания)</label>
+          <a class="btn" href="#" onclick="alert('Пока без файла-шаблона.'); return false;">Скачать шаблон</a>
+        </div>
+
+        <div class="section">
+          <h3>Описание товаров</h3>
+          <div class="grid">
+            <div>
+              <label>Предмет</label>
+              <input type="text" name="subject" placeholder="Например: джинсы / картина / детская игрушка">
+            </div>
+            <div>
+              <label>Общее количество к обработке <span class="required">*</span></label>
+              <input type="number" name="total_qty" min="1" required placeholder="Мы работаем от 500 ед. на артикул">
+            </div>
+          </div>
+        </div>
+
+        <div class="section">
+          <h3>Кратность формирования коробов</h3>
+          <div class="inline">
+            <label><input type="radio" name="box_mode" value="микс"> микс (все подряд)</label>
+            <label><input type="radio" name="box_mode" value="моно"> моно (один размер в коробку)</label>
+            <label><input type="radio" name="box_mode" value="по направлениям"> по направлениям</label>
+            <label><input type="radio" name="box_mode" value="Другое"> Другое</label>
+          </div>
+          <input type="text" name="box_mode_other" placeholder="Другое (уточните)">
+        </div>
+
+        <div class="section">
+          <h3>Что нужно выполнить</h3>
+          <div class="inline">
+            <label><input type="checkbox" name="tasks[]" value="Проверка 10%"> Полная проверка на брак 10%</label>
+            <label><input type="checkbox" name="tasks[]" value="Проверка 100%"> Полная проверка на брак 100%</label>
+            <label><input type="checkbox" name="tasks[]" value="Замена бирки"> Замена бирки</label>
+            <label><input type="checkbox" name="tasks[]" value="Замена упаковки"> Замена упаковки</label>
+            <label><input type="checkbox" name="tasks[]" value="Доп вложение"> Дополнительное вложение</label>
+          </div>
+          <input type="text" name="tasks_other" placeholder="Другое/комментарий">
+        </div>
+
+        <div class="section">
+          <h3>Маркировка товара</h3>
+          <div class="inline">
+            <label><input type="radio" name="marking" value="1 стикер 58x40"> 1 стикер 58x40</label>
+            <label><input type="radio" name="marking" value="2 стикера 58x40"> 2 стикера 58x40</label>
+            <label><input type="radio" name="marking" value="ШК с ЧЗ на 1 стикере"> ШК с ЧЗ на 1 стикере</label>
+            <label><input type="radio" name="marking" value="Другое"> Другое</label>
+          </div>
+          <input type="text" name="marking_other" placeholder="Другое (уточните)">
+        </div>
+
+        <div class="section">
+          <h3>Отгрузка</h3>
+          <div class="inline">
+            <label><input type="radio" name="ship_as" value="Монопаллет"> Монопаллет</label>
+            <label><input type="radio" name="ship_as" value="Короб"> Короб</label>
+            <label><input type="radio" name="ship_as" value="Другое"> Другое</label>
+          </div>
+          <input type="text" name="ship_other" placeholder="Другое (уточните)">
+        </div>
+
+        <div class="section">
+          <h3>Распределение по складам</h3>
+          <div class="inline">
+            <label><input type="radio" name="has_distribution" value="Да"> Да</label>
+            <label><input type="radio" name="has_distribution" value="Нет" checked> Нет</label>
+          </div>
+          <label>Загрузите файл распределения</label>
+          <input type="file" name="files_distribution">
+          <div class="muted-note">1 файл, до 10 МБ.</div>
+        </div>
+
+        <div class="section">
+          <h3>Честный знак</h3>
+          <label>Загрузите файл с ЧЗ</label>
+          <input type="file" name="files_cz" multiple>
+          <div class="muted-note">До 10 файлов, до 100 МБ каждый.</div>
+        </div>
+
+        <div class="section">
+          <h3>Комментарий</h3>
+          <textarea name="comments" rows="3" placeholder="Дополнительная информация"></textarea>
+        </div>
+
+        <div style="display:flex; gap:10px; flex-wrap:wrap;">
+          <button type="submit" class="btn primary">Отправить черновик</button>
+          <a class="btn" href="/client/dashboard/?client={{ agency.id }}">Отмена</a>
+        </div>
+      </form>
+    </div>
+  </div>
+</body>
+</html>

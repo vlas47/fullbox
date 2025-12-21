@@ -13,6 +13,7 @@ from .views import (
     ClientSKUDuplicateView,
     ClientOrderFormView,
     ClientReceivingCreateView,
+    ClientPackingCreateView,
 )
 
 urlpatterns = [
@@ -27,5 +28,6 @@ urlpatterns = [
     path('<int:pk>/sku/<int:sku_id>/duplicate/', ClientSKUDuplicateView.as_view(), name='client-sku-duplicate'),
     path('<int:pk>/orders/new/', ClientOrderFormView.as_view(), name='client-order-new'),
     path('<int:pk>/receiving/new/', ClientReceivingCreateView.as_view(), name='client-receiving-new'),
+    path('<int:pk>/packing/new/', ClientPackingCreateView.as_view(), name='client-packing-new'),
     path('fetch-by-inn/', fetch_by_inn, name='client-fetch-inn'),
 ]

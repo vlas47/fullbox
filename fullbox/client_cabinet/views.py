@@ -294,6 +294,64 @@ class ClientOrderFormView(TemplateView):
         return ctx
 
 
+class ClientPackingCreateView(TemplateView):
+    template_name = "client_cabinet/client_packing_form.html"
+
+    def dispatch(self, request, *args, **kwargs):
+        self.agency = Agency.objects.filter(pk=self.kwargs.get("pk")).first()
+        if not self.agency:
+            return redirect("/client/")
+        return super().dispatch(request, *args, **kwargs)
+
+    def post(self, request, *args, **kwargs):
+        payload = {
+            "email": request.POST.get("email"),
+            "fio": request.POST.get("fio"),
+            "org": request.POST.get("org"),
+            "plan_date": request.POST.get("plan_date"),
+            "marketplaces": request.POST.getlist("mp[]"),
+            "mp_other": request.POST.get("mp_other"),
+            "subject": request.POST.get("subject"),
+            "total_qty": request.POST.get("total_qty"),
+            "box_mode": request.POST.get("box_mode"),
+            "box_mode_other": request.POST.get("box_mode_other"),
+            "tasks": request.POST.getlist("tasks[]"),
+            "tasks_other": request.POST.get("tasks_other"),
+            "marking": request.POST.get("marking"),
+            "marking_other": request.POST.get("marking_other"),
+            "ship_as": request.POST.get("ship_as"),
+            "ship_other": request.POST.get("ship_other"),
+            "has_distribution": request.POST.get("has_distribution"),
+            "comments": request.POST.get("comments"),
+            "files_report": [f.name for f in request.FILES.getlist("files_report")],
+            "files_distribution": [f.name for f in request.FILES.getlist("files_distribution")],
+            "files_cz": [f.name for f in request.FILES.getlist("files_cz")],
+        }
+        order_id = f"pack-{uuid.uuid4().hex[:8]}"
+        log_order_action(
+            "create",
+            order_id=order_id,
+            order_type="packing",
+            user=request.user if request.user.is_authenticated else None,
+            agency=self.agency,
+            description="Заявка на упаковку",
+            payload=payload,
+        )
+        return self.get(request, submitted=True)
+
+    def get(self, request, *args, **kwargs):
+        submitted = kwargs.get("submitted") or request.GET.get("ok") == "1"
+        ctx = self.get_context_data(submitted=submitted)
+        return self.render_to_response(ctx)
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        ctx["agency"] = self.agency
+        ctx["submitted"] = kwargs.get("submitted", False)
+        ctx["current_time"] = timezone.now()
+        return ctx
+
+
 class ClientReceivingCreateView(TemplateView):
     template_name = "client_cabinet/client_receiving_form.html"
 
