@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Удалить задачу</title>
+  <style>
+    :root { --bg:#0b0b0f; --card:#14141f; --stroke:rgba(255,255,255,0.08); --text:#e8e8ed; --muted:#9aa0b3; --red:#e15c64; --gold:#d6a300; }
+    body { margin:0; background:var(--bg); color:var(--text); font-family:'Space Grotesk',system-ui,sans-serif; }
+    .wrap { max-width: 640px; margin: 0 auto; padding: 32px 20px 64px; }
+    .card { background:var(--card); border:1px solid var(--stroke); border-radius:18px; padding:20px; }
+    .btn { display:inline-flex; align-items:center; gap:8px; padding:10px 14px; border-radius:12px; border:1px solid var(--stroke); background:rgba(255,255,255,0.02); color:var(--text); font-weight:600; cursor:pointer; }
+    .btn.danger { border-color:rgba(225,92,100,0.4); color:var(--red); }
+    .btn:hover { border-color:var(--gold); }
+    .actions { display:flex; gap:10px; justify-content:flex-end; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <h2 style="margin-top:0;">Удалить задачу</h2>
+      <p class="muted">"{{ task.title }}" будет удалена без возможности восстановления.</p>
+      <form method="post">
+        {% csrf_token %}
+        <div class="actions">
+          <a class="btn" href="{% url 'todo:list' %}">Отмена</a>
+          <button class="btn danger" type="submit">Удалить</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</body>
+</html>
