@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>FULLBOX | {{ title }}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root { --bg:#0b0b0f; --card:#14141f; --stroke:rgba(255,255,255,0.08); --text:#e8e8ed; --muted:#9aa0b3; --gold:#d6a300; --gold-soft:#e7c34a; }
+    * { box-sizing: border-box; }
+    body { margin:0; background:var(--bg); color:var(--text); font-family:'Space Grotesk',system-ui,sans-serif; }
+    a { color:inherit; text-decoration:none; }
+    .wrap { max-width: 720px; margin: 0 auto; padding: 32px 20px 64px; }
+    .card { background:var(--card); border:1px solid var(--stroke); border-radius:18px; padding:20px; box-shadow:0 25px 60px rgba(0,0,0,0.45); }
+    .header { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; }
+    h1 { margin:0; letter-spacing:-0.5px; }
+    .muted { color:var(--muted); }
+    .btn { display:inline-flex; align-items:center; gap:8px; padding:10px 14px; border-radius:12px; border:1px solid var(--stroke); background:rgba(255,255,255,0.02); color:var(--text); font-weight:600; transition:all .2s ease; cursor:pointer; }
+    .btn:hover { border-color:var(--gold); box-shadow:0 12px 30px rgba(214,163,0,0.25); transform:translateY(-2px); }
+    .btn.primary { background: linear-gradient(120deg,var(--gold),var(--gold-soft)); color:var(--bg); border-color: transparent; }
+    form { margin-top:16px; display:flex; flex-direction:column; gap:12px; }
+    label { font-weight:600; }
+    input[type=text], textarea, select, input[type=datetime-local] {
+      width:100%; padding:12px; border-radius:12px; border:1px solid var(--stroke);
+      background:rgba(255,255,255,0.02); color:var(--text); font-family:'Space Grotesk',system-ui,sans-serif;
+    }
+    textarea { min-height:120px; }
+    .actions { display:flex; gap:10px; flex-wrap:wrap; justify-content:flex-end; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <div class="header">
+        <div>
+          <h1>{{ title }}</h1>
+          <div class="muted">Заполните поля и сохраните задачу.</div>
+        </div>
+        <a class="btn" href="{% url 'todo:list' %}">К списку</a>
+      </div>
+
+      <form method="post">
+        {% csrf_token %}
+        <div>
+          <label for="id_title">Название</label>
+          {{ form.title }}
+        </div>
+        <div>
+          <label for="id_description">Описание</label>
+          {{ form.description }}
+        </div>
+        <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(200px,1fr)); gap:12px;">
+          <div>
+            <label for="id_status">Статус</label>
+            {{ form.status }}
+          </div>
+          <div>
+            <label for="id_priority">Приоритет</label>
+            {{ form.priority }}
+          </div>
+        </div>
+        <div>
+          <label for="id_due_date">Дедлайн</label>
+          {{ form.due_date }}
+        </div>
+        <div class="actions">
+          <button class="btn" type="button" onclick="window.history.back()">Отмена</button>
+          <button class="btn primary" type="submit">Сохранить</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</body>
+</html>
