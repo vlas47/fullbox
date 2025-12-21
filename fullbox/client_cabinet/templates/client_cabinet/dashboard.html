@@ -47,6 +47,7 @@
         {% if selected_client %}
           <a class="btn" href="/client/{{ selected_client.id }}/sku/">Номенклатура</a>
           <a class="btn" href="/client/{{ selected_client.id }}/receiving/new/">Заявка на приемку</a>
+          <a class="btn" href="/client/{{ selected_client.id }}/packing/new/">Заявка на упаковку</a>
         {% else %}
           <a class="btn" href="/sku/">Номенклатура</a>
         {% endif %}
