@@ -1,5 +1,6 @@
 from django.conf import settings
 from django.db import models
+from django.utils import timezone
 
 
 class AuditJournal(models.Model):
@@ -85,6 +86,57 @@ def log_sku_change(action: str, sku, user=None, description: str = "", snapshot:
         user=user,
         description=description,
         snapshot=snap,
+    )
+
+
+class OrderAuditEntry(models.Model):
+    ACTION_CHOICES = [
+        ("create", "Создание"),
+        ("update", "Изменение"),
+        ("status", "Статус"),
+        ("comment", "Комментарий"),
+        ("upload", "Файлы"),
+    ]
+
+    order_id = models.CharField("ID заявки", max_length=128)
+    order_type = models.CharField("Тип заявки", max_length=64, default="receiving")
+    action = models.CharField("Действие", max_length=32, choices=ACTION_CHOICES)
+    agency = models.ForeignKey(
+        "sku.Agency", on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Клиент"
+    )
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Пользователь"
+    )
+    description = models.TextField("Описание", blank=True)
+    payload = models.JSONField("Данные", null=True, blank=True)
+    created_at = models.DateTimeField("Когда", default=timezone.now)
+
+    class Meta:
+        verbose_name = "Аудит заявки"
+        verbose_name_plural = "Аудит заявок"
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.order_type} {self.order_id} [{self.get_action_display()}]"
+
+
+def log_order_action(
+    action: str,
+    order_id: str,
+    order_type: str = "receiving",
+    user=None,
+    agency=None,
+    description: str = "",
+    payload: dict | None = None,
+):
+    OrderAuditEntry.objects.create(
+        order_id=order_id,
+        order_type=order_type,
+        action=action,
+        user=user,
+        agency=agency,
+        description=description,
+        payload=payload or {},
     )
 
 # Create your models here.

@@ -1,7 +1,7 @@
 from django.db import models
 from django.views.generic import ListView
 
-from .models import AuditEntry, get_sku_journal
+from .models import AuditEntry, get_sku_journal, OrderAuditEntry
 
 
 class AuditListView(ListView):
@@ -35,5 +35,19 @@ class AuditListView(ListView):
         ctx["search_value"] = self.request.GET.get("q", "")
         ctx["actions"] = dict(AuditEntry.ACTION_CHOICES)
         return ctx
+
+
+class OrderAuditListView(ListView):
+    template_name = "audit/orders_list.html"
+    model = OrderAuditEntry
+    context_object_name = "entries"
+    paginate_by = 25
+
+    def get_queryset(self):
+        qs = OrderAuditEntry.objects.select_related("user", "agency").order_by("-created_at")
+        order_type = self.request.GET.get("type")
+        if order_type:
+            qs = qs.filter(order_type=order_type)
+        return qs
 
 # Create your views here.

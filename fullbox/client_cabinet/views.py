@@ -3,11 +3,14 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.views.generic import ListView, CreateView, UpdateView, TemplateView, FormView
 from django.http import JsonResponse
+from django.utils import timezone
+import uuid
 
 from sku.models import Agency, SKU
 from sku.views import SKUCreateView, SKUUpdateView, SKUDuplicateView
 from .forms import AgencyForm
 from .services import fetch_party_by_inn
+from audit.models import log_order_action
 
 
 def dashboard(request):
@@ -301,7 +304,40 @@ class ClientReceivingCreateView(TemplateView):
         return super().dispatch(request, *args, **kwargs)
 
     def post(self, request, *args, **kwargs):
-        # TODO: сохранить заявку; пока только отображаем успех
+        # TODO: сохранить заявку; пока только отображаем успех и пишем в аудит
+        payload = {
+            "eta": request.POST.get("eta"),
+            "eta_comment": request.POST.get("eta_comment"),
+            "boxes": request.POST.get("boxes"),
+            "comment": request.POST.get("comment"),
+            "items": [
+                {
+                    "sku": sku,
+                    "name": name,
+                    "barcode": bc,
+                    "qty": qty,
+                    "comment": comm,
+                }
+                for sku, name, bc, qty, comm in zip(
+                    request.POST.getlist("sku[]"),
+                    request.POST.getlist("name[]"),
+                    request.POST.getlist("barcode[]"),
+                    request.POST.getlist("qty[]"),
+                    request.POST.getlist("comment[]"),
+                )
+            ],
+            "files": [f.name for f in request.FILES.getlist("files")],
+        }
+        order_id = f"rcv-{uuid.uuid4().hex[:8]}"
+        log_order_action(
+            "create",
+            order_id=order_id,
+            order_type="receiving",
+            user=request.user if request.user.is_authenticated else None,
+            agency=self.agency,
+            description="Заявка на приемку (черновик)",
+            payload=payload,
+        )
         return self.get(request, submitted=True)
 
     def get(self, request, *args, **kwargs):
