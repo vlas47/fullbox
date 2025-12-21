@@ -52,6 +52,7 @@ INSTALLED_APPS = [
     'sku',
     'orders',
     'employees',
+    'head_manager',
 ]
 
 MIDDLEWARE = [

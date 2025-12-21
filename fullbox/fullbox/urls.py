@@ -30,6 +30,7 @@ urlpatterns = [
     path('admin/', admin.site.urls),
     path('scanner-test/', TemplateView.as_view(template_name='scanner_test.html'), name='scanner-test'),
     path('orders/', include('orders.urls')),
+    path('head-manager/', include('head_manager.urls')),
     path('client/', include('client_cabinet.urls')),
     path('sku/', include('sku.urls')),
     path('audit/', include('audit.urls')),
