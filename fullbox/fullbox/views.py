@@ -1,7 +1,12 @@
+from pathlib import Path
+
 from django.contrib.auth import get_user_model, login
 from django.http import HttpResponseRedirect
 from django.shortcuts import redirect, render
+from django.utils.html import escape
 from sku.models import Agency
+
+from django.conf import settings
 
 
 DEV_USERS = [
@@ -63,3 +68,41 @@ def role_cabinet(request, role):
     """Простой кабинет для каждой роли (временно)."""
     title = ROLE_TITLES.get(role, "Кабинет")
     return render(request, "role_cabinet.html", {"role": role, "title": title})
+
+
+def project_description(request):
+    """Описание проекта для кабинета директора."""
+    content = _load_text_file(settings.BASE_DIR / "README.md")
+    return render(
+        request,
+        "project_text.html",
+        {
+            "title": "Описание проекта",
+            "subtitle": "Актуальное описание Fullbox из README.md",
+            "content": content,
+        },
+    )
+
+
+def development_journal(request):
+    """Журнал разработки для кабинета директора."""
+    content = _load_text_file(settings.BASE_DIR / "journal.md")
+    return render(
+        request,
+        "project_text.html",
+        {
+            "title": "Журнал разработки",
+            "subtitle": "Хронология изменений проекта",
+            "content": content,
+        },
+    )
+
+
+def _load_text_file(path: Path) -> str:
+    try:
+        data = path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return "Файл не найден."
+    except OSError:
+        return "Не удалось прочитать файл."
+    return escape(data)
