@@ -72,28 +72,28 @@ def role_cabinet(request, role):
 
 def project_description(request):
     """Описание проекта для кабинета директора."""
-    content = _load_text_file(settings.BASE_DIR.parent / "README.md")
+    sections = _load_sections(settings.BASE_DIR.parent / "README.md")
     return render(
         request,
         "project_text.html",
         {
             "title": "Описание проекта",
             "subtitle": "Актуальное описание Fullbox из README.md",
-            "content": content,
+            "sections": sections,
         },
     )
 
 
 def development_journal(request):
     """Журнал разработки для кабинета директора."""
-    content = _load_text_file(settings.BASE_DIR.parent / "journal.md")
+    sections = _load_sections(settings.BASE_DIR.parent / "journal.md")
     return render(
         request,
         "project_text.html",
         {
             "title": "Журнал разработки",
             "subtitle": "Хронология изменений проекта",
-            "content": content,
+            "sections": sections,
         },
     )
 
@@ -114,6 +114,41 @@ def _load_text_file(path: Path) -> str:
     except OSError:
         return "Не удалось прочитать файл."
     return escape(data)
+
+
+def _load_sections(path: Path) -> list[dict]:
+    try:
+        data = path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return [{"title": "Ошибка", "body": "Файл не найден."}]
+    except OSError:
+        return [{"title": "Ошибка", "body": "Не удалось прочитать файл."}]
+
+    lines = data.splitlines()
+    sections = []
+    current = {"title": "Документ", "body": []}
+    for line in lines:
+        if line.lstrip().startswith("#"):
+            if current["body"] or current["title"] != "Документ":
+                sections.append(current)
+            title = line.lstrip("#").strip() or "Раздел"
+            current = {"title": title, "body": []}
+        else:
+            current["body"].append(line)
+    if current["body"] or current["title"] != "Документ":
+        sections.append(current)
+
+    accents = ["#d6a300", "#2dd4bf", "#60a5fa", "#f97316", "#34d399", "#f43f5e"]
+    decorated = []
+    for idx, section in enumerate(sections):
+        decorated.append(
+            {
+                "title": escape(section["title"]),
+                "body": escape("\n".join(section["body"]).strip()),
+                "accent": accents[idx % len(accents)],
+            }
+        )
+    return decorated
 
 
 def _file_response(path: Path, filename: str):
