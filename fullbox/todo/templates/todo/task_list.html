@@ -45,7 +45,7 @@
       <div class="header">
         <div>
           <h1>Задачи</h1>
-          <div class="muted">Простой список для разработки и операционных задач.</div>
+          <div class="muted">Задачи с исполнителями и сроками.</div>
         </div>
         <div style="display:flex; gap:8px; flex-wrap:wrap;">
           <a class="btn" href="/dev/">Кабинет разработчика</a>
@@ -53,20 +53,11 @@
         </div>
       </div>
 
-      <div class="stats">
-        <div class="pill backlog">Бэклог: {{ stats.backlog }}</div>
-        <div class="pill in_progress">В работе: {{ stats.in_progress }}</div>
-        <div class="pill done">Готово: {{ stats.done }}</div>
-        <div class="pill blocked">Блок: {{ stats.blocked }}</div>
-        <div class="pill">Всего: {{ stats.total }}</div>
-      </div>
-
       {% if tasks %}
         <table>
           <thead>
             <tr>
               <th>Задача</th>
-              <th>Статус</th>
               <th>Приоритет</th>
               <th>Дедлайн</th>
               <th style="text-align:right;">Действия</th>
@@ -76,17 +67,38 @@
             {% for task in tasks %}
               <tr>
                 <td>
-                  <div style="font-weight:600;">{{ task.title }}</div>
+                  <div style="font-weight:600;">
+                    <a href="{% url 'todo:detail' task.id %}">{{ task.title }}</a>
+                  </div>
                   {% if task.description %}
                     <div class="muted" style="font-size:13px; margin-top:2px;">{{ task.description|truncatechars:140 }}</div>
                   {% endif %}
+                  <div class="muted" style="font-size:13px; margin-top:4px;">
+                    Исполнитель:
+                    {% if task.assigned_to %}
+                      {{ task.assigned_to.full_name }}
+                    {% else %}
+                      <span class="muted">не назначен</span>
+                    {% endif %}
+                    · Постановщик: {{ task.created_by|default:"-" }}
+                  </div>
+                  <div class="muted" style="font-size:13px;">
+                    Наблюдатель:
+                    {% if task.observer %}
+                      {{ task.observer.full_name }}
+                    {% else %}
+                      -
+                    {% endif %}
+                  </div>
                 </td>
-                <td><span class="pill {{ task.status }}">{{ task.get_status_display }}</span></td>
                 <td><span class="badge {{ task.priority }}">{{ task.get_priority_display }}</span></td>
-                <td>{% if task.due_date %}{{ task.due_date|date:'d.m.y H:i' }}{% else %}<span class="muted">—</span>{% endif %}</td>
+                <td>{% if task.due_date %}{{ task.due_date|date:'d.m.y H:i' }}{% else %}<span class="muted">-</span>{% endif %}</td>
                 <td>
                   <div class="actions">
-                    <a class="btn" style="padding:8px 10px;" href="{% url 'todo:update' task.id %}">Редактировать</a>
+                    <a class="btn" style="padding:8px 10px;" href="{% url 'todo:detail' task.id %}">Подробнее</a>
+                    {% if request.user.is_authenticated and task.created_by_id == request.user.id %}
+                      <a class="btn" style="padding:8px 10px;" href="{% url 'todo:update' task.id %}">Редактировать</a>
+                    {% endif %}
                     <form method="post" action="{% url 'todo:delete' task.id %}" onsubmit="return confirm('Удалить задачу?');">
                       {% csrf_token %}
                       <button class="btn" style="padding:8px 10px; border-color:rgba(225,92,100,0.4); color:var(--red);" type="submit">Удалить</button>

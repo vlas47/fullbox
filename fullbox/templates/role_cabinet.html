@@ -1,3 +1,4 @@
+{% load todo_panel %}
 <!doctype html>
 <html lang="ru">
 <head>
@@ -42,6 +43,9 @@
         </div>
       </div>
       <p class="muted">Заглушка кабинета для роли: {{ role }}. Здесь будет функционал для этой роли.</p>
+      <div style="margin:16px 0;">
+        {% task_panel %}
+      </div>
       <div class="grid">
         <div class="btn">Данные профиля</div>
         <div class="btn">Задачи / заявки</div>

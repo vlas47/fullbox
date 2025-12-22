@@ -51,15 +51,17 @@
           <label for="id_description">Описание</label>
           {{ form.description }}
         </div>
-        <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(200px,1fr)); gap:12px;">
-          <div>
-            <label for="id_status">Статус</label>
-            {{ form.status }}
-          </div>
-          <div>
-            <label for="id_priority">Приоритет</label>
-            {{ form.priority }}
-          </div>
+        <div>
+          <label for="id_assigned_to">Исполнитель</label>
+          {{ form.assigned_to }}
+        </div>
+        <div>
+          <label for="id_observer">Наблюдатель</label>
+          {{ form.observer }}
+        </div>
+        <div>
+          <label for="id_priority">Приоритет</label>
+          {{ form.priority }}
         </div>
         <div>
           <label for="id_due_date">Дедлайн</label>

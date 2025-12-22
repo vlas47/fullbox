@@ -1,3 +1,4 @@
+{% load todo_panel %}
 <!doctype html>
 <html lang="ru">
 <head>
@@ -33,6 +34,7 @@
         <div class="pill">Контур задач, заявки, контроль SLA</div>
       </div>
       <div style="display:flex; gap:8px; flex-wrap:wrap;">
+        <a class="btn" href="/todo/">Задачи</a>
         <a class="btn" href="/client/">Клиенты</a>
         <a class="btn" href="/audit/orders/">Журнал заявок</a>
         <a class="btn" href="/scanner-test/">Проверка сканера</a>
@@ -61,6 +63,22 @@
           <li>Проверка сканера: <a href="/scanner-test/">тест</a></li>
           <li><a href="/admin/">Админка</a></li>
         </ul>
+      </div>
+    </div>
+
+    <div style="margin-top:20px;">
+      <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap;">
+        <div>
+          <h2 style="margin:0 0 6px;">Раздел задач</h2>
+          <div class="muted">Постановка, маршрутизация и контроль задач команды.</div>
+        </div>
+        <div style="display:flex; gap:8px; flex-wrap:wrap;">
+          <a class="btn" href="/todo/new/">Создать задачу</a>
+          <a class="btn" href="/todo/">Открыть все</a>
+        </div>
+      </div>
+      <div style="margin-top:12px;">
+        {% task_panel "all" 10 %}
       </div>
     </div>
   </div>

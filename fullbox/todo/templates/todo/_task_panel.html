@@ -1,0 +1,97 @@
+<style>
+  .task-board { display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap:12px; margin-top:14px; }
+  .task-col { display:flex; flex-direction:column; border:1px solid var(--stroke); border-radius:14px; background:rgba(255,255,255,0.02); min-height:240px; }
+  .task-col-header { display:flex; justify-content:space-between; align-items:center; padding:10px 12px; border-bottom:1px dashed var(--stroke); font-weight:600; }
+  .task-col-body { display:grid; gap:8px; padding:10px; }
+  .task-card { padding:10px; border:1px solid var(--stroke); border-radius:12px; background:rgba(0,0,0,0.18); }
+  .task-title { font-weight:600; margin-bottom:6px; }
+  .task-title a { color:inherit; }
+  .task-meta { color:var(--muted); font-size:12px; line-height:1.4; }
+  .task-tags { display:flex; gap:6px; flex-wrap:wrap; margin-top:6px; }
+  .task-tag { padding:3px 8px; border-radius:999px; border:1px solid var(--stroke); font-size:11px; text-transform:uppercase; letter-spacing:0.4px; }
+  .task-empty { color:var(--muted); font-size:12px; border:1px dashed var(--stroke); border-radius:10px; padding:10px; text-align:center; }
+  .pill { display:inline-flex; align-items:center; gap:6px; padding:4px 8px; border-radius:999px; border:1px solid var(--stroke); background:rgba(255,255,255,0.04); font-size:12px; font-weight:600; }
+  .task-col.backlog { border-top:3px solid #6b7280; }
+  .task-col.in_progress { border-top:3px solid #3b82f6; }
+  .task-col.blocked { border-top:3px solid #ef4444; }
+  .task-col.done { border-top:3px solid #22c55e; }
+  .pill.backlog { color:#9aa0b3; }
+  .pill.in_progress { color:#3b82f6; }
+  .pill.blocked { color:#ef4444; }
+  .pill.done { color:#22c55e; }
+  .task-tag.low { color:#9aa0b3; }
+  .task-tag.normal { color:#3b82f6; }
+  .task-tag.high { color:#f59e0b; }
+  .task-tag.urgent { color:#ef4444; }
+  .task-summary { display:flex; gap:8px; flex-wrap:wrap; margin-top:10px; }
+  .task-summary .pill { font-size:12px; }
+</style>
+
+<div class="card">
+  <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;">
+    <div>
+      <div style="font-weight:600; letter-spacing:0.2px;">Доска задач</div>
+      <div class="muted" style="font-size:13px;">
+        {% if task_panel_role_label %}Роль: {{ task_panel_role_label }} · {% endif %}
+        Всего: {{ task_panel_total }}
+      </div>
+    </div>
+    <div style="display:flex; gap:8px; flex-wrap:wrap;">
+      <a class="btn" href="{% url 'todo:create' %}">Создать</a>
+      <a class="btn" href="{% url 'todo:list' %}">Все задачи</a>
+    </div>
+  </div>
+
+  <div class="task-summary">
+    {% for stat in task_panel_stats %}
+      <div class="pill {{ stat.status }}">{{ stat.label }}: {{ stat.count }}</div>
+    {% endfor %}
+  </div>
+
+  <div class="task-board">
+    {% for column in task_panel_columns %}
+      <div class="task-col {{ column.status }}">
+        <div class="task-col-header">
+          <div>{{ column.label }}</div>
+          <div class="pill {{ column.status }}">{{ column.count }}</div>
+        </div>
+        <div class="task-col-body">
+          {% if column.tasks %}
+            {% for task in column.tasks %}
+              <div class="task-card">
+                <div class="task-title">
+                  <a href="{% url 'todo:detail' task.id %}">{{ task.title }}</a>
+                </div>
+                <div class="task-meta">
+                  Исполнитель:
+                  {% if task.assigned_to %}
+                    {{ task.assigned_to.full_name }}
+                  {% else %}
+                    не назначен
+                  {% endif %}
+                  · Срок:
+                  {% if task.due_date %}
+                    {{ task.due_date|date:'d.m.y H:i' }}
+                  {% else %}
+                    -
+                  {% endif %}
+                </div>
+                <div class="task-tags">
+                  <span class="task-tag {{ task.priority }}">{{ task.get_priority_display }}</span>
+                  {% if task.created_by %}
+                    <span class="task-tag">Постановщик: {{ task.created_by }}</span>
+                  {% endif %}
+                  {% if task.observer %}
+                    <span class="task-tag">Наблюдатель: {{ task.observer.full_name }}</span>
+                  {% endif %}
+                </div>
+              </div>
+            {% endfor %}
+          {% else %}
+            <div class="task-empty">Нет задач</div>
+          {% endif %}
+        </div>
+      </div>
+    {% endfor %}
+  </div>
+</div>

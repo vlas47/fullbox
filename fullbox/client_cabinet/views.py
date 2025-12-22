@@ -29,6 +29,12 @@ def dashboard(request):
     )
 
 
+def receiving_redirect(request, pk: int):
+    if not Agency.objects.filter(pk=pk).exists():
+        return redirect("/client/")
+    return redirect(f"/orders/receiving/?client={pk}")
+
+
 class ClientListView(ListView):
     model = Agency
     paginate_by = 20
@@ -363,21 +369,36 @@ class ClientReceivingCreateView(TemplateView):
 
     def post(self, request, *args, **kwargs):
         # TODO: сохранить заявку; пока только отображаем успех и пишем в аудит
+        sku_codes = request.POST.getlist("sku_code[]")
+        sku_ids = request.POST.getlist("sku_id[]")
+        names = request.POST.getlist("item_name[]")
+        qtys = request.POST.getlist("qty[]")
+        position_comments = request.POST.getlist("position_comment[]")
+        items = []
+        row_count = max(len(sku_codes), len(qtys), len(names), len(position_comments), len(sku_ids))
+        for idx in range(row_count):
+            sku_code = sku_codes[idx] if idx < len(sku_codes) else ""
+            qty = qtys[idx] if idx < len(qtys) else ""
+            if not sku_code and not qty:
+                continue
+            items.append(
+                {
+                    "sku_id": sku_ids[idx] if idx < len(sku_ids) else "",
+                    "sku_code": sku_code,
+                    "name": names[idx] if idx < len(names) else "",
+                    "qty": qty,
+                    "comment": position_comments[idx] if idx < len(position_comments) else "",
+                }
+            )
         payload = {
-            "email": request.POST.get("email"),
-            "org": request.POST.get("org"),
-            "car_number": request.POST.get("car_number"),
-            "fio": request.POST.get("fio"),
-            "eta_date": request.POST.get("eta_date"),
-            "places_qty": request.POST.get("places_qty"),
-            "sku_count": request.POST.get("sku_count"),
-            "cargo_desc": request.POST.get("cargo_desc"),
-            "goods_type": request.POST.get("goods_type"),
-            "marketplaces": request.POST.getlist("mp[]"),
-            "mp_other": request.POST.get("mp_other"),
+            "eta_at": request.POST.get("eta_at"),
+            "expected_boxes": request.POST.get("expected_boxes"),
             "comment": request.POST.get("comment"),
-            "files": [f.name for f in request.FILES.getlist("files")],
+            "submit_action": request.POST.get("submit_action"),
+            "items": items,
+            "documents": [f.name for f in request.FILES.getlist("documents")],
         }
+        action_label = "черновик" if request.POST.get("submit_action") == "draft" else "заявка"
         order_id = f"rcv-{uuid.uuid4().hex[:8]}"
         log_order_action(
             "create",
@@ -385,7 +406,7 @@ class ClientReceivingCreateView(TemplateView):
             order_type="receiving",
             user=request.user if request.user.is_authenticated else None,
             agency=self.agency,
-            description="Заявка на приемку (черновик)",
+            description=f"Заявка на приемку ({action_label})",
             payload=payload,
         )
         return self.get(request, submitted=True)
@@ -399,5 +420,23 @@ class ClientReceivingCreateView(TemplateView):
         ctx = super().get_context_data(**kwargs)
         ctx["agency"] = self.agency
         ctx["submitted"] = kwargs.get("submitted", False)
-        ctx["skus"] = SKU.objects.filter(agency=self.agency, deleted=False).order_by("sku_code")
+        skus = (
+            SKU.objects.filter(agency=self.agency, deleted=False)
+            .prefetch_related("barcodes")
+            .order_by("sku_code")
+        )
+        sku_options = []
+        for sku in skus:
+            barcodes = [barcode.value for barcode in sku.barcodes.all()]
+            sku_options.append(
+                {
+                    "id": sku.id,
+                    "code": sku.sku_code,
+                    "name": sku.name,
+                    "barcodes_joined": "|".join(barcodes),
+                }
+            )
+        ctx["sku_options"] = sku_options
+        ctx["current_time"] = timezone.localtime()
+        ctx["min_past_hours"] = 0
         return ctx

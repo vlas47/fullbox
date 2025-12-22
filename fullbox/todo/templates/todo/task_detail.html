@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>FULLBOX | {{ task.title }}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root { --bg:#0b0b0f; --card:#14141f; --stroke:rgba(255,255,255,0.08); --text:#e8e8ed; --muted:#9aa0b3; --gold:#d6a300; --gold-soft:#e7c34a; --green:#5ec16e; --red:#e15c64; }
+    * { box-sizing: border-box; }
+    body { margin:0; background:var(--bg); color:var(--text); font-family:'Space Grotesk',system-ui,sans-serif; }
+    a { color:inherit; text-decoration:none; }
+    .wrap { max-width: 1080px; margin: 0 auto; padding: 32px 20px 64px; }
+    .card { background:var(--card); border:1px solid var(--stroke); border-radius:18px; padding:20px; box-shadow:0 25px 60px rgba(0,0,0,0.45); }
+    .header { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; }
+    h1 { margin:0; letter-spacing:-0.5px; }
+    h2 { margin:0 0 12px; }
+    .muted { color:var(--muted); }
+    .btn { display:inline-flex; align-items:center; gap:8px; padding:10px 14px; border-radius:12px; border:1px solid var(--stroke); background:rgba(255,255,255,0.02); color:var(--text); font-weight:600; transition:all .2s ease; cursor:pointer; }
+    .btn:hover { border-color:var(--gold); box-shadow:0 12px 30px rgba(214,163,0,0.25); transform:translateY(-2px); }
+    .btn.primary { background: linear-gradient(120deg,var(--gold),var(--gold-soft)); color:var(--bg); border-color: transparent; }
+    .btn.success { border-color: rgba(94,193,110,0.5); color: var(--green); }
+    .grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(220px,1fr)); gap:12px; margin-top:16px; }
+    .meta { border:1px solid var(--stroke); border-radius:14px; padding:12px; background:rgba(255,255,255,0.02); }
+    .meta .label { font-size:12px; color:var(--muted); margin-bottom:6px; text-transform:uppercase; letter-spacing:0.4px; }
+    .section { margin-top:18px; }
+    textarea, input[type=file] { width:100%; padding:12px; border-radius:12px; border:1px solid var(--stroke); background:rgba(255,255,255,0.02); color:var(--text); font-family:'Space Grotesk',system-ui,sans-serif; }
+    textarea { min-height:120px; }
+    .list { display:grid; gap:10px; }
+    .item { padding:12px; border:1px solid var(--stroke); border-radius:12px; background:rgba(255,255,255,0.02); }
+    .item-head { display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; }
+    .pill { display:inline-flex; align-items:center; gap:6px; padding:4px 8px; border-radius:999px; border:1px solid var(--stroke); background:rgba(255,255,255,0.04); font-size:12px; font-weight:600; }
+    .pill.done { color:var(--green); }
+    .pill.warn { color:var(--red); }
+    .actions { display:flex; gap:8px; flex-wrap:wrap; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <div class="header">
+        <div>
+          <h1>{{ task.title }}</h1>
+          <div class="muted">Карточка задачи</div>
+        </div>
+        <div class="actions">
+          <a class="btn" href="{% url 'todo:list' %}">К списку</a>
+          {% if can_edit %}
+            <a class="btn" href="{% url 'todo:update' task.id %}">Редактировать</a>
+          {% endif %}
+        </div>
+      </div>
+
+      {% if task.description %}
+        <div class="section">
+          <div class="meta">{{ task.description }}</div>
+        </div>
+      {% endif %}
+
+      <div class="grid">
+        <div class="meta">
+          <div class="label">Исполнитель</div>
+          <div>{{ task.assigned_to.full_name|default:"Не назначен" }}</div>
+        </div>
+        <div class="meta">
+          <div class="label">Наблюдатель</div>
+          <div>{{ task.observer.full_name|default:"-" }}</div>
+        </div>
+        <div class="meta">
+          <div class="label">Постановщик</div>
+          <div>{{ task.created_by|default:"-" }}</div>
+        </div>
+        <div class="meta">
+          <div class="label">Приоритет</div>
+          <div>{{ task.get_priority_display }}</div>
+        </div>
+        <div class="meta">
+          <div class="label">Дедлайн</div>
+          <div>{% if task.due_date %}{{ task.due_date|date:'d.m.y H:i' }}{% else %}-{% endif %}</div>
+        </div>
+        <div class="meta">
+          <div class="label">Создана</div>
+          <div>{{ task.created_at|date:'d.m.y H:i' }}</div>
+        </div>
+      </div>
+
+      <div class="section">
+        {% if task.status == "done" %}
+          <span class="pill done">Выполнена</span>
+        {% elif can_complete %}
+          <form method="post" style="display:inline-flex;">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="complete">
+            <button class="btn success" type="submit">Отметить выполненной</button>
+          </form>
+        {% else %}
+          <span class="pill warn">Только исполнитель может отметить выполнение</span>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="section card">
+      <h2>Комментарии</h2>
+      <div class="list">
+        {% if comments %}
+          {% for comment in comments %}
+            <div class="item">
+              <div class="item-head">
+                <div>{{ comment.author|default:"Система" }}</div>
+                <div class="muted">{{ comment.created_at|date:'d.m.y H:i' }}</div>
+              </div>
+              <div style="margin-top:8px;">{{ comment.body }}</div>
+            </div>
+          {% endfor %}
+        {% else %}
+          <div class="item muted">Комментариев пока нет.</div>
+        {% endif %}
+      </div>
+
+      <form method="post" style="margin-top:12px;">
+        {% csrf_token %}
+        <div style="margin-bottom:10px;">
+          {{ comment_form.body }}
+        </div>
+        <div class="actions">
+          <button class="btn primary" type="submit" name="action" value="comment">Добавить комментарий</button>
+          {% if can_edit and task.status == "done" %}
+            <button class="btn" type="submit" name="action" value="rework">Вернуть на доработку</button>
+          {% endif %}
+        </div>
+      </form>
+    </div>
+
+    <div class="section card">
+      <h2>Файлы</h2>
+      <div class="list">
+        {% if attachments %}
+          {% for attachment in attachments %}
+            <div class="item">
+              <div class="item-head">
+                <div><a href="{{ attachment.file.url }}">{{ attachment.filename }}</a></div>
+                <div class="muted">{{ attachment.uploaded_at|date:'d.m.y H:i' }}</div>
+              </div>
+              <div class="muted" style="margin-top:6px;">Загрузил: {{ attachment.uploaded_by|default:"-" }}</div>
+            </div>
+          {% endfor %}
+        {% else %}
+          <div class="item muted">Файлов пока нет.</div>
+        {% endif %}
+      </div>
+
+      <form method="post" enctype="multipart/form-data" style="margin-top:12px;">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="attach">
+        <div style="margin-bottom:10px;">
+          {{ attachment_form.files }}
+        </div>
+        <button class="btn primary" type="submit">Загрузить файлы</button>
+      </form>
+    </div>
+  </div>
+</body>
+</html>
