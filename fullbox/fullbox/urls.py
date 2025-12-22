@@ -28,6 +28,8 @@ urlpatterns = [
     path('login-menu/', views.login_menu, name='login-menu'),
     path('dev-login/<str:username>/', views.dev_login, name='dev-login'),
     path('cabinet/<str:role>/', views.role_cabinet, name='role-cabinet'),
+    path('project-description/', views.project_description, name='project-description'),
+    path('development-journal/', views.development_journal, name='development-journal'),
     path('admin/audit/', RedirectView.as_view(pattern_name='admin:audit_auditjournal_changelist', permanent=False)),
     path('admin/', admin.site.urls),
     path('scanner-test/', TemplateView.as_view(template_name='scanner_test.html'), name='scanner-test'),
