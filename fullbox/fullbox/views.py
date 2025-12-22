@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from django.contrib.auth import get_user_model, login
-from django.http import HttpResponseRedirect
+from django.http import FileResponse, HttpResponse, HttpResponseRedirect
 from django.shortcuts import redirect, render
 from django.utils.html import escape
 from sku.models import Agency
@@ -98,6 +98,14 @@ def development_journal(request):
     )
 
 
+def project_description_file(request):
+    return _file_response(settings.BASE_DIR / "README.md", "README.md")
+
+
+def development_journal_file(request):
+    return _file_response(settings.BASE_DIR / "journal.md", "journal.md")
+
+
 def _load_text_file(path: Path) -> str:
     try:
         data = path.read_text(encoding="utf-8")
@@ -106,3 +114,12 @@ def _load_text_file(path: Path) -> str:
     except OSError:
         return "Не удалось прочитать файл."
     return escape(data)
+
+
+def _file_response(path: Path, filename: str):
+    try:
+        return FileResponse(open(path, "rb"), as_attachment=True, filename=filename)
+    except FileNotFoundError:
+        return HttpResponse("Файл не найден.", status=404)
+    except OSError:
+        return HttpResponse("Не удалось прочитать файл.", status=500)
