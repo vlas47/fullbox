@@ -7,3 +7,6 @@ https://lk.ffullbox.ru/ords/r/apex/workspace-sign-in/oracle-apex-sign-in?session
 схема fullbox
 логин USER1
 пароль FB_USER1!
+
+
+Версия Apex 24.2, Отчёты сейчас делаются или сразу на pl sql и в xml или через питон пдф

@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600&display=swap" rel="stylesheet">
   <style>
-    :root { --bg: #0b0b0f; --card:#14141f; --gold:#d6a300; --muted:#9aa0b3; --stroke: rgba(255,255,255,0.08); --text:#e8e8ed; }
+    :root { --bg:#0b0b0f; --card:#14141f; --card-soft:#171726; --gold:#d6a300; --gold-soft:#e7c34a; --muted:#9aa0b3; --stroke: rgba(255,255,255,0.08); --text:#e8e8ed; --danger:#ff6b6b; --success:#1db954; }
     body { margin:0; background:var(--bg); color:var(--text); font-family:'Space Grotesk',system-ui,sans-serif; }
     a { color: inherit; text-decoration: none; }
     .wrap { max-width: 1100px; margin: 0 auto; padding: 24px 18px 64px; }
@@ -22,6 +22,36 @@
     table { width:100%; border-collapse:collapse; margin-top:12px; }
     th, td { border-bottom:1px solid var(--stroke); padding:10px; text-align:left; }
     th { color: var(--muted); font-weight:600; }
+    .notice { border:1px solid rgba(29,185,84,0.4); background:rgba(29,185,84,0.12); color:#b7f7c8; border-radius:12px; padding:10px 12px; margin:10px 0; }
+    .error { border:1px solid rgba(255,107,107,0.4); background:rgba(255,107,107,0.12); color:#ffd2d2; border-radius:12px; padding:10px 12px; margin:10px 0; }
+    .section-header { display:flex; justify-content:space-between; align-items:flex-end; gap:12px; flex-wrap:wrap; }
+    .receiving-form { display:grid; gap:14px; margin-top:12px; }
+    .meta-grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap:12px; }
+    .field label { display:block; font-weight:600; margin-bottom:6px; color:var(--muted); }
+    .required { color: var(--danger); margin-left:4px; }
+    .hint { color:var(--muted); font-size:12px; margin-top:4px; }
+    .small { font-size:12px; }
+    input, textarea, select { width:100%; padding:9px 10px; border-radius:10px; border:1px solid var(--stroke); background:var(--card-soft); color:var(--text); font-size:14px; }
+    textarea { resize:vertical; min-height:64px; }
+    input[readonly] { color:var(--muted); }
+    .table-wrap { overflow:auto; border-radius:14px; border:1px solid var(--stroke); background:rgba(12,12,18,0.6); }
+    .receiving-table { width:100%; border-collapse:collapse; min-width:860px; margin:0; }
+    .receiving-table th, .receiving-table td { padding:8px; border-bottom:1px solid var(--stroke); vertical-align:top; }
+    .receiving-table th { text-align:left; font-size:12px; text-transform:uppercase; letter-spacing:1px; color:var(--muted); background:rgba(255,255,255,0.03); }
+    .table-actions { display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; }
+    .row-action { padding:6px 10px; border-radius:8px; border:1px solid var(--stroke); background:transparent; color:var(--text); cursor:pointer; font-size:12px; }
+    .row-action:hover { border-color: var(--gold); }
+    .barcode-stack { display:flex; flex-direction:column; gap:6px; }
+    .barcode-main { font-weight:600; }
+    .barcode-toggle { border:none; background:rgba(255,255,255,0.08); color:var(--text); border-radius:999px; padding:4px 8px; font-size:11px; cursor:pointer; width:max-content; }
+    .barcode-toggle.active { background:rgba(214,163,0,0.2); color:var(--gold-soft); }
+    .barcode-more { display:flex; flex-wrap:wrap; gap:6px; font-size:12px; color:var(--muted); }
+    .barcode-more span { padding:4px 6px; border-radius:8px; border:1px solid var(--stroke); background:rgba(255,255,255,0.03); }
+    .action-bar { display:flex; gap:8px; flex-wrap:wrap; justify-content:flex-end; }
+    .action-btn { padding:10px 14px; border-radius:10px; border:1px solid var(--stroke); background:rgba(255,255,255,0.02); color:var(--text); font-weight:600; }
+    .action-btn.primary { background: linear-gradient(120deg,var(--gold),var(--gold-soft)); color:var(--bg); border-color: transparent; }
+    .ghost-btn { padding:8px 12px; border-radius:10px; border:1px solid var(--stroke); background:rgba(255,255,255,0.02); color:var(--text); font-weight:600; }
+    .ghost-btn:hover { border-color: var(--gold); box-shadow:0 10px 25px rgba(214,163,0,0.18); }
   </style>
 </head>
 <body>
@@ -52,8 +82,137 @@
           </tbody>
         </table>
       {% elif active_tab == 'receiving' %}
-        <h3>Заявка на приемку</h3>
-        <p class="muted">Форма создания приемки будет здесь.</p>
+        <div class="section-header">
+          <div>
+            <h3>Заявка на приемку</h3>
+            <div class="muted">Заполните обязательные поля и состав поставки.</div>
+          </div>
+          <div class="btn-row">
+            {% if agency %}
+              <a class="ghost-btn" href="/client/{{ agency.id }}/sku/">Номенклатура клиента</a>
+            {% else %}
+              <span class="muted small">Выберите клиента, чтобы загрузить SKU.</span>
+            {% endif %}
+          </div>
+        </div>
+
+        {% if error %}
+          <div class="error">{{ error }}</div>
+        {% endif %}
+        {% if submitted %}
+          <div class="notice">Заявка на приемку отправлена. Мы свяжемся с вами для уточнения деталей.</div>
+        {% endif %}
+
+        <form class="receiving-form" method="post" enctype="multipart/form-data">
+          {% csrf_token %}
+
+          <div class="meta-grid">
+            <div class="field">
+              <label>Клиент <span class="required">*</span></label>
+              <select name="agency_id" id="agency-select" required>
+                <option value="">Выберите клиента</option>
+                {% for item in agencies %}
+                  <option value="{{ item.id }}" {% if agency and agency.id == item.id %}selected{% endif %}>
+                    {{ item.agn_name|default:item.inn|default:"Клиент" }}
+                  </option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="field">
+              <label>Плановая дата/время прибытия <span class="required">*</span></label>
+              <input
+                type="datetime-local"
+                name="eta_at"
+                required
+                data-min-hours="{{ min_past_hours }}"
+                data-now="{{ current_time|date:'Y-m-d\\TH:i' }}"
+              >
+              <div class="hint">Не раньше текущего времени минус {{ min_past_hours|default:"X" }} часов.</div>
+            </div>
+            <div class="field">
+              <label>Ожидаемое количество коробов</label>
+              <input type="number" name="expected_boxes" min="0" placeholder="0">
+              <div class="hint">Можно оставить 0.</div>
+            </div>
+            <div class="field">
+              <label>Документы</label>
+              <input type="file" name="documents" multiple accept=".pdf,.jpg,.jpeg,.png,.xlsx,.doc,.docx">
+              <div class="hint">PDF/JPG/PNG/XLSX/DOCX.</div>
+            </div>
+          </div>
+
+          <div class="section-header">
+            <div>
+              <h3>Состав поставки</h3>
+              <div class="muted small">Если SKU нет в списке - заведите его в номенклатуре.</div>
+            </div>
+          </div>
+
+          <div class="table-wrap">
+            <table class="receiving-table">
+              <thead>
+                <tr>
+                  <th>Артикул (SKU) *</th>
+                  <th>Наименование</th>
+                  <th>ШК</th>
+                  <th>Количество (план) *</th>
+                  <th>Комментарий по позиции</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="items-body">
+                <tr class="item-row">
+                  <td>
+                    <input type="text" name="sku_code[]" class="sku-input" list="sku-options" placeholder="SKU" required>
+                    <input type="hidden" name="sku_id[]" class="sku-id">
+                  </td>
+                  <td>
+                    <input type="text" name="item_name[]" class="sku-name" readonly placeholder="Автоподтягивается">
+                  </td>
+                  <td>
+                    <div class="barcode-stack">
+                      <span class="barcode-main">-</span>
+                      <button type="button" class="barcode-toggle" hidden>+0</button>
+                      <div class="barcode-more" hidden></div>
+                    </div>
+                  </td>
+                  <td>
+                    <input type="number" name="qty[]" class="qty-input" min="1" required placeholder="0">
+                  </td>
+                  <td>
+                    <input type="text" name="position_comment[]" placeholder="Комментарий">
+                  </td>
+                  <td>
+                    <button type="button" class="row-action remove-row">Удалить</button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="table-actions">
+            <button type="button" class="action-btn" id="add-row">+ Добавить строку</button>
+            <div class="muted small">Минимум одна позиция обязательна.</div>
+          </div>
+
+          <div class="meta-grid">
+            <div class="field">
+              <label>Комментарий</label>
+              <textarea name="comment" rows="2" placeholder="Дополнительная информация"></textarea>
+            </div>
+            <div class="action-bar">
+              <button type="submit" class="action-btn primary" name="submit_action" value="send">Отправить</button>
+              <button type="submit" class="action-btn" name="submit_action" value="draft">Сохранить черновик</button>
+              <a class="action-btn" href="/orders/">Отмена</a>
+            </div>
+          </div>
+        </form>
+
+        <datalist id="sku-options">
+          {% for sku in sku_options %}
+            <option value="{{ sku.code }}" data-id="{{ sku.id }}" data-name="{{ sku.name }}" data-barcodes="{{ sku.barcodes_joined }}"></option>
+          {% endfor %}
+        </datalist>
       {% elif active_tab == 'processing' %}
         <h3>Заявка на обработку</h3>
         <p class="muted">Форма создания обработки будет здесь.</p>
@@ -66,5 +225,173 @@
       {% endif %}
     </div>
   </div>
+  <script>
+    (function(){
+      const tableBody = document.getElementById('items-body');
+      if (!tableBody) {
+        return;
+      }
+      const addBtn = document.getElementById('add-row');
+      const optionNodes = document.querySelectorAll('#sku-options option');
+      const skuMap = {};
+
+      optionNodes.forEach((option) => {
+        const code = option.value.trim();
+        if (!code) {
+          return;
+        }
+        const barcodes = (option.dataset.barcodes || '').split('|').filter(Boolean);
+        skuMap[code] = {
+          id: option.dataset.id || '',
+          name: option.dataset.name || '',
+          barcodes,
+        };
+      });
+
+      function applySku(row, code) {
+        const nameInput = row.querySelector('.sku-name');
+        const idInput = row.querySelector('.sku-id');
+        const main = row.querySelector('.barcode-main');
+        const toggle = row.querySelector('.barcode-toggle');
+        const more = row.querySelector('.barcode-more');
+        const data = skuMap[code];
+
+        if (!data) {
+          nameInput.value = '';
+          idInput.value = '';
+          main.textContent = '-';
+          toggle.hidden = true;
+          toggle.classList.remove('active');
+          more.hidden = true;
+          more.innerHTML = '';
+          return;
+        }
+
+        nameInput.value = data.name || '';
+        idInput.value = data.id || '';
+
+        if (!data.barcodes.length) {
+          main.textContent = '-';
+          toggle.hidden = true;
+          toggle.classList.remove('active');
+          more.hidden = true;
+          more.innerHTML = '';
+          return;
+        }
+
+        main.textContent = data.barcodes[0];
+        if (data.barcodes.length > 1) {
+          toggle.hidden = false;
+          toggle.textContent = `+${data.barcodes.length - 1}`;
+          more.innerHTML = data.barcodes.slice(1).map(value => `<span>${value}</span>`).join('');
+        } else {
+          toggle.hidden = true;
+          toggle.classList.remove('active');
+          more.hidden = true;
+          more.innerHTML = '';
+        }
+      }
+
+      function wireRow(row) {
+        const skuInput = row.querySelector('.sku-input');
+        const toggle = row.querySelector('.barcode-toggle');
+        const more = row.querySelector('.barcode-more');
+        const remove = row.querySelector('.remove-row');
+
+        skuInput.addEventListener('input', () => {
+          applySku(row, skuInput.value.trim());
+        });
+
+        toggle.addEventListener('click', () => {
+          const willShow = more.hidden;
+          more.hidden = !willShow;
+          toggle.classList.toggle('active', willShow);
+        });
+
+        remove.addEventListener('click', () => {
+          const rows = document.querySelectorAll('.item-row');
+          if (rows.length > 1) {
+            row.remove();
+          } else {
+            alert('Нужна минимум одна позиция.');
+          }
+        });
+      }
+
+      addBtn.addEventListener('click', () => {
+        const baseRow = tableBody.querySelector('.item-row');
+        const clone = baseRow.cloneNode(true);
+        clone.querySelectorAll('input').forEach((input) => {
+          input.value = '';
+        });
+        clone.querySelectorAll('.barcode-main').forEach((el) => {
+          el.textContent = '-';
+        });
+        clone.querySelectorAll('.barcode-toggle').forEach((el) => {
+          el.hidden = true;
+          el.classList.remove('active');
+        });
+        clone.querySelectorAll('.barcode-more').forEach((el) => {
+          el.hidden = true;
+          el.innerHTML = '';
+        });
+        wireRow(clone);
+        tableBody.appendChild(clone);
+      });
+
+      tableBody.querySelectorAll('.item-row').forEach(wireRow);
+
+      const form = tableBody.closest('form');
+      form.addEventListener('submit', (event) => {
+        const rows = Array.from(document.querySelectorAll('.item-row'));
+        const filledRows = rows.filter((row) => {
+          const sku = row.querySelector('.sku-input').value.trim();
+          const qty = Number(row.querySelector('.qty-input').value);
+          return sku && qty > 0;
+        });
+        if (!filledRows.length) {
+          event.preventDefault();
+          alert('Добавьте хотя бы одну позицию с SKU и количеством.');
+          return;
+        }
+        const invalidSku = rows.some((row) => {
+          const sku = row.querySelector('.sku-input').value.trim();
+          return sku && !skuMap[sku];
+        });
+        if (invalidSku) {
+          event.preventDefault();
+          alert('SKU не найден в номенклатуре. Сначала заведите его в списке SKU.');
+        }
+      });
+
+      const etaInput = document.querySelector('[data-min-hours]');
+      if (etaInput) {
+        const minHours = Number(etaInput.dataset.minHours || '0');
+        const nowValue = etaInput.dataset.now;
+        const now = nowValue ? new Date(nowValue) : new Date();
+        const minDate = new Date(now.getTime() - minHours * 3600 * 1000);
+        const pad = (value) => String(value).padStart(2, '0');
+        const toInputValue = (date) => `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+        etaInput.min = toInputValue(minDate);
+        if (!etaInput.value) {
+          etaInput.value = toInputValue(now);
+        }
+      }
+
+      const agencySelect = document.getElementById('agency-select');
+      if (agencySelect) {
+        agencySelect.addEventListener('change', () => {
+          const value = agencySelect.value;
+          if (!value) {
+            return;
+          }
+          const url = new URL(window.location.href);
+          url.searchParams.set('client', value);
+          url.searchParams.delete('ok');
+          window.location = url.toString();
+        });
+      }
+    })();
+  </script>
 </body>
 </html>
