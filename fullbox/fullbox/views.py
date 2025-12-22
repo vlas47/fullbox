@@ -72,7 +72,7 @@ def role_cabinet(request, role):
 
 def project_description(request):
     """Описание проекта для кабинета директора."""
-    content = _load_text_file(settings.BASE_DIR / "README.md")
+    content = _load_text_file(settings.BASE_DIR.parent / "README.md")
     return render(
         request,
         "project_text.html",
@@ -86,7 +86,7 @@ def project_description(request):
 
 def development_journal(request):
     """Журнал разработки для кабинета директора."""
-    content = _load_text_file(settings.BASE_DIR / "journal.md")
+    content = _load_text_file(settings.BASE_DIR.parent / "journal.md")
     return render(
         request,
         "project_text.html",
@@ -99,11 +99,11 @@ def development_journal(request):
 
 
 def project_description_file(request):
-    return _file_response(settings.BASE_DIR / "README.md", "README.md")
+    return _file_response(settings.BASE_DIR.parent / "README.md", "README.md")
 
 
 def development_journal_file(request):
-    return _file_response(settings.BASE_DIR / "journal.md", "journal.md")
+    return _file_response(settings.BASE_DIR.parent / "journal.md", "journal.md")
 
 
 def _load_text_file(path: Path) -> str:
