@@ -32,6 +32,31 @@
     .section { border:1px solid var(--stroke); border-radius:14px; padding:12px; }
     .section h3 { margin:0 0 10px; }
     .field-error { border-color: var(--gold-soft); box-shadow: 0 0 0 1px rgba(231,195,74,0.4); background:rgba(231,195,74,0.08); }
+    .modal { position:fixed; inset:0; background:rgba(5,6,10,0.7); display:none; align-items:center; justify-content:center; padding:24px; z-index:30; }
+    .modal.active { display:flex; }
+    .modal-card { width:min(980px, 96vw); background:var(--card); border:1px solid var(--stroke); border-radius:18px; padding:18px; box-shadow:0 25px 60px rgba(0,0,0,0.45); }
+    .modal-header { display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:14px; }
+    .label-preview { background:#f8f8f8; color:#111; border:1px solid #d4d4d4; border-radius:14px; padding:14px; display:grid; grid-template-columns: 120px 1fr 150px; gap:12px; min-height:190px; }
+    .label-left { display:grid; gap:8px; align-content:start; }
+    .label-title { font-weight:700; font-size:14px; }
+    .label-sub { font-size:12px; }
+    .label-barcode { height:120px; border:1px solid #111; background:repeating-linear-gradient(90deg, #111 0 2px, #fff 2px 4px, #111 4px 5px, #fff 5px 8px); }
+    .label-main { display:grid; gap:6px; font-size:12px; }
+    .label-line { display:flex; gap:6px; }
+    .label-line span:first-child { min-width:76px; color:#444; }
+    .label-right { display:grid; gap:8px; align-content:start; justify-items:start; }
+    .label-qr { width:110px; height:110px; border:1px solid #111; background:repeating-linear-gradient(0deg, #111 0 6px, #fff 6px 12px), repeating-linear-gradient(90deg, #111 0 6px, #fff 6px 12px); }
+    .label-code { font-size:12px; }
+    .label-eac { font-weight:800; font-size:20px; letter-spacing:2px; }
+    .label-count { width:34px; height:34px; border:2px solid #111; display:grid; place-items:center; font-weight:700; font-size:16px; }
+    .modal-actions { margin-top:14px; display:flex; gap:10px; flex-wrap:wrap; }
+    @media print {
+      body * { visibility:hidden; }
+      #label-preview, #label-preview * { visibility:visible; }
+      #label-preview { position:static; inset:auto; background:none; padding:0; }
+      #label-preview .modal-card { box-shadow:none; border:none; padding:0; }
+      #label-preview .modal-header, #label-preview .modal-actions { display:none; }
+    }
   </style>
 </head>
 <body>
@@ -42,7 +67,7 @@
         <h1>{{ title }}</h1>
       </div>
       <div class="controls">
-        <a class="btn" href="#" onclick="return false;">Печать этикетки</a>
+        <a class="btn" href="#" id="label-preview-open">Печать этикетки</a>
         <a class="btn" href="/sku/">К списку SKU</a>
         <a class="btn" href="/dev/">Dev</a>
       </div>
@@ -148,6 +173,40 @@
       </form>
     </div>
   </div>
+  <div class="modal" id="label-preview">
+    <div class="modal-card">
+      <div class="modal-header">
+        <div>
+          <div class="muted">FULLBOX</div>
+          <strong>Превью этикетки</strong>
+        </div>
+        <button class="btn" id="label-preview-close" type="button">Закрыть</button>
+      </div>
+      <div class="label-preview">
+        <div class="label-left">
+          <div class="label-title">Арт.: <span data-field="sku_code">—</span></div>
+          <div class="label-sub">р-р: <span data-field="size">—</span></div>
+          <div class="label-barcode" aria-hidden="true"></div>
+        </div>
+        <div class="label-main">
+          <div class="label-line"><span>Бренд:</span><span data-field="brand">—</span></div>
+          <div class="label-line"><span>Предмет:</span><span data-field="subject">—</span></div>
+          <div class="label-line"><span>Цвет:</span><span data-field="color">—</span></div>
+          <div class="label-line"><span>Состав:</span><span data-field="composition">—</span></div>
+          <div class="label-line"><span>Поставщик:</span><span data-field="supplier">—</span></div>
+        </div>
+        <div class="label-right">
+          <div class="label-qr" aria-hidden="true"></div>
+          <div class="label-code" data-field="barcode">—</div>
+          <div class="label-eac">EAC</div>
+          <div class="label-count">1</div>
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn primary" type="button" id="label-print">Печать</button>
+      </div>
+    </div>
+  </div>
 </body>
 <script>
   (function(){
@@ -164,6 +223,89 @@
         codeInput.value = `${base}${check}`;
       });
     }
+
+    const preview = document.getElementById('label-preview');
+    const openBtn = document.getElementById('label-preview-open');
+    const closeBtn = document.getElementById('label-preview-close');
+    const printBtn = document.getElementById('label-print');
+
+    const getValue = (id) => {
+      const el = document.getElementById(id);
+      if (!el) {
+        return '';
+      }
+      if (el.tagName === 'SELECT') {
+        return (el.options[el.selectedIndex] && el.options[el.selectedIndex].text) || '';
+      }
+      return (el.value || '').trim();
+    };
+
+    const pickValue = (ids) => {
+      for (const id of ids) {
+        const value = getValue(id);
+        if (value) {
+          return value;
+        }
+      }
+      return '';
+    };
+
+    const setField = (name, value) => {
+      const el = preview.querySelector(`[data-field="${name}"]`);
+      if (el) {
+        el.textContent = value || '—';
+      }
+    };
+
+    const updatePreview = () => {
+      setField('sku_code', getValue('id_sku_code'));
+      setField('size', getValue('id_size'));
+      setField('brand', getValue('id_brand'));
+      setField('subject', pickValue(['id_tovar_category', 'id_vid_tovar', 'id_type_tovar']));
+      const colorText = getValue('id_color') || pickValue(['id_color_ref']);
+      setField('color', colorText);
+      setField('composition', getValue('id_composition'));
+      setField('supplier', getValue('id_agency'));
+      setField('barcode', getValue('id_code'));
+    };
+
+    if (openBtn && preview) {
+      openBtn.addEventListener('click', (event) => {
+        event.preventDefault();
+        updatePreview();
+        preview.classList.add('active');
+      });
+    }
+    if (closeBtn) {
+      closeBtn.addEventListener('click', () => preview.classList.remove('active'));
+    }
+    if (printBtn) {
+      printBtn.addEventListener('click', () => {
+        updatePreview();
+        window.print();
+      });
+    }
+
+    const fieldsToWatch = [
+      'id_sku_code',
+      'id_size',
+      'id_brand',
+      'id_tovar_category',
+      'id_vid_tovar',
+      'id_type_tovar',
+      'id_color',
+      'id_color_ref',
+      'id_composition',
+      'id_agency',
+      'id_code',
+    ];
+    fieldsToWatch.forEach((id) => {
+      const el = document.getElementById(id);
+      if (el) {
+        el.addEventListener('input', updatePreview);
+        el.addEventListener('change', updatePreview);
+      }
+    });
   })();
 </script>
 </html>
