@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Синхронизация маркетплейсов | FULLBOX</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root { --bg:#0b0b0f; --card:#14141f; --gold:#d6a300; --gold-soft:#e7c34a; --text:#e8e8ed; --muted:#9aa0b3; --stroke: rgba(255,255,255,0.08); }
+    * { box-sizing: border-box; }
+    body { margin:0; background:var(--bg); color:var(--text); font-family:'Space Grotesk',system-ui,sans-serif; }
+    a { color: inherit; text-decoration: none; }
+    .wrap { max-width: 1100px; margin: 0 auto; padding: 28px 18px 64px; }
+    header { display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; }
+    h1 { margin:0; letter-spacing:-0.4px; }
+    .muted { color: var(--muted); }
+    .btn { padding:10px 14px; border-radius:10px; border:1px solid var(--stroke); background:rgba(255,255,255,0.02); color:var(--text); font-weight:600; }
+    .btn:hover { border-color: var(--gold); box-shadow:0 10px 25px rgba(214,163,0,0.25); }
+    .btn.primary { background: linear-gradient(120deg,var(--gold),var(--gold-soft)); color: var(--bg); border-color: transparent; }
+    .btn.disabled { opacity:0.5; cursor:not-allowed; pointer-events:none; }
+    .card { background:var(--card); border:1px solid var(--stroke); border-radius:16px; padding:16px; box-shadow:0 18px 45px rgba(0,0,0,0.35); display:grid; gap:12px; }
+    .grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap:12px; margin-top:16px; }
+    .pill { display:inline-flex; align-items:center; gap:6px; padding:6px 10px; border-radius:999px; border:1px solid var(--stroke); background:rgba(214,163,0,0.12); color:var(--gold); font-weight:600; }
+    .market { display:flex; align-items:center; justify-content:space-between; gap:10px; }
+    .market-actions { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+    .market-status { display:flex; align-items:center; gap:6px; }
+    .status { padding:4px 8px; border-radius:999px; border:1px solid var(--stroke); color:var(--muted); font-size:12px; }
+    .status-dot { width:10px; height:10px; border-radius:50%; display:inline-block; }
+    .status-dot.red { background:#e25555; box-shadow:0 0 6px rgba(226,85,85,0.6); }
+    .status-dot.yellow { background:#e2c355; box-shadow:0 0 6px rgba(226,195,85,0.6); }
+    .status-dot.green { background:#4ac97d; box-shadow:0 0 6px rgba(74,201,125,0.6); }
+    .btn.small { padding:6px 10px; border-radius:8px; font-size:12px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div>
+        <div class="muted">FULLBOX</div>
+        <h1>Синхронизация маркетплейсов</h1>
+        <div class="muted">Настройка и запуск синхронизаций по выбранному клиенту</div>
+        {% if selected_client %}
+          <div class="pill" style="margin-top:8px;">Клиент: {{ selected_client.agn_name|default:"Без названия" }}{% if selected_client.inn %} · ИНН {{ selected_client.inn }}{% endif %}</div>
+        {% endif %}
+      </div>
+      <div style="display:flex; gap:10px; flex-wrap:wrap;">
+        <a class="btn" href="/client/dashboard/{% if selected_client %}?client={{ selected_client.id }}{% endif %}">В кабинет клиента</a>
+        <a class="btn" href="/">На главную</a>
+      </div>
+    </header>
+
+    <div class="grid">
+      <div class="card">
+        {% for market in marketplaces %}
+          <div class="market">
+            <strong>{{ market.name }}</strong>
+            <div class="market-actions">
+              <span class="market-status"><span class="status-dot {{ market.status_class }}"></span><span class="status">{{ market.status_text }}</span></span>
+              {% if market.settings_url %}
+                <a class="btn small" href="{{ market.settings_url }}">Настроить</a>
+              {% else %}
+                <span class="btn small disabled">Скоро</span>
+              {% endif %}
+            </div>
+          </div>
+        {% endfor %}
+        <div class="muted">Синхронизация запускается после привязки ключей маркетплейса.</div>
+        <button class="btn primary" type="button">Запустить синхронизацию</button>
+      </div>
+      <div class="card">
+        <strong>Что будет синхронизироваться</strong>
+        <div class="muted">SKU, штрихкоды, остатки, статусы поставок, связки маркетплейса.</div>
+        <strong>Статус</strong>
+        <div class="muted">Функция в разработке. Кнопка появится на странице клиента.</div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

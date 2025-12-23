@@ -54,6 +54,7 @@ INSTALLED_APPS = [
     "employees",
     "head_manager",
     "todo",
+    "market_sync",
 ]
 
 MIDDLEWARE = [

@@ -43,8 +43,8 @@
         {% endif %}
       </div>
       <div class="actions">
-        <a class="btn primary" href="/orders/">Создать заявку</a>
         {% if selected_client %}
+          <a class="btn primary" href="/market-sync/?client={{ selected_client.id }}">Синхронизация с маркетплейс</a>
           <a class="btn" href="/client/{{ selected_client.id }}/sku/">Номенклатура</a>
           <a class="btn" href="/orders/receiving/?client={{ selected_client.id }}">Заявка на приемку</a>
           <a class="btn" href="/client/{{ selected_client.id }}/packing/new/">Заявка на упаковку</a>

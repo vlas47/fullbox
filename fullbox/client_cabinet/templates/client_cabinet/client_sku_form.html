@@ -40,22 +40,139 @@
     .printer-row label { color:var(--muted); font-weight:600; }
     .printer-row input { min-width:240px; }
     .label-stage { --label-scale: 3; background:rgba(255,255,255,0.02); border:1px dashed var(--stroke); border-radius:14px; padding:18px; display:flex; justify-content:center; align-items:center; min-height:320px; overflow:visible; }
-    .label-preview { background:#f8f8f8; color:#111; border:1px solid #d4d4d4; border-radius:6px; padding:1.1mm; display:grid; grid-template-columns: 6.5mm 1fr 12mm; gap:1mm; width:35mm; height:20mm; font-size:2mm; line-height:1.1; zoom: var(--label-scale); }
-    .label-left { display:grid; align-content:center; justify-items:center; }
-    .label-barcode { width:18mm; height:6.5mm; transform: rotate(-90deg); transform-origin:center; }
-    .label-main { display:grid; gap:0.5mm; font-size:2mm; }
-    .label-meta { display:grid; grid-template-columns: 1fr 1fr; gap:0.8mm; font-weight:700; font-size:2.1mm; padding-bottom:0.4mm; border-bottom:1px solid #cfcfcf; }
-    .label-line { display:grid; grid-template-columns: 9mm 1fr; gap:0.6mm; padding-bottom:0.3mm; border-bottom:1px solid #e2e2e2; }
-    .label-line:last-child { border-bottom:none; }
-    .label-key { color:#444; }
-    .label-val { word-break: break-word; }
-    .label-right { display:grid; grid-template-rows: 9mm auto; gap:0.6mm; align-content:start; }
-    .label-qr { width:9mm; height:9mm; border:1px solid #111; display:grid; place-items:center; justify-self:end; }
-    .label-footer { display:flex; justify-content:space-between; align-items:flex-start; gap:0.6mm; }
-    .label-codes { display:grid; gap:0.3mm; font-size:1.7mm; line-height:1.1; }
-    .label-eac-row { display:flex; align-items:center; gap:0.6mm; }
-    .label-eac { font-weight:800; font-size:2.8mm; letter-spacing:0.6px; }
-    .label-count { width:5.2mm; height:5.2mm; border:1px solid #111; display:grid; place-items:center; font-weight:700; font-size:2.8mm; }
+    .label-preview {
+      background:#ffffff;
+      color:#111;
+      border:1px solid #d4d4d4;
+      border-radius:4px;
+      width:35mm;
+      height:20mm;
+      display:grid;
+      grid-template-columns: repeat(5, 1fr);
+      grid-template-rows: repeat(3, 1fr);
+      position:relative;
+      zoom: var(--label-scale);
+      background-image: none;
+    }
+    .label-barcode-cell {
+      grid-column: 1;
+      grid-row: 1 / span 3;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      overflow:hidden;
+      position:relative;
+    }
+    .label-qr-cell {
+      grid-column: 4 / span 2;
+      grid-row: 1 / span 2;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      overflow:hidden;
+      position:relative;
+    }
+    .label-qr {
+      width:12.5mm;
+      height:12.5mm;
+      border:1px solid #111;
+      display:grid;
+      place-items:center;
+      overflow:hidden;
+      background:#fff;
+    }
+    .label-qr canvas,
+    .label-qr img {
+      width:100% !important;
+      height:100% !important;
+      display:block;
+    }
+    .label-eac {
+      position:absolute;
+      right:0.6mm;
+      bottom:0.6mm;
+      width:3mm;
+      height:auto;
+      display:block;
+    }
+    .label-eac img {
+      width:100%;
+      height:auto;
+      display:block;
+    }
+    .label-info-cell {
+      grid-column: 2 / span 2;
+      grid-row: 1 / span 3;
+      display:flex;
+      align-items:stretch;
+      justify-content:center;
+      padding:0.6mm 0.4mm;
+      overflow:hidden;
+    }
+    .label-info {
+      width:100%;
+      display:flex;
+      flex-direction:column;
+      gap:0.4mm;
+      font-size:0.9mm;
+      line-height:1.05;
+      color:#111;
+      height:100%;
+      justify-content:space-between;
+    }
+    .label-info-emph {
+      font-size:1mm;
+    }
+    .label-info-top {
+      display:flex;
+      flex-direction:column;
+      gap:0.35mm;
+      border-bottom:1px solid rgba(0,0,0,0.2);
+      padding-bottom:0.35mm;
+      min-height:3mm;
+      flex:1 1 auto;
+    }
+    .label-info-line {
+      white-space:normal;
+      word-break:break-word;
+    }
+    .label-info-bottom {
+      display:flex;
+      flex-direction:column;
+      gap:0.3mm;
+      padding-top:0.25mm;
+      flex:0 0 auto;
+    }
+    .label-info-label {
+      font-weight:700;
+      margin-right:0.2mm;
+    }
+    .label-barcode-rotate {
+      position:absolute;
+      top:50%;
+      left:50%;
+      width:18mm;
+      height:6mm;
+      display:flex;
+      flex-direction:column;
+      align-items:center;
+      justify-content:center;
+      gap:0.2mm;
+      transform: translate(-50%, -50%) rotate(90deg);
+      transform-origin:center;
+    }
+    .label-barcode {
+      width:100%;
+      height:4.2mm;
+      display:block;
+    }
+    .label-barcode-value {
+      font-size:0.9mm;
+      line-height:1;
+      letter-spacing:0.15mm;
+      color:#111;
+      white-space:nowrap;
+    }
     .modal-actions { margin-top:14px; display:flex; gap:10px; flex-wrap:wrap; }
     @media print {
       body * { visibility:hidden; }
@@ -205,32 +322,32 @@
       </div>
       <div class="label-stage">
         <div class="label-preview">
-          <div class="label-left">
-            <svg class="label-barcode" data-barcode-svg aria-hidden="true"></svg>
+          <div class="label-eac">
+            <img alt="EAC" src="data:image/png;base64,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">
           </div>
-          <div class="label-main">
-            <div class="label-meta">
-              <div>Арт.: <span data-field="sku_code">—</span></div>
-              <div>р-р: <span data-field="size">—</span></div>
+          <div class="label-barcode-cell">
+            <div class="label-barcode-rotate">
+              <svg class="label-barcode" data-barcode-svg aria-hidden="true"></svg>
+              <div class="label-barcode-value" data-barcode-value>—</div>
             </div>
-            <div class="label-line"><span class="label-key">Бренд:</span><span class="label-val" data-field="brand">—</span></div>
-            <div class="label-line"><span class="label-key">Предмет:</span><span class="label-val" data-field="subject">—</span></div>
-            <div class="label-line"><span class="label-key">Цвет:</span><span class="label-val" data-field="color">—</span></div>
-            <div class="label-line"><span class="label-key">Состав:</span><span class="label-val" data-field="composition">—</span></div>
-            <div class="label-line"><span class="label-key">Поставщик:</span><span class="label-val" data-field="supplier">—</span></div>
           </div>
-          <div class="label-right">
+          <div class="label-info-cell">
+            <div class="label-info">
+              <div class="label-info-top">
+                <div class="label-info-line label-info-emph" data-info="name"></div>
+                <div class="label-info-line label-info-emph" data-info="size"></div>
+                <div class="label-info-line label-info-emph" data-info="brand"></div>
+                <div class="label-info-line" data-info="subject"></div>
+                <div class="label-info-line" data-info="color"></div>
+                <div class="label-info-line" data-info="composition"></div>
+              </div>
+              <div class="label-info-bottom">
+                <div class="label-info-line" data-info="supplier"></div>
+              </div>
+            </div>
+          </div>
+          <div class="label-qr-cell">
             <div class="label-qr" data-qr-box aria-hidden="true"></div>
-            <div class="label-footer">
-              <div class="label-codes">
-                <div data-field="barcode">—</div>
-                <div data-field="barcode_extra">—</div>
-              </div>
-              <div class="label-eac-row">
-                <div class="label-eac">EAC</div>
-                <div class="label-count">1</div>
-              </div>
-            </div>
           </div>
         </div>
       </div>
@@ -270,7 +387,11 @@
         return '';
       }
       if (el.tagName === 'SELECT') {
-        return (el.options[el.selectedIndex] && el.options[el.selectedIndex].text) || '';
+        const option = el.options[el.selectedIndex];
+        if (!option || !option.value) {
+          return '';
+        }
+        return (option.text || '').trim();
       }
       return (el.value || '').trim();
     };
@@ -292,6 +413,20 @@
       }
     };
 
+    const setInfoLine = (key, value, label) => {
+      const el = preview.querySelector(`[data-info="${key}"]`);
+      if (!el) {
+        return;
+      }
+      if (value) {
+        el.textContent = label ? `${label}${value}` : value;
+        el.style.display = '';
+      } else {
+        el.textContent = '';
+        el.style.display = 'none';
+      }
+    };
+
     const renderBarcode = (value) => {
       const svg = preview.querySelector('[data-barcode-svg]');
       if (!svg) {
@@ -306,13 +441,13 @@
         const useEan = digits.length >= 12;
         JsBarcode(svg, useEan ? digits : value, {
           format: useEan ? 'ean13' : 'CODE128',
-          displayValue: true,
+          displayValue: false,
           margin: 0,
           lineColor: '#111',
-          height: 38,
+          height: 24,
           width: 1,
-          fontSize: 8,
-          textMargin: 1,
+          fontSize: 5,
+          textMargin: 0,
         });
       }
     };
@@ -329,8 +464,8 @@
       if (window.QRCode) {
         new QRCode(box, {
           text: value,
-          width: 48,
-          height: 48,
+          width: 64,
+          height: 64,
           correctLevel: QRCode.CorrectLevel.M,
         });
       }
@@ -340,14 +475,28 @@
       const skuCode = getValue('id_sku_code');
       setField('sku_code', skuCode);
       setField('size', getValue('id_size'));
-      setField('brand', getValue('id_brand'));
-      setField('subject', pickValue(['id_tovar_category', 'id_vid_tovar', 'id_type_tovar']));
+      const nameValue = pickValue(['id_name_print', 'id_name']);
+      const sizeValue = getValue('id_size');
+      const rawBrandValue = getValue('id_brand');
+      const brandValue = rawBrandValue.toLowerCase() === 'nobrand' ? '' : rawBrandValue;
+      const subjectValue = pickValue(['id_tovar_category', 'id_vid_tovar', 'id_type_tovar']);
       const colorText = getValue('id_color') || pickValue(['id_color_ref']);
-      setField('color', colorText);
-      setField('composition', getValue('id_composition'));
-      setField('supplier', '{{ agency.agn_name|default:"Клиент" }}');
-      const barcodeValue = getValue('id_code');
+      const compositionValue = getValue('id_composition');
+      const supplierValue = '{{ agency.agn_name|default:"Клиент"|escapejs }}';
+      setInfoLine('name', nameValue);
+      setInfoLine('size', sizeValue, 'р-р: ');
+      setInfoLine('brand', brandValue);
+      setInfoLine('subject', subjectValue);
+      setInfoLine('color', colorText);
+      setInfoLine('composition', compositionValue, 'Состав: ');
+      setInfoLine('supplier', supplierValue, 'Поставщик: ');
+      const barcodeValue = pickValue(['field-code', 'id_code']);
       setField('barcode', barcodeValue);
+      const barcodeDigits = (barcodeValue || '').replace(/\D/g, '');
+      const barcodeValueEl = preview.querySelector('[data-barcode-value]');
+      if (barcodeValueEl) {
+        barcodeValueEl.textContent = barcodeDigits || barcodeValue || '—';
+      }
       const barcodeExtra = getValue('id_source_reference') || skuCode;
       setField('barcode_extra', barcodeExtra);
       renderBarcode(barcodeValue);
@@ -355,21 +504,26 @@
       renderQr(qrValue);
     };
 
-    if (openBtn && preview) {
-      openBtn.addEventListener('click', (event) => {
-        event.preventDefault();
+      if (openBtn && preview) {
+        openBtn.addEventListener('click', (event) => {
+          event.preventDefault();
+          updatePreview();
+          preview.classList.add('active');
+        });
+      }
+      if (closeBtn) {
+        closeBtn.addEventListener('click', () => preview.classList.remove('active'));
+      }
+      const autoOpen = new URLSearchParams(window.location.search).get('print');
+      if (autoOpen && preview) {
         updatePreview();
         preview.classList.add('active');
-      });
-    }
-    if (closeBtn) {
-      closeBtn.addEventListener('click', () => preview.classList.remove('active'));
-    }
-    if (printBtn) {
-      printBtn.addEventListener('click', () => {
-        updatePreview();
-        window.print();
-      });
+      }
+      if (printBtn) {
+        printBtn.addEventListener('click', () => {
+          updatePreview();
+          window.print();
+        });
     }
 
     if (printerInput) {
@@ -383,6 +537,8 @@
     }
 
     const fieldsToWatch = [
+      'id_name',
+      'id_name_print',
       'id_sku_code',
       'id_size',
       'id_brand',
@@ -392,7 +548,10 @@
       'id_color',
       'id_color_ref',
       'id_composition',
+      'id_agency',
+      'field-code',
       'id_code',
+      'id_source_reference',
     ];
     fieldsToWatch.forEach((id) => {
       const el = document.getElementById(id);
