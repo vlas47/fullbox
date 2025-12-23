@@ -36,19 +36,23 @@
     .modal.active { display:flex; }
     .modal-card { width:min(980px, 96vw); background:var(--card); border:1px solid var(--stroke); border-radius:18px; padding:18px; box-shadow:0 25px 60px rgba(0,0,0,0.45); }
     .modal-header { display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:14px; }
-    .label-preview { background:#f8f8f8; color:#111; border:1px solid #d4d4d4; border-radius:14px; padding:14px; display:grid; grid-template-columns: 120px 1fr 150px; gap:12px; min-height:190px; }
-    .label-left { display:grid; gap:8px; align-content:start; }
-    .label-title { font-weight:700; font-size:14px; }
-    .label-sub { font-size:12px; }
-    .label-barcode { height:120px; border:1px solid #111; background:repeating-linear-gradient(90deg, #111 0 2px, #fff 2px 4px, #111 4px 5px, #fff 5px 8px); }
-    .label-main { display:grid; gap:6px; font-size:12px; }
+    .printer-row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:10px; }
+    .printer-row label { color:var(--muted); font-weight:600; }
+    .printer-row input { min-width:240px; }
+    .label-stage { background:rgba(255,255,255,0.02); border:1px dashed var(--stroke); border-radius:14px; padding:12px; overflow:auto; }
+    .label-preview { background:#f8f8f8; color:#111; border:1px solid #d4d4d4; border-radius:6px; padding:1.6mm; display:grid; grid-template-columns: 7mm 1fr 10mm; gap:1.6mm; width:35mm; height:20mm; font-size:2.4mm; line-height:1.2; transform: scale(2.6); transform-origin: top left; }
+    .label-left { display:grid; gap:1.2mm; align-content:start; }
+    .label-title { font-weight:700; font-size:2.6mm; }
+    .label-sub { font-size:2.2mm; }
+    .label-barcode { width:16mm; height:6mm; transform: rotate(-90deg); transform-origin:center; }
+    .label-main { display:grid; gap:1mm; font-size:2.2mm; }
     .label-line { display:flex; gap:6px; }
-    .label-line span:first-child { min-width:76px; color:#444; }
-    .label-right { display:grid; gap:8px; align-content:start; justify-items:start; }
-    .label-qr { width:110px; height:110px; border:1px solid #111; background:repeating-linear-gradient(0deg, #111 0 6px, #fff 6px 12px), repeating-linear-gradient(90deg, #111 0 6px, #fff 6px 12px); }
-    .label-code { font-size:12px; }
-    .label-eac { font-weight:800; font-size:20px; letter-spacing:2px; }
-    .label-count { width:34px; height:34px; border:2px solid #111; display:grid; place-items:center; font-weight:700; font-size:16px; }
+    .label-line span:first-child { min-width:12mm; color:#444; }
+    .label-right { display:grid; gap:1mm; align-content:start; justify-items:start; }
+    .label-qr { width:9mm; height:9mm; border:1px solid #111; background:repeating-linear-gradient(0deg, #111 0 1mm, #fff 1mm 2mm), repeating-linear-gradient(90deg, #111 0 1mm, #fff 1mm 2mm); }
+    .label-code { font-size:2.2mm; }
+    .label-eac { font-weight:800; font-size:3.2mm; letter-spacing:1px; }
+    .label-count { width:6mm; height:6mm; border:1px solid #111; display:grid; place-items:center; font-weight:700; font-size:3mm; }
     .modal-actions { margin-top:14px; display:flex; gap:10px; flex-wrap:wrap; }
     @media print {
       body * { visibility:hidden; }
@@ -182,11 +186,23 @@
         </div>
         <button class="btn" id="label-preview-close" type="button">Закрыть</button>
       </div>
-      <div class="label-preview">
+      <div class="printer-row">
+        <label for="label-printer">Принтер этикеток</label>
+        <input id="label-printer" list="label-printers" placeholder="Выберите или введите">
+        <datalist id="label-printers">
+          <option value="Zebra GK420d">
+          <option value="Zebra ZD421">
+          <option value="TSC TE200">
+          <option value="TSC TE310">
+          <option value="Honeywell PC42t">
+        </datalist>
+      </div>
+      <div class="label-stage">
+        <div class="label-preview">
         <div class="label-left">
           <div class="label-title">Арт.: <span data-field="sku_code">—</span></div>
           <div class="label-sub">р-р: <span data-field="size">—</span></div>
-          <div class="label-barcode" aria-hidden="true"></div>
+          <svg class="label-barcode" data-barcode-svg aria-hidden="true"></svg>
         </div>
         <div class="label-main">
           <div class="label-line"><span>Бренд:</span><span data-field="brand">—</span></div>
@@ -201,12 +217,14 @@
           <div class="label-eac">EAC</div>
           <div class="label-count">1</div>
         </div>
+        </div>
       </div>
       <div class="modal-actions">
         <button class="btn primary" type="button" id="label-print">Печать</button>
       </div>
     </div>
   </div>
+<script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
 </body>
 <script>
   (function(){
@@ -228,6 +246,7 @@
     const openBtn = document.getElementById('label-preview-open');
     const closeBtn = document.getElementById('label-preview-close');
     const printBtn = document.getElementById('label-print');
+    const printerInput = document.getElementById('label-printer');
 
     const getValue = (id) => {
       const el = document.getElementById(id);
@@ -257,6 +276,28 @@
       }
     };
 
+    const renderBarcode = (value) => {
+      const svg = preview.querySelector('[data-barcode-svg]');
+      if (!svg) {
+        return;
+      }
+      const digits = (value || '').replace(/\D/g, '');
+      if (!digits) {
+        svg.innerHTML = '';
+        return;
+      }
+      if (window.JsBarcode) {
+        JsBarcode(svg, digits, {
+          format: 'ean13',
+          displayValue: false,
+          margin: 0,
+          lineColor: '#111',
+          height: 26,
+          width: 1.2,
+        });
+      }
+    };
+
     const updatePreview = () => {
       setField('sku_code', getValue('id_sku_code'));
       setField('size', getValue('id_size'));
@@ -266,7 +307,9 @@
       setField('color', colorText);
       setField('composition', getValue('id_composition'));
       setField('supplier', getValue('id_agency'));
-      setField('barcode', getValue('id_code'));
+      const barcodeValue = getValue('id_code');
+      setField('barcode', barcodeValue);
+      renderBarcode(barcodeValue);
     };
 
     if (openBtn && preview) {
@@ -283,6 +326,16 @@
       printBtn.addEventListener('click', () => {
         updatePreview();
         window.print();
+      });
+    }
+
+    if (printerInput) {
+      const stored = localStorage.getItem('label_printer');
+      if (stored) {
+        printerInput.value = stored;
+      }
+      printerInput.addEventListener('change', () => {
+        localStorage.setItem('label_printer', printerInput.value.trim());
       });
     }
 
