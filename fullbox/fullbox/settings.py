@@ -156,4 +156,12 @@ STATIC_ROOT = BASE_DIR / 'staticfiles'
 MEDIA_URL = 'media/'
 MEDIA_ROOT = BASE_DIR / 'media'
 
+JOURNAL_REMOTE_URL = os.environ.get(
+    "JOURNAL_REMOTE_URL",
+    "https://raw.githubusercontent.com/vlas47/fullbox/main/journal.md",
+).strip()
+JOURNAL_REMOTE_CACHE_SECONDS = int(
+    os.environ.get("JOURNAL_REMOTE_CACHE_SECONDS", "300")
+)
+
 
