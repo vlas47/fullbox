@@ -39,8 +39,8 @@
     .printer-row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:10px; }
     .printer-row label { color:var(--muted); font-weight:600; }
     .printer-row input { min-width:240px; }
-    .label-stage { background:rgba(255,255,255,0.02); border:1px dashed var(--stroke); border-radius:14px; padding:18px; display:flex; justify-content:center; align-items:flex-start; min-height:280px; overflow:visible; }
-    .label-preview { background:#f8f8f8; color:#111; border:1px solid #d4d4d4; border-radius:6px; padding:1.1mm; display:grid; grid-template-columns: 6.5mm 1fr 12mm; gap:1mm; width:35mm; height:20mm; font-size:2mm; line-height:1.1; transform: scale(3); transform-origin: top left; }
+    .label-stage { --label-scale: 3; background:rgba(255,255,255,0.02); border:1px dashed var(--stroke); border-radius:14px; padding:18px; display:flex; justify-content:center; align-items:center; min-height:320px; overflow:visible; }
+    .label-preview { background:#f8f8f8; color:#111; border:1px solid #d4d4d4; border-radius:6px; padding:1.1mm; display:grid; grid-template-columns: 6.5mm 1fr 12mm; gap:1mm; width:35mm; height:20mm; font-size:2mm; line-height:1.1; zoom: var(--label-scale); }
     .label-left { display:grid; align-content:center; justify-items:center; }
     .label-barcode { width:18mm; height:6.5mm; transform: rotate(-90deg); transform-origin:center; }
     .label-main { display:grid; gap:0.5mm; font-size:2mm; }
@@ -63,12 +63,11 @@
       #label-preview { position:static; inset:auto; background:none; padding:0; }
       #label-preview .modal-card { box-shadow:none; border:none; padding:0; }
       #label-preview .modal-header, #label-preview .modal-actions { display:none; }
-      #label-preview .label-stage { border:none; padding:0; }
-      #label-preview .label-preview { transform:none; }
+      #label-preview .label-stage { border:none; padding:0; min-height:auto; }
+      #label-preview .label-preview { zoom: 1; }
     }
     @media (max-width: 900px) {
-      .label-preview { transform: scale(2.4); }
-      .label-stage { min-height:240px; }
+      .label-stage { --label-scale: 2.4; min-height:260px; }
     }
   </style>
 </head>
