@@ -67,7 +67,6 @@ class SKUForm(forms.ModelForm):
             "use_nds",
             "vid_tovar",
             "type_tovar",
-            "stor_unit",
             "weight_kg",
             "volume",
             "length_mm",
