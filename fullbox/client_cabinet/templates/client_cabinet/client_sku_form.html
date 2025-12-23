@@ -43,6 +43,7 @@
         <div class="pill">Идем обратно в список клиента</div>
       </div>
       <div class="controls">
+        <a class="btn" href="#" onclick="return false;">Печать этикетки</a>
         <a class="btn" href="/client/{{ agency.id }}/sku/">К номенклатуре клиента</a>
         <a class="btn" href="/client/dashboard/?client={{ agency.id }}">Кабинет клиента</a>
       </div>
@@ -64,10 +65,6 @@
           <div>
             <label>Название *</label>
             {{ form.name.errors }}{% if form.name.errors %}{% render_field form.name class+="field-error" %}{% else %}{% render_field form.name %}{% endif %}
-          </div>
-          <div>
-            <label>Бренд</label>
-            {{ form.brand.errors }}{% if form.brand.errors %}{% render_field form.brand class+="field-error" %}{% else %}{% render_field form.brand %}{% endif %}
           </div>
           {{ form.agency.as_hidden }}
           <div>
@@ -115,6 +112,7 @@
             <div><label>Категория</label>{{ form.tovar_category.errors }}{% if form.tovar_category.errors %}{% render_field form.tovar_category class+="field-error" %}{% else %}{% render_field form.tovar_category %}{% endif %}</div>
             <div><label>Вид товара</label>{{ form.vid_tovar.errors }}{% if form.vid_tovar.errors %}{% render_field form.vid_tovar class+="field-error" %}{% else %}{% render_field form.vid_tovar %}{% endif %}</div>
             <div><label>Тип товара</label>{{ form.type_tovar.errors }}{% if form.type_tovar.errors %}{% render_field form.type_tovar class+="field-error" %}{% else %}{% render_field form.type_tovar %}{% endif %}</div>
+            <div><label>Бренд</label>{{ form.brand.errors }}{% if form.brand.errors %}{% render_field form.brand class+="field-error" %}{% else %}{% render_field form.brand %}{% endif %}</div>
             <div><label>Страна производства</label>{{ form.made_in.errors }}{% if form.made_in.errors %}{% render_field form.made_in class+="field-error" %}{% else %}{% render_field form.made_in %}{% endif %}</div>
           </div>
           <div class="grid">
