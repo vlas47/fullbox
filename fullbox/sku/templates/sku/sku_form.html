@@ -34,13 +34,13 @@
     .field-error { border-color: var(--gold-soft); box-shadow: 0 0 0 1px rgba(231,195,74,0.4); background:rgba(231,195,74,0.08); }
     .modal { position:fixed; inset:0; background:rgba(5,6,10,0.7); display:none; align-items:center; justify-content:center; padding:24px; z-index:30; }
     .modal.active { display:flex; }
-    .modal-card { width:min(980px, 96vw); background:var(--card); border:1px solid var(--stroke); border-radius:18px; padding:18px; box-shadow:0 25px 60px rgba(0,0,0,0.45); }
+    .modal-card { width:min(1120px, 98vw); background:var(--card); border:1px solid var(--stroke); border-radius:18px; padding:18px; box-shadow:0 25px 60px rgba(0,0,0,0.45); }
     .modal-header { display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:14px; }
     .printer-row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:10px; }
     .printer-row label { color:var(--muted); font-weight:600; }
     .printer-row input { min-width:240px; }
-    .label-stage { background:rgba(255,255,255,0.02); border:1px dashed var(--stroke); border-radius:14px; padding:12px; overflow:auto; }
-    .label-preview { background:#f8f8f8; color:#111; border:1px solid #d4d4d4; border-radius:6px; padding:1.1mm; display:grid; grid-template-columns: 6.5mm 1fr 12mm; gap:1mm; width:35mm; height:20mm; font-size:2mm; line-height:1.1; transform: scale(2.9); transform-origin: top left; }
+    .label-stage { background:rgba(255,255,255,0.02); border:1px dashed var(--stroke); border-radius:14px; padding:18px; display:flex; justify-content:center; align-items:flex-start; min-height:280px; overflow:visible; }
+    .label-preview { background:#f8f8f8; color:#111; border:1px solid #d4d4d4; border-radius:6px; padding:1.1mm; display:grid; grid-template-columns: 6.5mm 1fr 12mm; gap:1mm; width:35mm; height:20mm; font-size:2mm; line-height:1.1; transform: scale(3); transform-origin: top left; }
     .label-left { display:grid; align-content:center; justify-items:center; }
     .label-barcode { width:18mm; height:6.5mm; transform: rotate(-90deg); transform-origin:center; }
     .label-main { display:grid; gap:0.5mm; font-size:2mm; }
@@ -65,6 +65,10 @@
       #label-preview .modal-header, #label-preview .modal-actions { display:none; }
       #label-preview .label-stage { border:none; padding:0; }
       #label-preview .label-preview { transform:none; }
+    }
+    @media (max-width: 900px) {
+      .label-preview { transform: scale(2.4); }
+      .label-stage { min-height:240px; }
     }
   </style>
 </head>
