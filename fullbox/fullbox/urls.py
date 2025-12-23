@@ -42,6 +42,7 @@ urlpatterns = [
     path('audit/', include('audit.urls')),
     path('todo/', include('todo.urls')),
     path('employees/', include('employees.urls')),
+    path('market-sync/', include('market_sync.urls')),
 ]
 
 if settings.DEBUG:
