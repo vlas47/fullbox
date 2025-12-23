@@ -40,20 +40,21 @@
     .printer-row label { color:var(--muted); font-weight:600; }
     .printer-row input { min-width:240px; }
     .label-stage { background:rgba(255,255,255,0.02); border:1px dashed var(--stroke); border-radius:14px; padding:12px; overflow:auto; }
-    .label-preview { background:#f8f8f8; color:#111; border:1px solid #d4d4d4; border-radius:6px; padding:1.2mm; display:grid; grid-template-columns: 6.5mm 1fr 10mm; gap:1mm; width:35mm; height:20mm; font-size:2.1mm; line-height:1.12; transform: scale(2.8); transform-origin: top left; }
-    .label-left { display:grid; gap:0.8mm; align-content:start; justify-items:center; }
-    .label-barcode { width:18mm; height:6mm; transform: rotate(-90deg); transform-origin:center; }
-    .label-main { display:grid; gap:0.6mm; font-size:2.1mm; }
-    .label-meta { display:grid; grid-template-columns: 1fr 1fr; gap:0.8mm; font-weight:600; font-size:2.2mm; }
-    .label-meta span { font-weight:700; }
-    .label-line { display:grid; grid-template-columns: 10mm 1fr; gap:0.6mm; }
+    .label-preview { background:#f8f8f8; color:#111; border:1px solid #d4d4d4; border-radius:6px; padding:1.1mm; display:grid; grid-template-columns: 6.5mm 1fr 12mm; gap:1mm; width:35mm; height:20mm; font-size:2mm; line-height:1.1; transform: scale(2.9); transform-origin: top left; }
+    .label-left { display:grid; align-content:center; justify-items:center; }
+    .label-barcode { width:18mm; height:6.5mm; transform: rotate(-90deg); transform-origin:center; }
+    .label-main { display:grid; gap:0.5mm; font-size:2mm; }
+    .label-meta { display:grid; grid-template-columns: 1fr 1fr; gap:0.8mm; font-weight:700; font-size:2.1mm; padding-bottom:0.4mm; border-bottom:1px solid #cfcfcf; }
+    .label-line { display:grid; grid-template-columns: 9mm 1fr; gap:0.6mm; padding-bottom:0.3mm; border-bottom:1px solid #e2e2e2; }
+    .label-line:last-child { border-bottom:none; }
     .label-key { color:#444; }
     .label-val { word-break: break-word; }
-    .label-right { display:grid; gap:0.8mm; align-content:start; justify-items:start; }
-    .label-qr { width:9mm; height:9mm; border:1px solid #111; display:grid; place-items:center; }
-    .label-code { font-size:2mm; }
+    .label-right { display:grid; grid-template-rows: 9mm auto; gap:0.6mm; align-content:start; }
+    .label-qr { width:9mm; height:9mm; border:1px solid #111; display:grid; place-items:center; justify-self:end; }
+    .label-footer { display:flex; justify-content:space-between; align-items:flex-start; gap:0.6mm; }
+    .label-codes { display:grid; gap:0.3mm; font-size:1.7mm; line-height:1.1; }
     .label-eac-row { display:flex; align-items:center; gap:0.6mm; }
-    .label-eac { font-weight:800; font-size:3mm; letter-spacing:0.6px; }
+    .label-eac { font-weight:800; font-size:2.8mm; letter-spacing:0.6px; }
     .label-count { width:5.2mm; height:5.2mm; border:1px solid #111; display:grid; place-items:center; font-weight:700; font-size:2.8mm; }
     .modal-actions { margin-top:14px; display:flex; gap:10px; flex-wrap:wrap; }
     @media print {
@@ -62,6 +63,8 @@
       #label-preview { position:static; inset:auto; background:none; padding:0; }
       #label-preview .modal-card { box-shadow:none; border:none; padding:0; }
       #label-preview .modal-header, #label-preview .modal-actions { display:none; }
+      #label-preview .label-stage { border:none; padding:0; }
+      #label-preview .label-preview { transform:none; }
     }
   </style>
 </head>
@@ -217,11 +220,15 @@
           </div>
           <div class="label-right">
             <div class="label-qr" data-qr-box aria-hidden="true"></div>
-            <div class="label-code" data-field="barcode">—</div>
-            <div class="label-code" data-field="barcode_extra">—</div>
-            <div class="label-eac-row">
-              <div class="label-eac">EAC</div>
-              <div class="label-count">1</div>
+            <div class="label-footer">
+              <div class="label-codes">
+                <div data-field="barcode">—</div>
+                <div data-field="barcode_extra">—</div>
+              </div>
+              <div class="label-eac-row">
+                <div class="label-eac">EAC</div>
+                <div class="label-count">1</div>
+              </div>
             </div>
           </div>
         </div>
@@ -295,13 +302,16 @@
         return;
       }
       if (window.JsBarcode) {
-        JsBarcode(svg, digits, {
-          format: 'ean13',
-          displayValue: false,
+        const useEan = digits.length >= 12;
+        JsBarcode(svg, useEan ? digits : value, {
+          format: useEan ? 'ean13' : 'CODE128',
+          displayValue: true,
           margin: 0,
           lineColor: '#111',
           height: 38,
           width: 1,
+          fontSize: 8,
+          textMargin: 1,
         });
       }
     };
