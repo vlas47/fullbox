@@ -40,19 +40,21 @@
     .printer-row label { color:var(--muted); font-weight:600; }
     .printer-row input { min-width:240px; }
     .label-stage { background:rgba(255,255,255,0.02); border:1px dashed var(--stroke); border-radius:14px; padding:12px; overflow:auto; }
-    .label-preview { background:#f8f8f8; color:#111; border:1px solid #d4d4d4; border-radius:6px; padding:1.6mm; display:grid; grid-template-columns: 7mm 1fr 10mm; gap:1.6mm; width:35mm; height:20mm; font-size:2.4mm; line-height:1.2; transform: scale(2.6); transform-origin: top left; }
-    .label-left { display:grid; gap:1.2mm; align-content:start; }
-    .label-title { font-weight:700; font-size:2.6mm; }
-    .label-sub { font-size:2.2mm; }
-    .label-barcode { width:16mm; height:6mm; transform: rotate(-90deg); transform-origin:center; }
-    .label-main { display:grid; gap:1mm; font-size:2.2mm; }
-    .label-line { display:flex; gap:6px; }
-    .label-line span:first-child { min-width:12mm; color:#444; }
-    .label-right { display:grid; gap:1mm; align-content:start; justify-items:start; }
-    .label-qr { width:9mm; height:9mm; border:1px solid #111; background:repeating-linear-gradient(0deg, #111 0 1mm, #fff 1mm 2mm), repeating-linear-gradient(90deg, #111 0 1mm, #fff 1mm 2mm); }
-    .label-code { font-size:2.2mm; }
-    .label-eac { font-weight:800; font-size:3.2mm; letter-spacing:1px; }
-    .label-count { width:6mm; height:6mm; border:1px solid #111; display:grid; place-items:center; font-weight:700; font-size:3mm; }
+    .label-preview { background:#f8f8f8; color:#111; border:1px solid #d4d4d4; border-radius:6px; padding:1.2mm; display:grid; grid-template-columns: 6.5mm 1fr 10mm; gap:1mm; width:35mm; height:20mm; font-size:2.1mm; line-height:1.12; transform: scale(2.8); transform-origin: top left; }
+    .label-left { display:grid; gap:0.8mm; align-content:start; justify-items:center; }
+    .label-barcode { width:18mm; height:6mm; transform: rotate(-90deg); transform-origin:center; }
+    .label-main { display:grid; gap:0.6mm; font-size:2.1mm; }
+    .label-meta { display:grid; grid-template-columns: 1fr 1fr; gap:0.8mm; font-weight:600; font-size:2.2mm; }
+    .label-meta span { font-weight:700; }
+    .label-line { display:grid; grid-template-columns: 10mm 1fr; gap:0.6mm; }
+    .label-key { color:#444; }
+    .label-val { word-break: break-word; }
+    .label-right { display:grid; gap:0.8mm; align-content:start; justify-items:start; }
+    .label-qr { width:9mm; height:9mm; border:1px solid #111; display:grid; place-items:center; }
+    .label-code { font-size:2mm; }
+    .label-eac-row { display:flex; align-items:center; gap:0.6mm; }
+    .label-eac { font-weight:800; font-size:3mm; letter-spacing:0.6px; }
+    .label-count { width:5.2mm; height:5.2mm; border:1px solid #111; display:grid; place-items:center; font-weight:700; font-size:2.8mm; }
     .modal-actions { margin-top:14px; display:flex; gap:10px; flex-wrap:wrap; }
     @media print {
       body * { visibility:hidden; }
@@ -199,24 +201,29 @@
       </div>
       <div class="label-stage">
         <div class="label-preview">
-        <div class="label-left">
-          <div class="label-title">Арт.: <span data-field="sku_code">—</span></div>
-          <div class="label-sub">р-р: <span data-field="size">—</span></div>
-          <svg class="label-barcode" data-barcode-svg aria-hidden="true"></svg>
-        </div>
-        <div class="label-main">
-          <div class="label-line"><span>Бренд:</span><span data-field="brand">—</span></div>
-          <div class="label-line"><span>Предмет:</span><span data-field="subject">—</span></div>
-          <div class="label-line"><span>Цвет:</span><span data-field="color">—</span></div>
-          <div class="label-line"><span>Состав:</span><span data-field="composition">—</span></div>
-          <div class="label-line"><span>Поставщик:</span><span data-field="supplier">—</span></div>
-        </div>
-        <div class="label-right">
-          <div class="label-qr" aria-hidden="true"></div>
-          <div class="label-code" data-field="barcode">—</div>
-          <div class="label-eac">EAC</div>
-          <div class="label-count">1</div>
-        </div>
+          <div class="label-left">
+            <svg class="label-barcode" data-barcode-svg aria-hidden="true"></svg>
+          </div>
+          <div class="label-main">
+            <div class="label-meta">
+              <div>Арт.: <span data-field="sku_code">—</span></div>
+              <div>р-р: <span data-field="size">—</span></div>
+            </div>
+            <div class="label-line"><span class="label-key">Бренд:</span><span class="label-val" data-field="brand">—</span></div>
+            <div class="label-line"><span class="label-key">Предмет:</span><span class="label-val" data-field="subject">—</span></div>
+            <div class="label-line"><span class="label-key">Цвет:</span><span class="label-val" data-field="color">—</span></div>
+            <div class="label-line"><span class="label-key">Состав:</span><span class="label-val" data-field="composition">—</span></div>
+            <div class="label-line"><span class="label-key">Поставщик:</span><span class="label-val" data-field="supplier">—</span></div>
+          </div>
+          <div class="label-right">
+            <div class="label-qr" data-qr-box aria-hidden="true"></div>
+            <div class="label-code" data-field="barcode">—</div>
+            <div class="label-code" data-field="barcode_extra">—</div>
+            <div class="label-eac-row">
+              <div class="label-eac">EAC</div>
+              <div class="label-count">1</div>
+            </div>
+          </div>
         </div>
       </div>
       <div class="modal-actions">
@@ -225,6 +232,7 @@
     </div>
   </div>
 <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
 </body>
 <script>
   (function(){
@@ -292,14 +300,34 @@
           displayValue: false,
           margin: 0,
           lineColor: '#111',
-          height: 26,
-          width: 1.2,
+          height: 38,
+          width: 1,
+        });
+      }
+    };
+
+    const renderQr = (value) => {
+      const box = preview.querySelector('[data-qr-box]');
+      if (!box) {
+        return;
+      }
+      box.innerHTML = '';
+      if (!value) {
+        return;
+      }
+      if (window.QRCode) {
+        new QRCode(box, {
+          text: value,
+          width: 48,
+          height: 48,
+          correctLevel: QRCode.CorrectLevel.M,
         });
       }
     };
 
     const updatePreview = () => {
-      setField('sku_code', getValue('id_sku_code'));
+      const skuCode = getValue('id_sku_code');
+      setField('sku_code', skuCode);
       setField('size', getValue('id_size'));
       setField('brand', getValue('id_brand'));
       setField('subject', pickValue(['id_tovar_category', 'id_vid_tovar', 'id_type_tovar']));
@@ -309,7 +337,11 @@
       setField('supplier', getValue('id_agency'));
       const barcodeValue = getValue('id_code');
       setField('barcode', barcodeValue);
+      const barcodeExtra = getValue('id_source_reference') || skuCode;
+      setField('barcode_extra', barcodeExtra);
       renderBarcode(barcodeValue);
+      const qrValue = [barcodeValue, barcodeExtra].filter(Boolean).join(' ');
+      renderQr(qrValue);
     };
 
     if (openBtn && preview) {
