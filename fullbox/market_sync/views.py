@@ -37,7 +37,7 @@ def dashboard(request):
         and (ozon_credential.market_key or "").strip()
         and (ozon_credential.client_id or "").strip()
     )
-      marketplaces = [
+    marketplaces = [
         {
             "name": "Wildberries",
             "status_class": "green" if wb_configured else "red",
@@ -71,17 +71,17 @@ def dashboard(request):
             "status_class": "red",
             "status_text": "Не настроено",
             "settings_url": None,
-          },
-      ]
-      return render(
-          request,
-          "market_sync/dashboard.html",
-          {
-              "selected_client": selected_client,
-              "marketplaces": marketplaces,
-              "wb_configured": wb_configured,
-          },
-      )
+        },
+    ]
+    return render(
+        request,
+        "market_sync/dashboard.html",
+        {
+            "selected_client": selected_client,
+            "marketplaces": marketplaces,
+            "wb_configured": wb_configured,
+        },
+    )
 
 
 def wb_settings(request):
