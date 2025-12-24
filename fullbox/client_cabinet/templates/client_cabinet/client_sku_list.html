@@ -21,8 +21,8 @@
     .btn.primary { background: linear-gradient(120deg,var(--gold),var(--gold-soft)); color: var(--bg); border-color: transparent; }
     .search { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
     .search input { padding:10px; border-radius:10px; border:1px solid var(--stroke); background:rgba(255,255,255,0.03); color:var(--text); min-width:260px; }
-    .cards { display:grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap:14px; margin-top:18px; }
-    .card { background:var(--card); border:1px solid var(--stroke); border-radius:16px; padding:16px; box-shadow:0 18px 45px rgba(0,0,0,0.35); display:grid; gap:10px; }
+    .cards { display:flex; flex-direction:column; gap:14px; margin-top:18px; align-items:stretch; }
+    .card { background:var(--card); border:1px solid var(--stroke); border-radius:16px; padding:16px; box-shadow:0 18px 45px rgba(0,0,0,0.35); display:grid; gap:10px; width:100%; }
     .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
     .tag { display:inline-flex; align-items:center; gap:6px; padding:6px 10px; border-radius:10px; border:1px solid var(--stroke); background:rgba(255,255,255,0.03); }
     .pill { display:inline-flex; align-items:center; gap:6px; padding:6px 10px; border-radius:999px; border:1px solid var(--stroke); background:rgba(214,163,0,0.12); color:var(--gold); font-weight:600; }
