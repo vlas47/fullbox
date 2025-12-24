@@ -67,15 +67,176 @@
           </div>
         {% endfor %}
         <div class="muted">Синхронизация запускается после привязки ключей маркетплейса.</div>
-        <button class="btn primary" type="button">Запустить синхронизацию</button>
+        <button id="sync-run" class="btn primary" type="button" {% if not selected_client %}disabled{% endif %}>Запустить синхронизацию</button>
       </div>
-      <div class="card">
-        <strong>Что будет синхронизироваться</strong>
-        <div class="muted">SKU, штрихкоды, остатки, статусы поставок, связки маркетплейса.</div>
-        <strong>Статус</strong>
-        <div class="muted">Функция в разработке. Кнопка появится на странице клиента.</div>
+    </div>
+
+    <div class="card sync-card" style="margin-top:16px;">
+      <div class="sync-head">
+        <div>
+          <strong>Процесс синхронизации Wildberries</strong>
+          <div class="muted">Запускается по нажатию и показывает подробную информацию по этапам.</div>
+        </div>
+        <div class="sync-status">
+          <span class="sync-dot" data-sync-dot></span>
+          <span data-sync-status>Не запущено</span>
+          <span class="muted" data-sync-time>—</span>
+        </div>
       </div>
+      <div class="sync-progress" aria-label="Прогресс синхронизации">
+        <div class="sync-progress-bar" data-sync-progress></div>
+      </div>
+      <div class="sync-grid">
+        <div class="sync-block">
+          <div class="sync-title">Этапы</div>
+          <ul class="sync-list" data-sync-steps>
+            <li>Ожидание запуска</li>
+          </ul>
+        </div>
+        <div class="sync-block">
+          <div class="sync-title">Результаты</div>
+          <div class="sync-results" data-sync-results>
+            <div>SKU обработано: —</div>
+            <div>Обновлено: —</div>
+            <div>Создано: —</div>
+            <div>Штрихкодов: —</div>
+          </div>
+        </div>
+        <div class="sync-block">
+          <div class="sync-title">Ошибки</div>
+          <div class="sync-errors" data-sync-errors>Нет ошибок</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:16px;">
+      <strong>Информационный блок</strong>
+      <p class="muted">Во время синхронизации:</p>
+      <ul class="sync-list">
+        <li>проверяется доступ по токену WB;</li>
+        <li>запрашиваются карточки (до 5 000 штук, пагинация по курсору);</li>
+        <li>импортируются поля: названия, бренд, состав, предмет, пол, сезон, страна, размеры, ВГХ, веса и маркеры;</li>
+        <li>добавляются фото и привязки NMID, создаются новые штрихкоды без дублирования;</li>
+        <li>результаты и ошибки отображаются ниже в реальном времени.</li>
+      </ul>
+      <p class="muted">После завершения нажми кнопку ещё раз, чтобы обновить данные или отследить ошибки.</p>
     </div>
   </div>
 </body>
+<script>
+  (function() {
+    const syncBtn = document.getElementById('sync-run');
+    const statusEl = document.querySelector('[data-sync-status]');
+    const timeEl = document.querySelector('[data-sync-time]');
+    const dotEl = document.querySelector('[data-sync-dot]');
+    const progressEl = document.querySelector('[data-sync-progress]');
+    const stepsEl = document.querySelector('[data-sync-steps]');
+    const resultsEl = document.querySelector('[data-sync-results]');
+    const errorsEl = document.querySelector('[data-sync-errors]');
+    const clientId = '{{ selected_client.id|default:"" }}';
+    const wbConfigured = {{ 'true' if wb_configured else 'false' }};
+
+    if (!clientId || !wbConfigured) {
+      if (syncBtn) {
+        syncBtn.disabled = true;
+        syncBtn.title = !clientId ? 'Выберите клиента' : 'Синхронизация требует настройки WB';
+      }
+    }
+
+    function setStatus(text, state) {
+      if (statusEl) statusEl.textContent = text;
+      if (dotEl) {
+        dotEl.className = 'sync-dot';
+        if (state) dotEl.classList.add(state);
+      }
+    }
+
+    function setTime() {
+      if (!timeEl) return;
+      const now = new Date();
+      const pad = (n) => String(n).padStart(2, '0');
+      timeEl.textContent = `${pad(now.getDate())}.${pad(now.getMonth() + 1)}.${now.getFullYear()} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
+    }
+
+    function setSteps(items) {
+      if (!stepsEl) return;
+      stepsEl.innerHTML = items.map((item) => `<li>${item}</li>`).join('');
+    }
+
+    function setProgress(value) {
+      if (progressEl) {
+        progressEl.style.width = `${value}%`;
+      }
+    }
+
+    function updateResults(data) {
+      if (!resultsEl) return;
+      resultsEl.innerHTML = `
+        <div>SKU обработано: ${data.processed ?? 0}</div>
+        <div>Обновлено: ${data.updated ?? 0}</div>
+        <div>Создано: ${data.created ?? 0}</div>
+        <div>Штрихкодов: ${data.barcodes_created ?? 0}</div>
+      `;
+    }
+
+    function setErrors(items) {
+      if (!errorsEl) return;
+      if (!items || !items.length) {
+        errorsEl.textContent = 'Ошибок нет';
+        return;
+      }
+      errorsEl.innerHTML = items.map((item) => `<div>${item}</div>`).join('');
+    }
+
+    function getCookie(name) {
+      const matches = document.cookie.match(new RegExp('(^| )' + name + '=([^;]+)'));
+      return matches ? decodeURIComponent(matches[2]) : '';
+    }
+
+    if (!syncBtn) return;
+    syncBtn.addEventListener('click', async () => {
+      if (!clientId || !wbConfigured) return;
+      setStatus('Проверка доступа', 'running');
+      setTime();
+      setSteps(['Проверка доступа', 'Запрос данных WB', 'Обновление SKU', 'Формирование отчёта']);
+      setErrors([]);
+      updateResults({});
+      setProgress(5);
+
+      let progress = 5;
+      const timer = setInterval(() => {
+        progress = Math.min(progress + 7, 94);
+        setProgress(progress);
+      }, 300);
+
+      try {
+        const response = await fetch('/market-sync/wb/run/', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCookie('csrftoken'),
+          },
+          body: JSON.stringify({ client: clientId }),
+        });
+        const data = await response.json().catch(() => ({}));
+        clearInterval(timer);
+        setProgress(100);
+        updateResults(data);
+        if (!response.ok || !data.ok) {
+          setStatus('Синхронизация завершена с ошибкой', 'error');
+          setErrors(data.errors || ['Неизвестная ошибка.']);
+          return;
+        }
+        setStatus('Синхронизация завершена', 'ok');
+        setErrors([]);
+        setSteps(['Проверка доступа', 'Запрос данных WB', 'Обновление SKU', 'Сводка результатов']);
+      } catch (error) {
+        clearInterval(timer);
+        setProgress(100);
+        setStatus('Синхронизация не удалась', 'error');
+        setErrors(['Ошибка сети при запуске синхронизации.']);
+      }
+    });
+  })();
+</script>
 </html>
