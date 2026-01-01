@@ -36,13 +36,28 @@
     .help { font-size:13px; color: var(--muted); }
     .error { color: var(--danger); font-size:13px; }
     .actions { display:flex; gap:10px; flex-wrap:wrap; }
+    .sync-card { margin-top:16px; }
+    .sync-head { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; }
+    .sync-status { display:flex; align-items:center; gap:10px; }
+    .sync-dot { width:10px; height:10px; border-radius:50%; background:#777; box-shadow:0 0 6px rgba(120,120,120,0.6); }
+    .sync-dot.running { background:#e2c355; box-shadow:0 0 6px rgba(226,195,85,0.6); }
+    .sync-dot.ok { background:#4ac97d; box-shadow:0 0 6px rgba(74,201,125,0.6); }
+    .sync-dot.error { background:#e25555; box-shadow:0 0 6px rgba(226,85,85,0.6); }
+    .sync-progress { width:100%; height:8px; border-radius:999px; background:rgba(255,255,255,0.08); overflow:hidden; }
+    .sync-progress-bar { height:100%; width:0%; background:linear-gradient(90deg,var(--gold),var(--gold-soft)); transition:width 0.3s ease; }
+    .sync-grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap:12px; }
+    .sync-block { border:1px solid var(--stroke); border-radius:12px; padding:12px; background:rgba(255,255,255,0.02); display:grid; gap:8px; }
+    .sync-title { font-weight:600; }
+    .sync-list { margin:0; padding-left:16px; color:var(--muted); font-size:13px; }
+    .sync-results { display:grid; gap:6px; color:var(--muted); font-size:13px; }
+    .sync-errors { color:var(--muted); font-size:13px; }
   </style>
 </head>
 <body>
   <div class="wrap">
     <header>
       <div>
-        <div class="muted">FULLBOX</div>
+        <div class="muted">FULLBOX · {% include "partials/current_user.html" %}</div>
         <h1>Настройка Ozon</h1>
         {% if selected_client %}
           <div class="pill" style="margin-top:8px;">Клиент: {{ selected_client.agn_name|default:"Без названия" }}{% if selected_client.inn %} · ИНН {{ selected_client.inn }}{% endif %}</div>
@@ -50,7 +65,7 @@
       </div>
       <div style="display:flex; gap:10px; flex-wrap:wrap;">
         <a class="btn" href="/market-sync/{% if selected_client %}?client={{ selected_client.id }}{% endif %}">Назад</a>
-        <a class="btn" href="/">На главную</a>
+        <a class="btn" href="/logout/">Выход</a>
       </div>
     </header>
 
@@ -81,10 +96,137 @@
         </div>
         <div class="actions" style="margin-top:12px;">
           <button class="btn primary" type="submit" {% if market_missing %}disabled{% endif %}>Сохранить</button>
+          <button class="btn" type="button" data-sync-button {% if market_missing %}disabled{% endif %}>Синхронизировать</button>
           <a class="btn" href="/market-sync/{% if selected_client %}?client={{ selected_client.id }}{% endif %}">Отмена</a>
         </div>
       </form>
     </div>
+
+    <div class="card sync-card">
+      <div class="sync-head">
+        <div>
+          <strong>Синхронизация</strong>
+          <div class="muted">Отображаем прогресс, результаты и ошибки последнего запуска.</div>
+        </div>
+        <div class="sync-status">
+          <span class="sync-dot" data-sync-dot></span>
+          <span data-sync-status>Не запущено</span>
+          <span class="muted" data-sync-time>-</span>
+        </div>
+      </div>
+      <div class="sync-progress" aria-label="Прогресс синхронизации">
+        <div class="sync-progress-bar" data-sync-progress></div>
+      </div>
+      <div class="sync-grid">
+        <div class="sync-block">
+          <div class="sync-title">Процесс</div>
+          <ul class="sync-list" data-sync-steps>
+            <li>Ожидание запуска</li>
+          </ul>
+        </div>
+        <div class="sync-block">
+          <div class="sync-title">Результаты</div>
+          <div class="sync-results" data-sync-results>
+            <div>SKU обработано: -</div>
+            <div>Обновлено: -</div>
+            <div>Создано: -</div>
+            <div>Штрихкодов добавлено: -</div>
+          </div>
+        </div>
+        <div class="sync-block">
+          <div class="sync-title">Ошибки</div>
+          <div class="sync-errors" data-sync-errors>Нет ошибок</div>
+        </div>
+      </div>
+    </div>
   </div>
 </body>
+<script>
+  (function() {
+    const syncBtn = document.querySelector('[data-sync-button]');
+    const statusEl = document.querySelector('[data-sync-status]');
+    const timeEl = document.querySelector('[data-sync-time]');
+    const dotEl = document.querySelector('[data-sync-dot]');
+    const progressEl = document.querySelector('[data-sync-progress]');
+    const stepsEl = document.querySelector('[data-sync-steps]');
+    const resultsEl = document.querySelector('[data-sync-results]');
+    const errorsEl = document.querySelector('[data-sync-errors]');
+    if (!syncBtn) return;
+
+    function setStatus(text, state) {
+      statusEl.textContent = text;
+      dotEl.className = 'sync-dot';
+      if (state) dotEl.classList.add(state);
+    }
+
+    function setTime() {
+      const now = new Date();
+      const pad = (n) => String(n).padStart(2, '0');
+      timeEl.textContent = `${pad(now.getDate())}.${pad(now.getMonth() + 1)}.${now.getFullYear()} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
+    }
+
+    function setSteps(items) {
+      stepsEl.innerHTML = items.map((item) => `<li>${item}</li>`).join('');
+    }
+
+    function setProgress(value) {
+      progressEl.style.width = `${value}%`;
+    }
+
+    function getCookie(name) {
+      const value = `; ${document.cookie}`;
+      const parts = value.split(`; ${name}=`);
+      if (parts.length === 2) {
+        return parts.pop().split(';').shift();
+      }
+      return '';
+    }
+
+    syncBtn.addEventListener('click', async () => {
+      setStatus('Запуск синхронизации', 'running');
+      setTime();
+      setSteps(['Проверка доступа', 'Запрос данных Ozon', 'Обновление SKU', 'Формирование отчета']);
+      errorsEl.textContent = 'Ошибок нет';
+      resultsEl.innerHTML = '<div>SKU обработано: -</div><div>Обновлено: -</div><div>Создано: -</div><div>Штрихкодов добавлено: -</div>';
+      setProgress(5);
+
+      let progress = 5;
+      const timer = setInterval(() => {
+        progress = Math.min(progress + 8, 95);
+        setProgress(progress);
+      }, 400);
+
+      try {
+        const client = '{{ selected_client.id|default:"" }}';
+        const res = await fetch('/market-sync/ozon/run/', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCookie('csrftoken')
+          },
+          body: JSON.stringify({ client })
+        });
+        const data = await res.json();
+        clearInterval(timer);
+        setProgress(100);
+        if (!res.ok || !data.ok) {
+          setStatus('Синхронизация с ошибкой', 'error');
+          const list = (data.errors || ['Неизвестная ошибка.']).map((err) => `<div>${err}</div>`).join('');
+          errorsEl.innerHTML = list;
+        } else {
+          setStatus('Синхронизация завершена', 'ok');
+          errorsEl.textContent = 'Ошибок нет';
+        }
+        resultsEl.innerHTML = `<div>SKU обработано: ${data.processed ?? 0}</div><div>Обновлено: ${data.updated ?? 0}</div><div>Создано: ${data.created ?? 0}</div><div>Штрихкодов добавлено: ${data.barcodes_created ?? 0}</div>`;
+        setSteps(['Проверка доступа', 'Запрос данных Ozon', 'Обновление SKU', 'Сводка результатов']);
+      } catch (err) {
+        clearInterval(timer);
+        setProgress(100);
+        setStatus('Синхронизация с ошибкой', 'error');
+        errorsEl.textContent = 'Ошибка сети при синхронизации.';
+      }
+    });
+  })();
+</script>
 </html>
+

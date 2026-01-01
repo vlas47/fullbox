@@ -55,6 +55,8 @@ INSTALLED_APPS = [
     "head_manager",
     "todo",
     "market_sync",
+    "teammanager",
+    "sklad",
 ]
 
 MIDDLEWARE = [
@@ -146,6 +148,8 @@ USE_I18N = True
 
 USE_TZ = True
 
+LOGIN_URL = "/login/"
+
 
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
@@ -156,10 +160,7 @@ STATIC_ROOT = BASE_DIR / 'staticfiles'
 MEDIA_URL = 'media/'
 MEDIA_ROOT = BASE_DIR / 'media'
 
-JOURNAL_REMOTE_URL = os.environ.get(
-    "JOURNAL_REMOTE_URL",
-    "https://raw.githubusercontent.com/vlas47/fullbox/main/journal.md",
-).strip()
+JOURNAL_REMOTE_URL = os.environ.get("JOURNAL_REMOTE_URL", "").strip()
 JOURNAL_REMOTE_CACHE_SECONDS = int(
     os.environ.get("JOURNAL_REMOTE_CACHE_SECONDS", "300")
 )

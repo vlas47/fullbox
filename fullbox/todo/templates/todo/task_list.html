@@ -8,20 +8,20 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>
-    :root { --bg:#0b0b0f; --card:#14141f; --stroke:rgba(255,255,255,0.08); --text:#e8e8ed; --muted:#9aa0b3; --gold:#d6a300; --gold-soft:#e7c34a; --green:#5ec16e; --red:#e15c64; --orange:#f59e0b; --blue:#4aa7ff; }
+    :root { --bg:#f6f4ed; --card:#ffffff; --card-soft:#f8f6f1; --stroke:rgba(31,35,40,0.12); --text:#1f2328; --muted:#6b7280; --gold:#c79a1c; --gold-soft:#f2d48c; --green:#1f9d55; --red:#d14343; --orange:#f59e0b; --blue:#3b82f6; }
     * { box-sizing: border-box; }
     body { margin:0; background:var(--bg); color:var(--text); font-family:'Space Grotesk',system-ui,sans-serif; }
     a { color:inherit; text-decoration:none; }
     .wrap { max-width: 1080px; margin: 0 auto; padding: 32px 20px 64px; }
-    .card { background:var(--card); border:1px solid var(--stroke); border-radius:18px; padding:20px; box-shadow:0 25px 60px rgba(0,0,0,0.45); }
+    .card { background:var(--card); border:1px solid var(--stroke); border-radius:18px; padding:20px; box-shadow:0 18px 45px rgba(15,23,42,0.08); }
     .header { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; }
     h1 { margin:0; letter-spacing:-0.5px; }
     .muted { color:var(--muted); }
-    .btn { display:inline-flex; align-items:center; gap:8px; padding:10px 14px; border-radius:12px; border:1px solid var(--stroke); background:rgba(255,255,255,0.02); color:var(--text); font-weight:600; transition:all .2s ease; }
-    .btn:hover { border-color:var(--gold); box-shadow:0 12px 30px rgba(214,163,0,0.25); transform:translateY(-2px); }
-    .btn.primary { background: linear-gradient(120deg,var(--gold),var(--gold-soft)); color:var(--bg); border-color: transparent; }
+    .btn { display:inline-flex; align-items:center; gap:8px; padding:10px 14px; border-radius:12px; border:1px solid var(--stroke); background:rgba(15,23,42,0.04); color:var(--text); font-weight:600; transition:all .2s ease; }
+    .btn:hover { border-color:var(--gold); box-shadow:0 12px 30px rgba(199,154,32,0.2); transform:translateY(-2px); }
+    .btn.primary { background: linear-gradient(120deg,var(--gold),var(--gold-soft)); color:#1f2328; border-color: transparent; }
     .stats { display:grid; grid-template-columns: repeat(auto-fit, minmax(140px,1fr)); gap:10px; margin:18px 0; }
-    .pill { display:inline-flex; align-items:center; gap:6px; padding:6px 10px; border-radius:999px; border:1px solid var(--stroke); font-weight:600; }
+    .pill { display:inline-flex; align-items:center; gap:6px; padding:6px 10px; border-radius:999px; border:1px solid var(--stroke); font-weight:600; background:rgba(15,23,42,0.04); }
     .pill.backlog { color:var(--muted); }
     .pill.in_progress { color:var(--blue); }
     .pill.done { color:var(--green); }
@@ -31,12 +31,12 @@
     th { color:var(--muted); font-weight:600; font-size:14px; }
     td { font-size:15px; }
     .actions { display:flex; gap:8px; justify-content:flex-end; }
-    .badge { padding:4px 8px; border-radius:8px; border:1px solid var(--stroke); font-size:12px; text-transform:uppercase; letter-spacing:0.3px; }
+    .badge { padding:4px 8px; border-radius:8px; border:1px solid var(--stroke); font-size:12px; text-transform:uppercase; letter-spacing:0.3px; background:rgba(15,23,42,0.04); }
     .badge.low { color:var(--muted); }
     .badge.normal { color:var(--blue); }
     .badge.high { color:var(--orange); }
     .badge.urgent { color:var(--red); }
-    .empty { padding:16px; text-align:center; color:var(--muted); border:1px dashed var(--stroke); border-radius:12px; margin-top:12px; }
+    .empty { padding:16px; text-align:center; color:var(--muted); border:1px dashed var(--stroke); border-radius:12px; margin-top:12px; background:rgba(15,23,42,0.03); }
   </style>
 </head>
 <body>
@@ -68,7 +68,11 @@
               <tr>
                 <td>
                   <div style="font-weight:600;">
-                    <a href="{% url 'todo:detail' task.id %}">{{ task.title }}</a>
+                    {% if task.route and "/orders/receiving/" in task.route %}
+                      <a href="{{ task.route }}">{{ task.display_title }}</a>
+                    {% else %}
+                      <a href="{% url 'todo:detail' task.id %}">{{ task.display_title }}</a>
+                    {% endif %}
                   </div>
                   {% if task.description %}
                     <div class="muted" style="font-size:13px; margin-top:2px;">{{ task.description|truncatechars:140 }}</div>
@@ -95,7 +99,11 @@
                 <td>{% if task.due_date %}{{ task.due_date|date:'d.m.y H:i' }}{% else %}<span class="muted">-</span>{% endif %}</td>
                 <td>
                   <div class="actions">
-                    <a class="btn" style="padding:8px 10px;" href="{% url 'todo:detail' task.id %}">Подробнее</a>
+                    {% if task.route and "/orders/receiving/" in task.route %}
+                      <a class="btn" style="padding:8px 10px;" href="{{ task.route }}">Подробнее</a>
+                    {% else %}
+                      <a class="btn" style="padding:8px 10px;" href="{% url 'todo:detail' task.id %}">Подробнее</a>
+                    {% endif %}
                     {% if request.user.is_authenticated and task.created_by_id == request.user.id %}
                       <a class="btn" style="padding:8px 10px;" href="{% url 'todo:update' task.id %}">Редактировать</a>
                     {% endif %}

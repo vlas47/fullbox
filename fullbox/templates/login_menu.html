@@ -23,6 +23,24 @@
     .header { display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; }
     .logo { display:flex; align-items:center; gap:10px; }
     .logo-mark { width:44px; height:44px; border-radius:12px; border:1px solid var(--stroke); display:grid; place-items:center; background:linear-gradient(135deg, rgba(214,163,0,0.2), rgba(20,20,31,0.8)); color:var(--gold); font-weight:700; }
+    .client-select {
+      padding:9px 12px;
+      background:#1a1b26;
+      color:var(--text);
+      border-radius:10px;
+      border:1px solid var(--stroke);
+      min-width:260px;
+      font-weight:600;
+    }
+    .client-select:focus {
+      outline:none;
+      border-color:var(--gold);
+      box-shadow:0 0 0 2px rgba(214,163,0,0.15);
+    }
+    .client-select option {
+      color:#111;
+      background:#fff;
+    }
   </style>
 </head>
 <body>
@@ -32,11 +50,11 @@
         <div class="logo">
           <div class="logo-mark">FX</div>
           <div>
-            <div style="font-weight:700; letter-spacing:1px;">FULLBOX</div>
+            <div style="font-weight:700; letter-spacing:1px;">FULLBOX · {% include "partials/current_user.html" %}</div>
             <div class="muted">Вход для разработки</div>
           </div>
         </div>
-        <a class="btn" href="/">На главную</a>
+        <a class="btn" href="/logout/">Выход</a>
       </div>
       <h1>Быстрый вход</h1>
       <p class="muted">Кнопки авторизуют соответствующим пользователем (для разработки).</p>
@@ -44,6 +62,10 @@
         {% for user in users %}
           {% if user.username == "head_manager" %}
             <a class="btn" href="/dev-login/head_manager/?next=/head-manager/">{{ user.label }}</a>
+          {% elif user.username == "manager" %}
+            <a class="btn" href="/dev-login/manager/?next=/team-manager/">{{ user.label }}</a>
+          {% elif user.username == "storekeeper" %}
+            <a class="btn" href="/dev-login/storekeeper/?next=/sklad/">{{ user.label }}</a>
           {% else %}
             <a class="btn" href="/dev-login/{{ user.username }}/">{{ user.label }}</a>
           {% endif %}
@@ -56,7 +78,7 @@
         <div class="muted" style="margin-bottom:8px; font-weight:600;">Личный кабинет клиента (dev)</div>
         <form method="get" action="/client/dashboard/" style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
           <a class="btn" href="/client/dashboard/">Открыть кабинет без выбора</a>
-          <select name="client" class="btn" style="padding:9px 12px; background:rgba(255,255,255,0.03); color:var(--text); border-radius:10px; border:1px solid var(--stroke); min-width:240px;">
+          <select name="client" class="client-select">
             <option value="">Выбрать клиента (dev)</option>
             {% for agency in agencies %}
               <option value="{{ agency.id }}">{{ agency.agn_name|default:agency.inn|default:"Клиент" }}</option>
@@ -72,4 +94,5 @@
   </div>
 </body>
 </html>
+
 

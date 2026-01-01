@@ -1,0 +1,270 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ order_title }} № {{ order_id }}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    :root { --bg:#f6f4ed; --card:#ffffff; --card-soft:#f8f6f1; --gold:#c79a1c; --gold-soft:#f2d48c; --muted:#6b7280; --stroke: rgba(31,35,40,0.12); --text:#1f2328; }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body { margin:0; background:var(--bg); color:var(--text); font-family:'Space Grotesk',system-ui,sans-serif; }
+    a { color: inherit; text-decoration: none; }
+    .wrap { max-width: none; margin: 0; padding: 24px 18px 64px; min-height: 100vh; }
+    header { display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; gap:12px; flex-wrap:wrap; }
+    .btn-row { display:flex; gap:10px; flex-wrap:wrap; }
+    .tab { padding:10px 14px; border-radius:10px; border:1px solid var(--stroke); background:rgba(15,23,42,0.04); color:var(--text); font-weight:600; }
+    .tab.active { border-color: var(--gold); color:#1f2328; background: linear-gradient(120deg,var(--gold),var(--gold-soft)); box-shadow:0 10px 30px rgba(199,154,32,0.2); }
+    .tab.primary { border-color: var(--gold); color:#1f2328; background: linear-gradient(120deg,var(--gold),var(--gold-soft)); box-shadow:0 10px 30px rgba(199,154,32,0.2); }
+    .card { background:var(--card); border:1px solid var(--stroke); border-radius:16px; padding:16px; box-shadow:0 20px 40px rgba(15,23,42,0.12); }
+    .detail-layout { display:grid; grid-template-columns: 280px minmax(0, 1fr) 300px; gap:16px; align-items:start; min-height: calc(100vh - 88px); }
+    .detail-side { display:grid; gap:12px; }
+    .detail-main { display:grid; gap:12px; height: calc(100vh - 88px); overflow:hidden; }
+    .detail-chat { display:grid; gap:12px; }
+    .side-actions { display:grid; gap:8px; }
+    .side-actions .tab,
+    .side-actions button.tab { width:100%; display:inline-flex; justify-content:center; align-items:center; }
+    .side-actions form { display:grid; }
+    .side-card { background:var(--card); border:1px solid var(--stroke); border-radius:16px; padding:14px; box-shadow:0 16px 30px rgba(15,23,42,0.12); }
+    .side-title { font-weight:600; margin:0 0 8px; }
+    .info-list { display:grid; gap:10px; }
+    .info-item { display:grid; gap:4px; }
+    .info-label { font-size:11px; text-transform:uppercase; letter-spacing:1px; color:var(--muted); }
+    .info-value { font-weight:600; word-break:break-word; }
+    .table-card { height: 100%; display:flex; flex-direction:column; min-height:0; overflow:hidden; }
+    .table-scroll { overflow:auto; min-height:0; flex:1; border:1px solid var(--stroke); border-radius:12px; }
+    .table-scroll table { margin-top:0; }
+    .table-scroll thead th { position: sticky; top: 0; background: #f3e6b8; z-index: 1; box-shadow: 0 2px 0 rgba(31,35,40,0.08); }
+    .table-scroll tbody tr:nth-child(even) { background: #fbf6e3; }
+    .chat { display:grid; gap:10px; max-height:360px; overflow:auto; padding-right:6px; }
+    .chat-item { border:1px solid var(--stroke); border-radius:12px; padding:10px; background:rgba(15,23,42,0.03); }
+    .chat-meta { font-size:12px; color:var(--muted); margin-bottom:6px; display:flex; justify-content:space-between; gap:6px; flex-wrap:wrap; }
+    .chat-text { font-size:13px; }
+    .chat-form { display:grid; gap:8px; margin-bottom:12px; }
+    .chat-form textarea { resize:vertical; min-height:80px; padding:8px 10px; border-radius:10px; border:1px solid var(--stroke); font-size:13px; font-family:inherit; }
+    .chat-form button { padding:8px 12px; border-radius:10px; border:none; background:linear-gradient(120deg,var(--gold),var(--gold-soft)); font-weight:600; cursor:pointer; }
+    .participants { display:grid; gap:6px; margin-top:12px; }
+    .participant { border:1px dashed var(--stroke); border-radius:10px; padding:8px; font-size:13px; }
+    @media (max-width: 1100px) {
+      .detail-layout { grid-template-columns: 1fr; min-height:auto; }
+      .detail-main { height:auto; overflow:visible; }
+      .table-card { height:auto; overflow:visible; }
+      .table-scroll { height:auto; }
+    }
+    h1 { margin:0 0 6px; letter-spacing:-0.5px; }
+    .muted { color: var(--muted); }
+    table { width:100%; border-collapse:collapse; margin-top:12px; }
+    .history-wrap { max-height:320px; overflow:auto; border:1px solid var(--stroke); border-radius:12px; }
+    .history-wrap table { margin-top:0; }
+    th, td { border-bottom:1px solid var(--stroke); border-right:1px solid var(--stroke); padding:10px; text-align:left; vertical-align:top; }
+    th:last-child, td:last-child { border-right:none; }
+    th { color: var(--muted); font-weight:600; font-size:12px; text-transform:uppercase; letter-spacing:1px; background:rgba(15,23,42,0.04); }
+    .history-latest td { background: rgba(31,157,85,0.08); }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="detail-layout">
+      <aside class="detail-side">
+        <div class="side-card">
+          <div class="muted">FULLBOX · {% include "partials/current_user.html" %}</div>
+          <h3>{{ order_title }} № {{ order_id }}</h3>
+          <div class="muted">Статус: {{ status_label }}{% if responsible %} · Текущий ответственный: {{ responsible }}{% endif %}</div>
+        </div>
+
+        <div class="side-card">
+          <h4 class="side-title">Действия</h4>
+          <div class="side-actions">
+            {% if client_view %}
+              <a class="tab" href="/orders/?client={{ agency.id }}">Журнал заявок</a>
+            {% else %}
+              <a class="tab" href="/orders/">Журнал заявок</a>
+            {% endif %}
+            {% if can_edit_order %}
+              <a class="tab" href="/orders/receiving/?edit={{ order_id }}{% if agency %}&agency={{ agency.id }}{% endif %}">Исправить заявку</a>
+            {% endif %}
+            {% if can_send_to_warehouse %}
+              <form method="post">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="send_to_warehouse">
+                <button class="tab" type="submit">Подтвердить и отправить на склад</button>
+              </form>
+            {% endif %}
+            {% if can_send_act_to_client %}
+              <form method="post">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="send_act_to_client">
+                <button class="tab primary" type="submit">Отправить акт клиенту</button>
+              </form>
+            {% endif %}
+            {% if not client_view %}
+              {% if can_create_receiving_act and not has_receiving_act %}
+                <a class="tab" href="/orders/receiving/{{ order_id }}/act/">Создать акт приемки</a>
+              {% endif %}
+              {% if has_receiving_act %}
+                <a class="tab" href="/orders/receiving/{{ order_id }}/act/">
+                  {{ act_label|default:"Открыть акт приемки" }}
+                </a>
+              {% endif %}
+              {% if has_placement_act %}
+                <a class="tab" href="/orders/receiving/{{ order_id }}/placement/">
+                  {{ placement_act_label|default:"Открыть акт размещения" }}
+                </a>
+              {% elif can_create_placement_act %}
+                <a class="tab" href="/orders/receiving/{{ order_id }}/placement/">
+                  Создать акт размещения
+                </a>
+              {% endif %}
+            {% endif %}
+            {% if client_view and has_receiving_act %}
+              <a class="tab" href="/orders/receiving/{{ order_id }}/act/?client={{ agency.id }}">
+                {{ act_label|default:"Акт приемки" }}
+              </a>
+            {% endif %}
+            {% if client_view %}
+              <a class="tab" href="/client/dashboard/?client={{ agency.id }}">В кабинет</a>
+              <a class="tab" href="/orders/receiving/?client={{ agency.id }}">Новая приемка</a>
+            {% else %}
+              <a class="tab" href="{{ cabinet_url }}">В кабинет</a>
+            {% endif %}
+            <a class="tab" href="/logout/">Выход</a>
+          </div>
+        </div>
+
+        <div class="side-card">
+          <h4 class="side-title">Участники</h4>
+          <div class="participants">
+            {% for person in participants %}
+              <div class="participant">{{ person }}</div>
+            {% empty %}
+              <div class="muted">Нет данных.</div>
+            {% endfor %}
+          </div>
+        </div>
+      </aside>
+
+      <main class="detail-main">
+        <div class="card table-card">
+          <h3>Состав поставки</h3>
+          <div class="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>SKU</th>
+                  <th>Наименование</th>
+                  <th>Размер</th>
+                  <th>Количество</th>
+                  <th>Комментарий</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for item in items %}
+                  <tr>
+                    <td>{{ item.sku_code|default:"-" }}</td>
+                    <td>{{ item.name|default:"-" }}</td>
+                    <td>{{ item.size|default:"-" }}</td>
+                    <td>{{ item.qty|default:"-" }}</td>
+                    <td>{{ item.comment|default:"-" }}</td>
+                  </tr>
+                {% empty %}
+                  <tr><td colspan="5" class="muted">Товарные позиции не указаны.</td></tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+
+          <h3 style="margin-top:18px;">История</h3>
+          <div class="history-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Когда</th>
+                  <th>Действие</th>
+                  <th>Статус</th>
+                  <th>Описание</th>
+                  <th>Ответственный</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for row in history %}
+                  <tr{% if forloop.first %} class="history-latest"{% endif %}>
+                    <td>{{ row.created_at|date:"d.m.Y, H:i" }}</td>
+                    <td>{{ row.action_label }}</td>
+                    <td>{{ row.status_label }}</td>
+                    <td>{{ row.description|default:"-" }}</td>
+                    <td>{{ row.actor_label|default:"-" }}</td>
+                  </tr>
+                {% empty %}
+                  <tr><td colspan="5" class="muted">Нет данных</td></tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </main>
+
+      <aside class="detail-chat">
+        <div class="side-card">
+          <h4 class="side-title">Информация</h4>
+          <div class="info-list">
+            <div class="info-item">
+              <div class="info-label">Клиент</div>
+              <div class="info-value">{{ client_label|default:"-" }}</div>
+            </div>
+            <div class="info-item">
+              <div class="info-label">Дата/время прибытия</div>
+              <div class="info-value">{{ meta.eta_at|default:"-" }}</div>
+            </div>
+            <div class="info-item">
+              <div class="info-label">Количество мест</div>
+              <div class="info-value">{{ meta.expected_boxes|default:"-" }}</div>
+            </div>
+            <div class="info-item">
+              <div class="info-label">Тип мест</div>
+              <div class="info-value">{{ meta.place_type|default:"-" }}</div>
+            </div>
+            <div class="info-item">
+              <div class="info-label">Номер авто</div>
+              <div class="info-value">{{ meta.vehicle_number|default:"-" }}</div>
+            </div>
+            <div class="info-item">
+              <div class="info-label">Телефон водителя</div>
+              <div class="info-value">{{ meta.driver_phone|default:"-" }}</div>
+            </div>
+            <div class="info-item">
+              <div class="info-label">Комментарий</div>
+              <div class="info-value">{{ meta.comment|default:"-" }}</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <h4 class="side-title">Комментарии</h4>
+          <form class="chat-form" method="post">
+            {% csrf_token %}
+            <textarea name="comment" placeholder="Комментарий по заявке"></textarea>
+            <button type="submit">Добавить</button>
+          </form>
+          <div class="chat">
+            {% for comment in comments %}
+              <div class="chat-item">
+                <div class="chat-meta">
+                  <span>{{ comment.actor_label|default:"-" }}</span>
+                  <span>{{ comment.created_at|date:"d.m.Y, H:i" }}</span>
+                </div>
+                <div class="chat-text">{{ comment.text|default:"-" }}</div>
+              </div>
+            {% empty %}
+              <div class="muted">Пока нет комментариев.</div>
+            {% endfor %}
+          </div>
+        </div>
+      </aside>
+    </div>
+  </div>
+</body>
+</html>
+

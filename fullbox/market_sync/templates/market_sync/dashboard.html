@@ -38,7 +38,7 @@
   <div class="wrap">
     <header>
       <div>
-        <div class="muted">FULLBOX</div>
+        <div class="muted">FULLBOX · {% include "partials/current_user.html" %}</div>
         <h1>Синхронизация маркетплейсов</h1>
         <div class="muted">Настройка и запуск синхронизаций по выбранному клиенту</div>
         {% if selected_client %}
@@ -47,7 +47,7 @@
       </div>
       <div style="display:flex; gap:10px; flex-wrap:wrap;">
         <a class="btn" href="/client/dashboard/{% if selected_client %}?client={{ selected_client.id }}{% endif %}">В кабинет клиента</a>
-        <a class="btn" href="/">На главную</a>
+        <a class="btn" href="/logout/">Выход</a>
       </div>
     </header>
 
@@ -134,7 +134,7 @@
     const resultsEl = document.querySelector('[data-sync-results]');
     const errorsEl = document.querySelector('[data-sync-errors]');
     const clientId = '{{ selected_client.id|default:"" }}';
-    const wbConfigured = {{ 'true' if wb_configured else 'false' }};
+    const wbConfigured = {% if wb_configured %}true{% else %}false{% endif %};
 
     if (!clientId || !wbConfigured) {
       if (syncBtn) {
@@ -240,3 +240,4 @@
   })();
 </script>
 </html>
+

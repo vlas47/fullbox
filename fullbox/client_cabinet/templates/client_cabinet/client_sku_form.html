@@ -9,7 +9,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
   {% load widget_tweaks %}
   <style>
-    :root { --bg:#0b0b0f; --card:#14141f; --gold:#d6a300; --gold-soft:#e7c34a; --text:#e8e8ed; --muted:#9aa0b3; --stroke: rgba(255,255,255,0.08); }
+    :root { --bg:#f6f4ed; --card:#ffffff; --gold:#c79a1c; --gold-soft:#f2d48c; --text:#1f2328; --muted:#6b7280; --stroke: rgba(31,35,40,0.12); }
     * { box-sizing: border-box; }
     body { margin:0; background:var(--bg); color:var(--text); font-family:'Space Grotesk',system-ui,sans-serif; }
     a { color: inherit; text-decoration: none; }
@@ -18,35 +18,39 @@
     h1 { margin:0; letter-spacing:-0.5px; }
     .muted { color: var(--muted); }
     .controls { display:flex; gap:10px; flex-wrap:wrap; }
-    .btn { padding:10px 14px; border-radius:10px; border:1px solid var(--stroke); background:rgba(255,255,255,0.02); color:var(--text); font-weight:600; }
+    .btn { padding:10px 14px; border-radius:10px; border:1px solid var(--stroke); background:rgba(15,23,42,0.04); color:var(--text); font-weight:600; }
     .btn:hover { border-color: var(--gold); box-shadow:0 10px 25px rgba(214,163,0,0.25); }
-    .btn.primary { background: linear-gradient(120deg,var(--gold),var(--gold-soft)); color: var(--bg); border-color: transparent; }
-    .card { background:var(--card); border:1px solid var(--stroke); border-radius:16px; padding:16px; box-shadow:0 18px 45px rgba(0,0,0,0.35); }
+    .btn.primary { background: linear-gradient(120deg,var(--gold),var(--gold-soft)); color:#1f2328; border-color: transparent; }
+    .card { background:var(--card); border:1px solid var(--stroke); border-radius:16px; padding:16px; box-shadow:0 18px 45px rgba(15,23,42,0.08); }
     form { display:grid; gap:12px; }
     .grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap:12px; }
     label { display:block; font-weight:600; margin-bottom:6px; color:var(--muted); }
-    input, select, textarea { width:100%; padding:10px; border-radius:10px; border:1px solid var(--stroke); background:rgba(255,255,255,0.03); color:var(--text); }
+    input, select, textarea { width:100%; padding:10px; border-radius:10px; border:1px solid var(--stroke); background:#fff; color:var(--text); }
     textarea { resize:vertical; }
     .row { display:grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap:12px; }
-    .pill { display:inline-flex; align-items:center; gap:6px; padding:6px 10px; border-radius:10px; border:1px solid var(--stroke); background:rgba(255,255,255,0.05); }
+    .pill { display:inline-flex; align-items:center; gap:6px; padding:6px 10px; border-radius:10px; border:1px solid var(--stroke); background:rgba(15,23,42,0.04); }
     .section { border:1px solid var(--stroke); border-radius:14px; padding:12px; }
     .section h3 { margin:0 0 10px; }
     .field-error { border-color: var(--gold-soft); box-shadow: 0 0 0 1px rgba(231,195,74,0.4); background:rgba(231,195,74,0.08); }
-    .modal { position:fixed; inset:0; background:rgba(5,6,10,0.7); display:none; align-items:center; justify-content:center; padding:24px; z-index:30; }
+    .modal { position:fixed; inset:0; background:rgba(15,18,23,0.35); display:none; align-items:center; justify-content:center; padding:24px; z-index:30; }
     .modal.active { display:flex; }
-    .modal-card { width:min(1120px, 98vw); background:var(--card); border:1px solid var(--stroke); border-radius:18px; padding:18px; box-shadow:0 25px 60px rgba(0,0,0,0.45); }
+    .modal-card { width:min(1120px, 98vw); background:var(--card); border:1px solid var(--stroke); border-radius:18px; padding:18px; box-shadow:0 25px 60px rgba(15,23,42,0.12); }
     .modal-header { display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:14px; }
     .printer-row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:10px; }
     .printer-row label { color:var(--muted); font-weight:600; }
     .printer-row input { min-width:240px; }
-    .label-stage { --label-scale: 3; background:rgba(255,255,255,0.02); border:1px dashed var(--stroke); border-radius:14px; padding:18px; display:flex; justify-content:center; align-items:center; min-height:320px; overflow:visible; }
+    .label-mode { display:flex; gap:10px; flex-wrap:wrap; margin-bottom:10px; }
+    .label-stage { --label-scale: 3; background:rgba(15,23,42,0.04); border:1px dashed var(--stroke); border-radius:14px; padding:18px; display:flex; justify-content:center; align-items:center; min-height:320px; overflow:visible; }
     .label-preview {
       background:#ffffff;
       color:#111;
       border:1px solid #d4d4d4;
       border-radius:4px;
-      width:35mm;
-      height:20mm;
+      --label-width: 58mm;
+      --label-height: 40mm;
+      --label-scale-factor: 1.8;
+      width:var(--label-width);
+      height:var(--label-height);
       display:grid;
       grid-template-columns: repeat(5, 1fr);
       grid-template-rows: repeat(3, 1fr);
@@ -54,6 +58,88 @@
       zoom: var(--label-scale);
       background-image: none;
     }
+    .label-preview.no-cz .label-barcode-cell,
+    .label-preview.no-cz .label-info-cell,
+    .label-preview.no-cz .label-qr-cell,
+    .label-preview.no-cz .label-eac { display:none; }
+    .label-no-cz-grid {
+      position:absolute;
+      inset:0;
+      display:none;
+      grid-template-rows: repeat(4, 1fr);
+    }
+    .label-no-cz-row { border-bottom:1px solid #d4d4d4; }
+    .label-no-cz-row:last-child { border-bottom:none; }
+    .label-no-cz-text {
+      padding:0.8mm 1mm;
+      display:flex;
+      flex-direction:column;
+      gap:0.45mm;
+      font-size:1.2mm;
+      line-height:1.15;
+      color:#111;
+    }
+    .label-no-cz-line { display:flex; gap:0.5mm; flex-wrap:wrap; }
+    .label-no-cz-label { font-weight:600; }
+    .label-no-cz-article {
+      font-size:2em;
+      font-weight:700;
+      line-height:1.05;
+    }
+    .label-no-cz-name {
+      font-size:2em;
+      font-weight:500;
+      line-height:1.05;
+    }
+    .label-no-cz-row-split {
+      display:flex;
+    }
+    .label-no-cz-row-split .label-no-cz-article {
+      font-size:0.4em;
+      font-weight:700;
+      line-height:1.05;
+    }
+    .label-no-cz-row-split [data-no-cz="size"] {
+      font-size:0.8em;
+    }
+    .label-no-cz-split {
+      flex:1;
+      padding:0.8mm 1mm;
+      display:flex;
+      align-items:flex-start;
+      justify-content:flex-start;
+    }
+    .label-no-cz-split + .label-no-cz-split {
+      border-left:1px solid #d4d4d4;
+    }
+    .label-no-cz-barcode {
+      display:flex;
+      align-items:stretch;
+      justify-content:stretch;
+    }
+    .label-no-cz-barcode-wrap {
+      flex:1;
+      width:100%;
+      display:flex;
+      flex-direction:column;
+      align-items:stretch;
+      justify-content:center;
+      gap:0.4mm;
+    }
+    .label-no-cz-barcode-svg {
+      width:100%;
+      height:8mm;
+      display:block;
+    }
+    .label-no-cz-barcode-value {
+      font-size:1.1mm;
+      line-height:1;
+      letter-spacing:0.2mm;
+      color:#111;
+      white-space:nowrap;
+      text-align:center;
+    }
+    .label-preview.no-cz .label-no-cz-grid { display:grid; }
     .label-barcode-cell {
       grid-column: 1;
       grid-row: 1 / span 3;
@@ -73,8 +159,8 @@
       position:relative;
     }
     .label-qr {
-      width:12.5mm;
-      height:12.5mm;
+      width:calc(12.5mm * var(--label-scale-factor));
+      height:calc(12.5mm * var(--label-scale-factor));
       border:1px solid #111;
       display:grid;
       place-items:center;
@@ -89,9 +175,9 @@
     }
     .label-eac {
       position:absolute;
-      right:0.6mm;
-      bottom:0.6mm;
-      width:3mm;
+      right:calc(0.6mm * var(--label-scale-factor));
+      bottom:calc(0.6mm * var(--label-scale-factor));
+      width:calc(3mm * var(--label-scale-factor));
       height:auto;
       display:block;
     }
@@ -106,30 +192,30 @@
       display:flex;
       align-items:stretch;
       justify-content:center;
-      padding:0.6mm 0.4mm;
+      padding:calc(0.6mm * var(--label-scale-factor)) calc(0.4mm * var(--label-scale-factor));
       overflow:hidden;
     }
     .label-info {
       width:100%;
       display:flex;
       flex-direction:column;
-      gap:0.4mm;
-      font-size:0.9mm;
+      gap:calc(0.4mm * var(--label-scale-factor));
+      font-size:calc(0.9mm * var(--label-scale-factor));
       line-height:1.05;
       color:#111;
       height:100%;
       justify-content:space-between;
     }
     .label-info-emph {
-      font-size:1mm;
+      font-size:calc(1mm * var(--label-scale-factor));
     }
     .label-info-top {
       display:flex;
       flex-direction:column;
-      gap:0.35mm;
+      gap:calc(0.35mm * var(--label-scale-factor));
       border-bottom:1px solid rgba(0,0,0,0.2);
-      padding-bottom:0.35mm;
-      min-height:3mm;
+      padding-bottom:calc(0.35mm * var(--label-scale-factor));
+      min-height:calc(3mm * var(--label-scale-factor));
       flex:1 1 auto;
     }
     .label-info-line {
@@ -139,47 +225,50 @@
     .label-info-bottom {
       display:flex;
       flex-direction:column;
-      gap:0.3mm;
-      padding-top:0.25mm;
+      gap:calc(0.3mm * var(--label-scale-factor));
+      padding-top:calc(0.25mm * var(--label-scale-factor));
       flex:0 0 auto;
     }
     .label-info-label {
       font-weight:700;
-      margin-right:0.2mm;
+      margin-right:calc(0.2mm * var(--label-scale-factor));
     }
     .label-barcode-rotate {
       position:absolute;
       top:50%;
       left:50%;
-      width:18mm;
-      height:6mm;
+      width:calc(var(--label-height) - 1mm);
+      height:calc(6mm * var(--label-scale-factor));
       display:flex;
       flex-direction:column;
       align-items:center;
       justify-content:center;
-      gap:0.2mm;
+      gap:calc(0.2mm * var(--label-scale-factor));
       transform: translate(-50%, -50%) rotate(90deg);
       transform-origin:center;
     }
     .label-barcode {
       width:100%;
-      height:4.2mm;
+      height:calc(4.2mm * var(--label-scale-factor));
       display:block;
     }
     .label-barcode-value {
-      font-size:0.9mm;
+      font-size:calc(0.9mm * var(--label-scale-factor));
       line-height:1;
-      letter-spacing:0.15mm;
+      letter-spacing:calc(0.15mm * var(--label-scale-factor));
       color:#111;
       white-space:nowrap;
     }
     .modal-actions { margin-top:14px; display:flex; gap:10px; flex-wrap:wrap; }
     @media print {
-      body * { visibility:hidden; }
+      body { margin:0; }
+      body > *:not(#label-preview) { display:none !important; }
+      #label-preview { display:block !important; position:static; inset:auto; background:none; padding:0; }
       #label-preview, #label-preview * { visibility:visible; }
-      #label-preview { position:static; inset:auto; background:none; padding:0; }
-      #label-preview .modal-card { box-shadow:none; border:none; padding:0; }
+      #label-preview .modal-card { box-shadow:none; border:none; padding:0; width:auto; }
       #label-preview .modal-header, #label-preview .modal-actions { display:none; }
+      #label-preview .printer-row { display:none; }
+      #label-preview .label-mode { display:none; }
       #label-preview .label-stage { border:none; padding:0; min-height:auto; }
       #label-preview .label-preview { zoom: 1; }
     }
@@ -192,13 +281,17 @@
   <div class="wrap">
     <header>
       <div>
-        <div class="muted">FULLBOX · {{ agency.agn_name|default:"Клиент" }}</div>
+        <div class="muted">FULLBOX · {{ agency.agn_name|default:"Клиент" }} · {% include "partials/current_user.html" %}</div>
         <h1>{{ title }}</h1>
         <div class="pill">Идем обратно в список клиента</div>
       </div>
       <div class="controls">
         <a class="btn" href="#" id="label-preview-open">Печать этикетки</a>
-        <a class="btn" href="/client/{{ agency.id }}/sku/">К номенклатуре клиента</a>
+        {% if request.GET.next %}
+          <a class="btn" href="{{ request.GET.next }}">К номенклатуре клиента</a>
+        {% else %}
+          <a class="btn" href="/client/{{ agency.id }}/sku/">К номенклатуре клиента</a>
+        {% endif %}
         <a class="btn" href="/client/dashboard/?client={{ agency.id }}">Кабинет клиента</a>
       </div>
     </header>
@@ -295,7 +388,11 @@
 
         <div style="display:flex; gap:10px; flex-wrap:wrap;">
           <button type="submit" class="btn primary">{{ submit_label }}</button>
-          <a class="btn" href="/client/{{ agency.id }}/sku/">Отмена</a>
+          {% if request.GET.next %}
+            <a class="btn" href="{{ request.GET.next }}">Отмена</a>
+          {% else %}
+            <a class="btn" href="/client/{{ agency.id }}/sku/">Отмена</a>
+          {% endif %}
         </div>
       </form>
     </div>
@@ -304,8 +401,9 @@
     <div class="modal-card">
       <div class="modal-header">
         <div>
-          <div class="muted">FULLBOX · {{ agency.agn_name|default:"Клиент" }}</div>
+          <div class="muted">FULLBOX · {{ agency.agn_name|default:"Клиент" }} · {% include "partials/current_user.html" %}</div>
           <strong>Превью этикетки</strong>
+          <div class="muted" style="margin-top:4px;">Размер этикетки: 58x40 мм</div>
         </div>
         <button class="btn" id="label-preview-close" type="button">Закрыть</button>
       </div>
@@ -319,6 +417,10 @@
           <option value="TSC TE310">
           <option value="Honeywell PC42t">
         </datalist>
+      </div>
+      <div class="label-mode">
+        <button class="btn primary" type="button" data-label-mode="cz">Этикетка товара с ЧЗ</button>
+        <button class="btn" type="button" data-label-mode="no-cz">Этикетка товара без ЧЗ</button>
       </div>
       <div class="label-stage">
         <div class="label-preview">
@@ -334,6 +436,7 @@
           <div class="label-info-cell">
             <div class="label-info">
               <div class="label-info-top">
+                <div class="label-info-line label-info-emph" data-info="article"></div>
                 <div class="label-info-line label-info-emph" data-info="name"></div>
                 <div class="label-info-line label-info-emph" data-info="size"></div>
                 <div class="label-info-line label-info-emph" data-info="brand"></div>
@@ -348,6 +451,27 @@
           </div>
           <div class="label-qr-cell">
             <div class="label-qr" data-qr-box aria-hidden="true"></div>
+          </div>
+          <div class="label-no-cz-grid" aria-hidden="true">
+            <div class="label-no-cz-row label-no-cz-text">
+              <div class="label-no-cz-line label-no-cz-article" data-no-cz="article"></div>
+              <div class="label-no-cz-line label-no-cz-name" data-no-cz="name"></div>
+            </div>
+            <div class="label-no-cz-row label-no-cz-text">
+              <div class="label-no-cz-line" data-no-cz="color"></div>
+              <div class="label-no-cz-line" data-no-cz="composition"></div>
+              <div class="label-no-cz-line" data-no-cz="supplier"></div>
+            </div>
+            <div class="label-no-cz-row label-no-cz-row-split">
+              <div class="label-no-cz-split label-no-cz-article" data-no-cz="country"></div>
+              <div class="label-no-cz-split label-no-cz-article" data-no-cz="size"></div>
+            </div>
+            <div class="label-no-cz-row label-no-cz-barcode">
+              <div class="label-no-cz-barcode-wrap">
+                <svg class="label-no-cz-barcode-svg" data-barcode-no-cz aria-hidden="true"></svg>
+                <div class="label-no-cz-barcode-value" data-barcode-value>-</div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -380,6 +504,14 @@
     const closeBtn = document.getElementById('label-preview-close');
     const printBtn = document.getElementById('label-print');
     const printerInput = document.getElementById('label-printer');
+    const labelModeButtons = document.querySelectorAll('[data-label-mode]');
+    const labelPreview = preview ? preview.querySelector('.label-preview') : null;
+    const params = new URLSearchParams(window.location.search);
+    const printMode = params.get('print') === '1';
+    const nextParam = params.get('next') || '';
+    const sameOriginReferrer = document.referrer && document.referrer.startsWith(window.location.origin);
+    const referrerPath = sameOriginReferrer ? document.referrer.replace(window.location.origin, '') : '';
+    const backUrl = nextParam && nextParam.startsWith('/') ? nextParam : (referrerPath || `/client/{{ agency.id }}/sku/`);
 
     const getValue = (id) => {
       const el = document.getElementById(id);
@@ -427,27 +559,79 @@
       }
     };
 
-    const renderBarcode = (value) => {
-      const svg = preview.querySelector('[data-barcode-svg]');
-      if (!svg) {
+    const setNoCzLine = (key, value, label) => {
+      const el = preview.querySelector(`[data-no-cz="${key}"]`);
+      if (!el) {
         return;
       }
+      if (value) {
+        el.textContent = label ? `${label}${value}` : value;
+        el.style.display = '';
+      } else {
+        el.textContent = '';
+        el.style.display = 'none';
+      }
+    };
+
+    const limitWords = (text, maxWords = 5) => {
+      if (!text) {
+        return '';
+      }
+      const trimmed = String(text).trim();
+      if (!trimmed) {
+        return '';
+      }
+      const words = trimmed.split(/\s+/);
+      if (words.length <= maxWords) {
+        return trimmed;
+      }
+      return words.slice(0, maxWords).join(' ');
+    };
+
+    const renderBarcode = (value) => {
+      const czSvgs = preview.querySelectorAll('[data-barcode-svg]');
+      const noCzSvgs = preview.querySelectorAll('[data-barcode-no-cz]');
       const digits = (value || '').replace(/\D/g, '');
+      if (!czSvgs.length && !noCzSvgs.length) {
+        return;
+      }
       if (!digits) {
-        svg.innerHTML = '';
+        czSvgs.forEach((svg) => {
+          svg.innerHTML = '';
+        });
+        noCzSvgs.forEach((svg) => {
+          svg.innerHTML = '';
+        });
         return;
       }
       if (window.JsBarcode) {
         const useEan = digits.length >= 12;
-        JsBarcode(svg, useEan ? digits : value, {
-          format: useEan ? 'ean13' : 'CODE128',
-          displayValue: false,
-          margin: 0,
-          lineColor: '#111',
-          height: 24,
-          width: 1,
-          fontSize: 5,
-          textMargin: 0,
+        czSvgs.forEach((svg) => {
+          JsBarcode(svg, useEan ? digits : value, {
+            format: useEan ? 'ean13' : 'CODE128',
+            displayValue: false,
+            margin: 0,
+            lineColor: '#111',
+            height: 24,
+            width: 1,
+            fontSize: 5,
+            textMargin: 0,
+          });
+        });
+        noCzSvgs.forEach((svg) => {
+          JsBarcode(svg, useEan ? digits : value, {
+            format: useEan ? 'ean13' : 'CODE128',
+            displayValue: false,
+            margin: 0,
+            lineColor: '#111',
+            height: 24,
+            width: 1,
+            fontSize: 5,
+            textMargin: 0,
+          });
+          svg.setAttribute('preserveAspectRatio', 'none');
+          svg.setAttribute('width', '100%');
+          svg.setAttribute('height', '100%');
         });
       }
     };
@@ -475,28 +659,38 @@
       const skuCode = getValue('id_sku_code');
       setField('sku_code', skuCode);
       setField('size', getValue('id_size'));
-      const nameValue = pickValue(['id_name_print', 'id_name']);
-      const sizeValue = getValue('id_size');
+      const nameRaw = pickValue(['id_name_print', 'id_name']);
+      const nameValue = limitWords(nameRaw);
+      const nameNoCz = nameRaw ? String(nameRaw).trim() : '';
+      const sizeValue = limitWords(getValue('id_size'));
+      const madeInValue = limitWords(getValue('id_made_in'));
       const rawBrandValue = getValue('id_brand');
       const brandValue = rawBrandValue.toLowerCase() === 'nobrand' ? '' : rawBrandValue;
-      const subjectValue = pickValue(['id_tovar_category', 'id_vid_tovar', 'id_type_tovar']);
-      const colorText = getValue('id_color') || pickValue(['id_color_ref']);
-      const compositionValue = getValue('id_composition');
-      const supplierValue = '{{ agency.agn_name|default:"Клиент"|escapejs }}';
+      const subjectValue = limitWords(pickValue(['id_tovar_category', 'id_vid_tovar', 'id_type_tovar']));
+      const colorText = limitWords(getValue('id_color') || pickValue(['id_color_ref']));
+      const compositionValue = limitWords(getValue('id_composition'));
+      const supplierValue = limitWords('{{ agency.agn_name|default:"Клиент"|escapejs }}');
       setInfoLine('name', nameValue);
       setInfoLine('size', sizeValue, 'р-р: ');
-      setInfoLine('brand', brandValue);
+      setInfoLine('brand', limitWords(brandValue));
       setInfoLine('subject', subjectValue);
       setInfoLine('color', colorText);
       setInfoLine('composition', compositionValue, 'Состав: ');
       setInfoLine('supplier', supplierValue, 'Поставщик: ');
+      setInfoLine('article', skuCode, 'Артикул: ');
+      setNoCzLine('article', skuCode ? `Артикул: ${skuCode}` : '');
+      setNoCzLine('name', nameNoCz);
+      setNoCzLine('color', colorText, 'Цвет: ');
+      setNoCzLine('composition', compositionValue, 'Состав: ');
+      setNoCzLine('supplier', supplierValue, 'Поставщик: ');
+      setNoCzLine('country', madeInValue, 'Страна: ');
+      setNoCzLine('size', sizeValue, 'Р-р: ');
       const barcodeValue = pickValue(['field-code', 'id_code']);
       setField('barcode', barcodeValue);
       const barcodeDigits = (barcodeValue || '').replace(/\D/g, '');
-      const barcodeValueEl = preview.querySelector('[data-barcode-value]');
-      if (barcodeValueEl) {
-        barcodeValueEl.textContent = barcodeDigits || barcodeValue || '—';
-      }
+      preview.querySelectorAll('[data-barcode-value]').forEach((el) => {
+        el.textContent = barcodeDigits || barcodeValue || '-';
+      });
       const barcodeExtra = getValue('id_source_reference') || skuCode;
       setField('barcode_extra', barcodeExtra);
       renderBarcode(barcodeValue);
@@ -511,11 +705,36 @@
           preview.classList.add('active');
         });
       }
-      if (closeBtn) {
-        closeBtn.addEventListener('click', () => preview.classList.remove('active'));
+      const setLabelMode = (mode) => {
+        if (!labelPreview) {
+          return;
+        }
+        const normalized = mode === 'no-cz' ? 'no-cz' : 'cz';
+        labelPreview.classList.toggle('no-cz', normalized === 'no-cz');
+        labelModeButtons.forEach((btn) => {
+          const active = btn.dataset.labelMode === normalized;
+          btn.classList.toggle('primary', active);
+        });
+        localStorage.setItem('label_mode', normalized);
+      };
+      if (labelModeButtons.length) {
+        const storedMode = localStorage.getItem('label_mode');
+        const queryMode = params.get('label_mode');
+        const initialMode = queryMode || (printMode ? 'no-cz' : (storedMode || 'cz'));
+        setLabelMode(initialMode);
+        labelModeButtons.forEach((btn) => {
+          btn.addEventListener('click', () => setLabelMode(btn.dataset.labelMode));
+        });
       }
-      const autoOpen = new URLSearchParams(window.location.search).get('print');
-      if (autoOpen && preview) {
+      if (closeBtn) {
+        closeBtn.addEventListener('click', () => {
+          preview.classList.remove('active');
+          if (printMode) {
+            window.location.href = backUrl;
+          }
+        });
+      }
+      if (printMode && preview) {
         updatePreview();
         preview.classList.add('active');
       }
@@ -524,7 +743,12 @@
           updatePreview();
           window.print();
         });
-    }
+      }
+      window.addEventListener('afterprint', () => {
+        if (printMode) {
+          window.location.href = backUrl;
+        }
+      });
 
     if (printerInput) {
       const stored = localStorage.getItem('label_printer');
@@ -552,6 +776,7 @@
       'field-code',
       'id_code',
       'id_source_reference',
+      'id_made_in',
     ];
     fieldsToWatch.forEach((id) => {
       const el = document.getElementById(id);

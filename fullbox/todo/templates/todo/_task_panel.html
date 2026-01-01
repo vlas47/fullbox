@@ -1,16 +1,23 @@
+{% load todo_panel %}
 <style>
   .task-board { display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap:12px; margin-top:14px; }
-  .task-col { display:flex; flex-direction:column; border:1px solid var(--stroke); border-radius:14px; background:rgba(255,255,255,0.02); min-height:240px; }
+  .task-col { display:flex; flex-direction:column; border:1px solid var(--stroke); border-radius:14px; background:var(--card-soft, rgba(255,255,255,0.04)); min-height:240px; }
   .task-col-header { display:flex; justify-content:space-between; align-items:center; padding:10px 12px; border-bottom:1px dashed var(--stroke); font-weight:600; }
   .task-col-body { display:grid; gap:8px; padding:10px; }
-  .task-card { padding:10px; border:1px solid var(--stroke); border-radius:12px; background:rgba(0,0,0,0.18); }
+  .task-card { padding:10px; border:1px solid var(--stroke); border-radius:12px; background:var(--card, rgba(255,255,255,0.02)); }
+  .task-card.attention {
+    border-color: #f59e0b;
+    background: linear-gradient(135deg, rgba(245,158,11,0.18), rgba(255,248,230,0.9));
+    box-shadow: 0 0 0 2px rgba(245,158,11,0.15), 0 18px 40px rgba(245,158,11,0.18);
+    animation: pulse 1.8s ease-in-out infinite;
+  }
   .task-title { font-weight:600; margin-bottom:6px; }
   .task-title a { color:inherit; }
   .task-meta { color:var(--muted); font-size:12px; line-height:1.4; }
   .task-tags { display:flex; gap:6px; flex-wrap:wrap; margin-top:6px; }
   .task-tag { padding:3px 8px; border-radius:999px; border:1px solid var(--stroke); font-size:11px; text-transform:uppercase; letter-spacing:0.4px; }
   .task-empty { color:var(--muted); font-size:12px; border:1px dashed var(--stroke); border-radius:10px; padding:10px; text-align:center; }
-  .pill { display:inline-flex; align-items:center; gap:6px; padding:4px 8px; border-radius:999px; border:1px solid var(--stroke); background:rgba(255,255,255,0.04); font-size:12px; font-weight:600; }
+  .pill { display:inline-flex; align-items:center; gap:6px; padding:4px 8px; border-radius:999px; border:1px solid var(--stroke); background:var(--card-soft, rgba(255,255,255,0.04)); font-size:12px; font-weight:600; }
   .task-col.backlog { border-top:3px solid #6b7280; }
   .task-col.in_progress { border-top:3px solid #3b82f6; }
   .task-col.blocked { border-top:3px solid #ef4444; }
@@ -25,16 +32,26 @@
   .task-tag.urgent { color:#ef4444; }
   .task-summary { display:flex; gap:8px; flex-wrap:wrap; margin-top:10px; }
   .task-summary .pill { font-size:12px; }
+  @keyframes pulse {
+    0% { transform: translateY(0); box-shadow: 0 0 0 2px rgba(245,158,11,0.1), 0 18px 40px rgba(245,158,11,0.18); }
+    50% { transform: translateY(-1px); box-shadow: 0 0 0 6px rgba(245,158,11,0.18), 0 22px 46px rgba(245,158,11,0.22); }
+    100% { transform: translateY(0); box-shadow: 0 0 0 2px rgba(245,158,11,0.1), 0 18px 40px rgba(245,158,11,0.18); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .task-card.attention { animation: none; }
+  }
 </style>
 
 <div class="card">
   <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;">
     <div>
       <div style="font-weight:600; letter-spacing:0.2px;">Доска задач</div>
-      <div class="muted" style="font-size:13px;">
-        {% if task_panel_role_label %}Роль: {{ task_panel_role_label }} · {% endif %}
-        Всего: {{ task_panel_total }}
-      </div>
+      {% if task_panel_show_meta %}
+        <div class="muted" style="font-size:13px;">
+          {% if task_panel_role_label %}Роль: {{ task_panel_role_label }} · {% endif %}
+          Всего: {{ task_panel_total }}
+        </div>
+      {% endif %}
     </div>
     <div style="display:flex; gap:8px; flex-wrap:wrap;">
       <a class="btn" href="{% url 'todo:create' %}">Создать</a>
@@ -58,22 +75,42 @@
         <div class="task-col-body">
           {% if column.tasks %}
             {% for task in column.tasks %}
-              <div class="task-card">
+              <div class="task-card{% if task_panel_attention_employee_id and task.assigned_to_id == task_panel_attention_employee_id %} attention{% endif %}">
                 <div class="task-title">
-                  <a href="{% url 'todo:detail' task.id %}">{{ task.title }}</a>
+                  {% if task.route and "/orders/receiving/" in task.route %}
+                    <a href="{{ task.route }}">{{ task.display_title }}</a>
+                  {% else %}
+                    <a href="{% url 'todo:detail' task.id %}">{{ task.display_title }}</a>
+                  {% endif %}
                 </div>
                 <div class="task-meta">
-                  Исполнитель:
-                  {% if task.assigned_to %}
-                    {{ task.assigned_to.full_name }}
+                  {% if task_panel_role == "manager" and task.assigned_to and task.assigned_to.role == "storekeeper" and task.observer and task.observer.role == task_panel_role %}
+                    Передана на склад: текущий ответственный {{ task.assigned_to.full_name|short_name }} · Срок:
+                    {% if task.due_date %}
+                      {{ task.due_date|date:'d.m.y H:i' }}
+                    {% else %}
+                      -
+                    {% endif %}
+                  {% elif task_panel_role == "manager" and task.assigned_to and task.assigned_to.role == "storekeeper" and task.created_by and task.created_by.username == task_panel_role %}
+                    Передана на склад: текущий ответственный {{ task.assigned_to.full_name|short_name }} · Срок:
+                    {% if task.due_date %}
+                      {{ task.due_date|date:'d.m.y H:i' }}
+                    {% else %}
+                      -
+                    {% endif %}
                   {% else %}
-                    не назначен
-                  {% endif %}
-                  · Срок:
-                  {% if task.due_date %}
-                    {{ task.due_date|date:'d.m.y H:i' }}
-                  {% else %}
-                    -
+                    Исполнитель:
+                    {% if task.assigned_to %}
+                      {{ task.assigned_to.full_name }}
+                    {% else %}
+                      не назначен
+                    {% endif %}
+                    · Срок:
+                    {% if task.due_date %}
+                      {{ task.due_date|date:'d.m.y H:i' }}
+                    {% else %}
+                      -
+                    {% endif %}
                   {% endif %}
                 </div>
                 <div class="task-tags">

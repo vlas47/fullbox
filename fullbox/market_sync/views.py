@@ -13,6 +13,9 @@ from django.views.decorators.http import require_POST
 
 from sku.models import Agency, Market, MarketCredential, SKU, SKUBarcode, SKUPhoto, MarketplaceBinding
 
+
+OZON_API_BASE = "https://api-seller.ozon.ru"
+
 from .forms import WBSettingsForm, OzonSettingsForm
 
 
@@ -200,20 +203,37 @@ def _extract_size(card):
     return None
 
 
-def _extract_barcodes(card):
-    barcodes = []
+def _extract_size_barcodes(card):
+    size_map = {}
     sizes = card.get("sizes")
     if not isinstance(sizes, list):
-        return barcodes
+        return size_map
     for size in sizes:
         if not isinstance(size, dict):
             continue
+        size_value = _normalize_text(
+            _extract_first([size.get("techSize"), size.get("wbSize"), size.get("size")])
+        )
         skus = size.get("skus") or []
         if isinstance(skus, list):
             for sku in skus:
                 if sku:
-                    barcodes.append(str(sku))
+                    key = size_value or ""
+                    size_map.setdefault(key, []).append(str(sku))
+    for key, values in size_map.items():
+        size_map[key] = list(dict.fromkeys(values))
+    return size_map
+
+
+def _flatten_size_barcodes(size_map):
+    barcodes = []
+    for values in size_map.values():
+        barcodes.extend(values)
     return list(dict.fromkeys(barcodes))
+
+
+def _extract_barcodes(card):
+    return _flatten_size_barcodes(_extract_size_barcodes(card))
 
 
 def _normalize_text(value):
@@ -401,6 +421,80 @@ def _trim(value, max_len):
     return text[:max_len]
 
 
+def _ozon_headers(client_id: str, api_key: str) -> dict:
+    return {
+        "Client-Id": client_id,
+        "Api-Key": api_key,
+        "Content-Type": "application/json",
+    }
+
+
+def _normalize_ozon_client_id(value: str) -> str:
+    text = (value or "").strip()
+    if not text:
+        return ""
+    match = re.fullmatch(r"(\d+)(?:\.0+)?", text)
+    if match:
+        return match.group(1)
+    return text
+
+
+def _ozon_post(path: str, client_id: str, api_key: str, payload: dict, timeout: int = 30):
+    url = f"{OZON_API_BASE}{path}"
+    try:
+        response = requests.post(
+            url,
+            headers=_ozon_headers(client_id, api_key),
+            json=payload,
+            timeout=timeout,
+        )
+    except requests.RequestException as exc:
+        return None, f"Ozon API недоступен: {exc}"
+    if response.status_code != 200:
+        snippet = (response.text or "").strip()
+        if len(snippet) > 200:
+            snippet = f"{snippet[:200]}..."
+        detail = f": {snippet}" if snippet else ""
+        return None, f"Ozon API ошибка {response.status_code}{detail}"
+    try:
+        data = response.json()
+    except ValueError:
+        return None, "Ozon API вернул некорректный JSON."
+    return data, None
+
+
+def _ozon_attr_value(attr: dict):
+    values = attr.get("values")
+    if isinstance(values, list) and values:
+        first = values[0]
+        if isinstance(first, dict):
+            return _normalize_text(first.get("value") or first.get("dictionary_value_id"))
+        return _normalize_text(first)
+    return _normalize_text(attr.get("value") or attr.get("value_name"))
+
+
+def _ozon_find_attr(attributes: list, names: list[str]):
+    for attr in attributes:
+        name = (attr.get("attribute_name") or attr.get("name") or "").strip().lower()
+        if not name:
+            continue
+        for needle in names:
+            if needle in name:
+                return _ozon_attr_value(attr)
+    return None
+
+
+def _ozon_weight_kg(value):
+    if value is None:
+        return None
+    if isinstance(value, (int, float, Decimal)):
+        number = Decimal(str(value))
+        if number > 50:
+            return number / Decimal("1000")
+        return number
+    return _parse_weight_kg(value)
+
+
 @require_POST
 def wb_sync_run(request):
     try:
@@ -532,7 +626,12 @@ def wb_sync_run(request):
             photo_urls = _extract_photos(card)
             primary_photo = photo_urls[0] if photo_urls else None
 
-            barcodes = _extract_barcodes(card)
+            size_barcodes = _extract_size_barcodes(card)
+            barcodes = _flatten_size_barcodes(size_barcodes)
+            if size is None:
+                size_values = [key for key in size_barcodes.keys() if key]
+                if len(size_values) == 1:
+                    size = _trim(size_values[0], 64)
             code_value = _trim(barcodes[0], 128) if barcodes else None
 
             update_fields = {
@@ -638,22 +737,49 @@ def wb_sync_run(request):
                     bc.value: bc for bc in SKUBarcode.objects.filter(sku=sku)
                 }
                 has_primary = any(bc.is_primary for bc in existing_barcodes.values())
-                for idx, value in enumerate(barcodes):
-                    if value in existing_barcodes:
-                        continue
-                    if SKUBarcode.objects.filter(value=value).exists():
-                        continue
-                    try:
-                        SKUBarcode.objects.create(
-                            sku=sku,
-                            value=value,
-                            is_primary=not has_primary and idx == 0,
-                        )
-                    except IntegrityError:
-                        continue
-                    barcode_created += 1
-                    if idx == 0:
-                        has_primary = True
+                primary_set = False
+                if size_barcodes:
+                    for size_value, values in size_barcodes.items():
+                        size_label = _trim(size_value, 64) if size_value else None
+                        for value in values:
+                            if value in existing_barcodes:
+                                existing = existing_barcodes[value]
+                                if size_label and existing.size != size_label:
+                                    existing.size = size_label
+                                    existing.save(update_fields=["size"])
+                                continue
+                            if SKUBarcode.objects.filter(value=value).exists():
+                                continue
+                            try:
+                                SKUBarcode.objects.create(
+                                    sku=sku,
+                                    value=value,
+                                    size=size_label,
+                                    is_primary=not has_primary and not primary_set,
+                                )
+                            except IntegrityError:
+                                continue
+                            barcode_created += 1
+                            if not has_primary and not primary_set:
+                                primary_set = True
+                                has_primary = True
+                else:
+                    for idx, value in enumerate(barcodes):
+                        if value in existing_barcodes:
+                            continue
+                        if SKUBarcode.objects.filter(value=value).exists():
+                            continue
+                        try:
+                            SKUBarcode.objects.create(
+                                sku=sku,
+                                value=value,
+                                is_primary=not has_primary and idx == 0,
+                            )
+                        except IntegrityError:
+                            continue
+                        barcode_created += 1
+                        if idx == 0:
+                            has_primary = True
 
         if cursor_data and cursor_data.get("updatedAt") and cursor_data.get("nmID") is not None:
             cursor = {
@@ -663,6 +789,355 @@ def wb_sync_run(request):
             }
         else:
             break
+
+    return JsonResponse(
+        {
+            "ok": not errors,
+            "processed": processed,
+            "created": created,
+            "updated": updated,
+            "barcodes_created": barcode_created,
+            "errors": errors,
+        }
+    )
+
+
+@require_POST
+def ozon_sync_run(request):
+    try:
+        payload = json.loads(request.body.decode("utf-8") or "{}")
+    except json.JSONDecodeError:
+        payload = {}
+
+    client_id = payload.get("client")
+    if not client_id:
+        return JsonResponse(
+            {
+                "ok": False,
+                "errors": [
+                    "Не указан клиент.",
+                    "Передайте ID клиента в JSON-теле запроса: {\"client\": <id>}.",
+                ],
+            },
+            status=400,
+        )
+
+    agency = Agency.objects.filter(pk=client_id).first()
+    if not agency:
+        return JsonResponse(
+            {
+                "ok": False,
+                "errors": [f"Клиент с ID {client_id} не найден в базе."],
+            },
+            status=404,
+        )
+
+    ozon_market = Market.objects.filter(name__iexact="OZON").first()
+    if not ozon_market:
+        return JsonResponse(
+            {
+                "ok": False,
+                "errors": ["Маркетплейс Ozon не найден в справочнике (Market.name=OZON)."],
+            },
+            status=400,
+        )
+
+    credential = MarketCredential.objects.filter(agency=agency, market=ozon_market).first()
+    token = (credential.market_key or "").strip() if credential else ""
+    client_id_value = _normalize_ozon_client_id(credential.client_id) if credential else ""
+    if not token or not client_id_value:
+        missing = []
+        if not client_id_value:
+            missing.append("Не указан Client ID Ozon для клиента.")
+        if not token:
+            missing.append("Не указан API ключ Ozon для клиента.")
+        return JsonResponse(
+            {"ok": False, "errors": missing or ["Не указан Client ID или API ключ Ozon."]},
+            status=400,
+        )
+    if not client_id_value.isdigit() or int(client_id_value) <= 0:
+        return JsonResponse(
+            {
+                "ok": False,
+                "errors": [
+                    "Client ID Ozon должен быть положительным числом.",
+                    "Проверьте значение Client ID в настройках Ozon.",
+                ],
+            },
+            status=400,
+        )
+
+    created = 0
+    updated = 0
+    processed = 0
+    barcode_created = 0
+    errors = []
+    now = timezone.now()
+
+    list_items = []
+    last_id = ""
+    for _ in range(50):
+        list_payload = {
+            "filter": {"visibility": "ALL"},
+            "last_id": last_id,
+            "limit": 1000,
+        }
+        data, error = _ozon_post(
+            "/v3/product/list", client_id_value, token, list_payload
+        )
+        if error:
+            errors.append(error)
+            break
+        result = (data or {}).get("result") or {}
+        items = result.get("items") or []
+        if not items:
+            break
+        list_items.extend(items)
+        next_last_id = result.get("last_id") or ""
+        if not next_last_id or next_last_id == last_id:
+            break
+        last_id = next_last_id
+
+    if not errors and not list_items:
+        return JsonResponse(
+            {
+                "ok": True,
+                "processed": 0,
+                "created": 0,
+                "updated": 0,
+                "barcodes_created": 0,
+                "errors": [],
+            }
+        )
+
+    product_ids = []
+    offer_by_product = {}
+    for item in list_items:
+        product_id = item.get("product_id")
+        offer_id = item.get("offer_id") or item.get("offerId")
+        if product_id is None:
+            continue
+        product_ids.append(product_id)
+        if offer_id:
+            offer_by_product[product_id] = str(offer_id)
+
+    def _chunked(values, size):
+        for idx in range(0, len(values), size):
+            yield values[idx : idx + size]
+
+    attr_by_product = {}
+    info_items = []
+    if not errors:
+        for batch in _chunked(product_ids, 100):
+            info_payload = {"product_id": batch}
+            data, error = _ozon_post(
+                "/v3/product/info/list", client_id_value, token, info_payload
+            )
+            if error:
+                errors.append(error)
+                break
+            info_items.extend((data or {}).get("items") or [])
+
+            attr_payload = {
+                "filter": {"product_id": batch},
+                "limit": 1000,
+            }
+            attr_data, attr_error = _ozon_post(
+                "/v4/product/info/attributes", client_id_value, token, attr_payload
+            )
+            if attr_error:
+                errors.append(attr_error)
+                continue
+            attr_result = (attr_data or {}).get("result")
+            if isinstance(attr_result, dict):
+                entries = attr_result.get("items") or []
+            elif isinstance(attr_result, list):
+                entries = attr_result
+            else:
+                entries = []
+            for entry in entries:
+                product_id = entry.get("product_id")
+                attributes = entry.get("attributes") or []
+                if product_id is not None:
+                    attr_by_product[product_id] = attributes
+
+    for item in info_items:
+        product_id = item.get("product_id") or item.get("id")
+        offer_id = item.get("offer_id") or offer_by_product.get(product_id)
+        if not offer_id:
+            continue
+        offer_id = str(offer_id).strip()
+        if not offer_id:
+            continue
+        if len(offer_id) > 64:
+            offer_id = offer_id[:64]
+
+        attributes = item.get("attributes") or attr_by_product.get(product_id, [])
+        name = _trim(item.get("name") or item.get("title"), 255) or offer_id
+        brand = _trim(
+            item.get("brand") or _ozon_find_attr(attributes, ["бренд"]), 255
+        )
+        color = _trim(_ozon_find_attr(attributes, ["цвет"]), 64)
+        size = _trim(_ozon_find_attr(attributes, ["размер"]), 64)
+        composition = _trim(
+            _ozon_find_attr(attributes, ["состав", "материал"]), 255
+        )
+        gender = _trim(_ozon_find_attr(attributes, ["пол"]), 64)
+        season = _trim(_ozon_find_attr(attributes, ["сезон"]), 64)
+        made_in = _trim(_ozon_find_attr(attributes, ["страна"]), 128)
+        tovar_category = _trim(
+            _ozon_find_attr(
+                attributes, ["категория", "тип товара", "предмет", "назначение"]
+            ),
+            128,
+        )
+        description = _normalize_text(item.get("description"))
+
+        weight_kg = _ozon_weight_kg(
+            _extract_first(
+                [
+                    item.get("weight"),
+                    item.get("weight_g"),
+                    item.get("weight_kg"),
+                ]
+            )
+        )
+        dimensions = item.get("dimensions") if isinstance(item.get("dimensions"), dict) else {}
+        length_mm = _parse_length_mm(
+            _extract_first([item.get("depth"), item.get("length"), dimensions.get("length")]),
+            default_unit="mm",
+        )
+        width_mm = _parse_length_mm(
+            _extract_first([item.get("width"), dimensions.get("width")]),
+            default_unit="mm",
+        )
+        height_mm = _parse_length_mm(
+            _extract_first([item.get("height"), dimensions.get("height")]),
+            default_unit="mm",
+        )
+        volume = _parse_volume(item.get("volume") or dimensions.get("volume"))
+
+        images = item.get("images") or []
+        if isinstance(images, str):
+            images = [images]
+        primary_image = _extract_first(
+            [item.get("primary_image"), images[0] if images else None]
+        )
+
+        barcodes = item.get("barcodes") or item.get("barcode") or []
+        if isinstance(barcodes, str):
+            barcodes = [barcodes]
+        barcodes = [str(value) for value in barcodes if value]
+        code_value = _trim(barcodes[0], 128) if barcodes else None
+
+        update_fields = {
+            "name": name,
+            "market": ozon_market,
+            "source": "marketplace",
+            "name_print": name,
+        }
+        if brand is not None:
+            update_fields["brand"] = brand
+        if color is not None:
+            update_fields["color"] = color
+        if size is not None:
+            update_fields["size"] = size
+        if composition is not None:
+            update_fields["composition"] = composition
+        if gender is not None:
+            update_fields["gender"] = gender
+        if season is not None:
+            update_fields["season"] = season
+        if made_in is not None:
+            update_fields["made_in"] = made_in
+        if tovar_category is not None:
+            update_fields["tovar_category"] = tovar_category
+        if description is not None:
+            update_fields["description"] = description
+        if code_value is not None:
+            update_fields["code"] = code_value
+        if primary_image is not None:
+            update_fields["img"] = primary_image
+        if length_mm is not None:
+            update_fields["length_mm"] = length_mm
+        if width_mm is not None:
+            update_fields["width_mm"] = width_mm
+        if height_mm is not None:
+            update_fields["height_mm"] = height_mm
+        if volume is not None:
+            update_fields["volume"] = volume
+        if weight_kg is not None:
+            update_fields["weight_kg"] = weight_kg
+        if product_id is not None:
+            update_fields["source_reference"] = str(product_id)
+
+        sku, is_created = SKU.objects.get_or_create(
+            agency=agency,
+            sku_code=offer_id,
+            defaults=update_fields,
+        )
+        if not is_created:
+            changed = False
+            for field, value in update_fields.items():
+                if value is None:
+                    continue
+                if getattr(sku, field) != value:
+                    setattr(sku, field, value)
+                    changed = True
+            if changed:
+                sku.save()
+        if is_created:
+            created += 1
+        else:
+            updated += 1
+        processed += 1
+
+        if product_id is not None:
+            MarketplaceBinding.objects.update_or_create(
+                marketplace="OZON",
+                external_id=str(product_id),
+                defaults={
+                    "sku": sku,
+                    "sync_mode": "overwrite",
+                    "last_synced_at": now,
+                },
+            )
+
+        if images:
+            existing_photos = set(
+                SKUPhoto.objects.filter(sku=sku).values_list("url", flat=True)
+            )
+            for idx, url in enumerate(images):
+                if url in existing_photos:
+                    continue
+                SKUPhoto.objects.create(sku=sku, url=url, sort_order=idx)
+
+        if barcodes:
+            existing_barcodes = {
+                bc.value: bc for bc in SKUBarcode.objects.filter(sku=sku)
+            }
+            has_primary = any(bc.is_primary for bc in existing_barcodes.values())
+            for idx, value in enumerate(barcodes):
+                if value in existing_barcodes:
+                    existing = existing_barcodes[value]
+                    if size and existing.size != size:
+                        existing.size = size
+                        existing.save(update_fields=["size"])
+                    continue
+                if SKUBarcode.objects.filter(value=value).exists():
+                    continue
+                try:
+                    SKUBarcode.objects.create(
+                        sku=sku,
+                        value=value,
+                        size=size,
+                        is_primary=not has_primary and idx == 0,
+                    )
+                except IntegrityError:
+                    continue
+                barcode_created += 1
+                if idx == 0:
+                    has_primary = True
 
     return JsonResponse(
         {

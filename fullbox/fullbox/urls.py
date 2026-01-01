@@ -27,6 +27,8 @@ urlpatterns = [
     path('dev/', TemplateView.as_view(template_name='developer.html'), name='dev-home'),
     path('login-menu/', views.login_menu, name='login-menu'),
     path('dev-login/<str:username>/', views.dev_login, name='dev-login'),
+    path('login/', views.sign_in, name='login'),
+    path('logout/', views.sign_out, name='logout'),
     path('cabinet/<str:role>/', views.role_cabinet, name='role-cabinet'),
     path('project-description/', views.project_description, name='project-description'),
     path('project-description/file/', views.project_description_file, name='project-description-file'),
@@ -43,6 +45,8 @@ urlpatterns = [
     path('todo/', include('todo.urls')),
     path('employees/', include('employees.urls')),
     path('market-sync/', include('market_sync.urls')),
+    path('team-manager/', include('teammanager.urls')),
+    path('sklad/', include('sklad.urls')),
 ]
 
 if settings.DEBUG:
