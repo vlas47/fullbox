@@ -9,24 +9,24 @@
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>
     :root {
-      --bg:#0b0b0f;
-      --card:#14141f;
-      --card-soft:#171726;
-      --gold:#d6a300;
-      --gold-soft:#e7c34a;
-      --text:#e8e8ed;
-      --muted:#9aa0b3;
-      --stroke: rgba(255,255,255,0.08);
-      --danger:#ff6b6b;
-      --success:#1db954;
+      --bg:#f6f4ed;
+      --card:#ffffff;
+      --card-soft:#f8f6f1;
+      --gold:#c79a1c;
+      --gold-soft:#f2d48c;
+      --text:#1f2328;
+      --muted:#6b7280;
+      --stroke: rgba(31,35,40,0.12);
+      --danger:#d14343;
+      --success:#1f9d55;
     }
     * { box-sizing: border-box; }
     body {
       margin:0;
       background:
-        radial-gradient(1200px 600px at -10% -20%, rgba(214,163,0,0.18), transparent 60%),
-        radial-gradient(900px 500px at 110% 20%, rgba(70,120,255,0.14), transparent 55%),
-        #0b0b0f;
+        radial-gradient(1200px 600px at -10% -20%, rgba(199,154,32,0.18), transparent 60%),
+        radial-gradient(900px 500px at 110% 20%, rgba(70,120,255,0.12), transparent 55%),
+        var(--bg);
       color:var(--text);
       font-family:'Space Grotesk',system-ui,sans-serif;
       min-height:100vh;
@@ -36,8 +36,8 @@
       position:fixed;
       inset:0;
       background-image:
-        linear-gradient(rgba(255,255,255,0.05) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(255,255,255,0.05) 1px, transparent 1px);
+        linear-gradient(rgba(31,35,40,0.06) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(31,35,40,0.06) 1px, transparent 1px);
       background-size:36px 36px;
       opacity:0.12;
       pointer-events:none;
@@ -53,7 +53,7 @@
       padding:10px 14px;
       border-radius:12px;
       border:1px solid var(--stroke);
-      background:rgba(255,255,255,0.03);
+      background:rgba(15,23,42,0.04);
       color:var(--text);
       font-weight:600;
       cursor:pointer;
@@ -63,14 +63,14 @@
       gap:6px;
     }
     .btn:hover { border-color: var(--gold); box-shadow:0 10px 25px rgba(214,163,0,0.25); transform: translateY(-1px); }
-    .btn.primary { background: linear-gradient(120deg,var(--gold),var(--gold-soft)); color:var(--bg); border-color: transparent; }
+    .btn.primary { background: linear-gradient(120deg,var(--gold),var(--gold-soft)); color:#1f2328; border-color: transparent; }
     .btn.ghost { background: transparent; }
     .card {
-      background:linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.01));
+      background:var(--card);
       border:1px solid var(--stroke);
       border-radius:18px;
       padding:16px;
-      box-shadow:0 20px 55px rgba(0,0,0,0.45);
+      box-shadow:0 20px 55px rgba(15,23,42,0.12);
       animation: fadeUp .5s ease both;
     }
     form { display:grid; gap:14px; }
@@ -91,18 +91,18 @@
     .hint { color:var(--muted); font-size:12px; margin-top:4px; }
     .notice {
       margin-bottom:12px;
-      border:1px solid rgba(29,185,84,0.4);
-      background:rgba(29,185,84,0.12);
-      color:#b7f7c8;
+      border:1px solid rgba(31,157,85,0.35);
+      background:rgba(31,157,85,0.12);
+      color:#166534;
       border-radius:14px;
       padding:10px 12px;
     }
     .section-header { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; }
     .section-header h2 { margin:0; font-size:18px; }
-    .table-wrap { overflow:auto; border-radius:14px; border:1px solid var(--stroke); background:rgba(12,12,18,0.6); }
+    .table-wrap { overflow:auto; border-radius:14px; border:1px solid var(--stroke); background:rgba(15,23,42,0.03); }
     table { width:100%; border-collapse:collapse; min-width:860px; }
     th, td { padding:8px; border-bottom:1px solid var(--stroke); vertical-align:top; }
-    th { text-align:left; font-size:12px; text-transform:uppercase; letter-spacing:1px; color:var(--muted); background:rgba(255,255,255,0.03); }
+    th { text-align:left; font-size:12px; text-transform:uppercase; letter-spacing:1px; color:var(--muted); background:rgba(15,23,42,0.04); }
     tbody tr:last-child td { border-bottom: none; }
     .table-actions { display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; }
     .row-action { padding:6px 10px; border-radius:8px; border:1px solid var(--stroke); background:transparent; color:var(--text); cursor:pointer; font-size:12px; }
@@ -111,7 +111,7 @@
     .barcode-main { font-weight:600; }
     .barcode-toggle {
       border:none;
-      background:rgba(255,255,255,0.08);
+      background:rgba(15,23,42,0.06);
       color:var(--text);
       border-radius:999px;
       padding:4px 8px;
@@ -119,9 +119,9 @@
       cursor:pointer;
       width:max-content;
     }
-    .barcode-toggle.active { background:rgba(214,163,0,0.2); color:var(--gold-soft); }
+    .barcode-toggle.active { background:rgba(199,154,32,0.2); color:#7a5a10; }
     .barcode-more { display:flex; flex-wrap:wrap; gap:6px; font-size:12px; color:var(--muted); }
-    .barcode-more span { padding:4px 6px; border-radius:8px; border:1px solid var(--stroke); background:rgba(255,255,255,0.03); }
+    .barcode-more span { padding:4px 6px; border-radius:8px; border:1px solid var(--stroke); background:rgba(15,23,42,0.04); }
     .bottom-grid { display:grid; grid-template-columns: 1fr auto; gap:12px; align-items:end; }
     .action-bar { display:flex; gap:8px; flex-wrap:wrap; justify-content:flex-end; }
     .item-row.is-new { animation: rowIn .25s ease; }
@@ -138,7 +138,7 @@
   <div class="wrap">
     <header>
       <div>
-        <div class="eyebrow">FULLBOX · {{ agency.agn_name|default:"Клиент" }}</div>
+        <div class="eyebrow">FULLBOX · {{ agency.agn_name|default:"Клиент" }} · {% include "partials/current_user.html" %}</div>
         <h1>Заявка на приемку</h1>
         <div class="muted">Поля с <span class="required">*</span> обязательны.</div>
       </div>

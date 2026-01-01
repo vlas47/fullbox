@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.db import models
 from django.db.models import Q
 
@@ -27,6 +28,14 @@ class Agency(models.Model):
     contract_numb = models.CharField("Номер договора", max_length=64, blank=True, null=True)
     contract_link = models.CharField("Ссылка на договор", max_length=255, blank=True, null=True)
     archived = models.BooleanField("Архивирован", default=False)
+    portal_user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="agency_profile",
+        verbose_name="Пользователь",
+    )
 
     class Meta:
         verbose_name = "Клиент"
@@ -198,6 +207,7 @@ class SKUBarcode(models.Model):
         SKU, on_delete=models.CASCADE, related_name="barcodes", verbose_name="SKU"
     )
     value = models.CharField("Штрихкод", max_length=64, unique=True)
+    size = models.CharField("Размер", max_length=64, blank=True, null=True)
     is_primary = models.BooleanField("Основной", default=False)
 
     class Meta:
@@ -206,7 +216,8 @@ class SKUBarcode(models.Model):
         ordering = ["-is_primary", "value"]
 
     def __str__(self) -> str:
-        return f"{self.value} ({'основной' if self.is_primary else 'доп.'})"
+        size = f" [{self.size}]" if self.size else ""
+        return f"{self.value}{size} ({'основной' if self.is_primary else 'доп.'})"
 
 
 class SKUPhoto(models.Model):

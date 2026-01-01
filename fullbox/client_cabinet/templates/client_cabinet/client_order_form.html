@@ -9,14 +9,14 @@
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>
     :root {
-      --bg: #ede7f6;
-      --card: #fff;
-      --primary: #673ab7;
-      --primary-light: #ede7f6;
-      --text: #212121;
-      --muted: #666;
-      --stroke: #dcd6f0;
-      --danger: #e53935;
+      --bg:#f6f4ed;
+      --card:#fff;
+      --primary:#c79a1c;
+      --primary-light:#f6f4ed;
+      --text:#1f2328;
+      --muted:#6b7280;
+      --stroke: rgba(31,35,40,0.12);
+      --danger:#d14343;
     }
     * { box-sizing: border-box; }
     body { margin:0; background:var(--primary-light); color:var(--text); font-family:'Space Grotesk',system-ui,sans-serif; }
@@ -25,9 +25,9 @@
     header { display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:16px; }
     h1 { margin:0; letter-spacing:-0.2px; }
     .muted { color: var(--muted); }
-    .btn { padding:10px 14px; border-radius:8px; border:1px solid var(--stroke); background:#f5f0ff; color:var(--text); font-weight:600; }
-    .btn.primary { background: var(--primary); color: #fff; border-color: var(--primary); }
-    .card { background:var(--card); border:1px solid var(--stroke); border-radius:12px; padding:18px; box-shadow:0 12px 32px rgba(0,0,0,0.08); }
+    .btn { padding:10px 14px; border-radius:8px; border:1px solid var(--stroke); background:rgba(15,23,42,0.04); color:var(--text); font-weight:600; }
+    .btn.primary { background: var(--primary); color:#1f2328; border-color: var(--primary); }
+    .card { background:var(--card); border:1px solid var(--stroke); border-radius:12px; padding:18px; box-shadow:0 12px 32px rgba(15,23,42,0.08); }
     form { display:grid; gap:16px; }
     .grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap:12px; }
     label { display:block; font-weight:600; margin-bottom:6px; color:var(--muted); }
@@ -43,7 +43,7 @@
   <div class="wrap">
     <header>
       <div>
-        <div class="muted">FULLBOX · {{ agency.agn_name|default:"Клиент" }}</div>
+        <div class="muted">FULLBOX · {{ agency.agn_name|default:"Клиент" }} · {% include "partials/current_user.html" %}</div>
         <h1>Заявка</h1>
         <div class="muted">Первичная форма для клиента. Поля с <span class="required">*</span> обязательны.</div>
       </div>

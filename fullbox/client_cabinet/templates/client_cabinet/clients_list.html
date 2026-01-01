@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>
-    :root { --bg:#0b0b0f; --card:#14141f; --gold:#d6a300; --gold-soft:#e7c34a; --text:#e8e8ed; --muted:#9aa0b3; --stroke: rgba(255,255,255,0.08); }
+    :root { --bg:#f6f4ed; --card:#ffffff; --gold:#c79a1c; --gold-soft:#f2d48c; --text:#1f2328; --muted:#6b7280; --stroke: rgba(31,35,40,0.12); }
     * { box-sizing: border-box; }
     body { margin:0; background:var(--bg); color:var(--text); font-family:'Space Grotesk',system-ui,sans-serif; }
     a { color: inherit; text-decoration: none; }
@@ -17,16 +17,16 @@
     h1 { margin:0; letter-spacing:-0.5px; }
     .muted { color: var(--muted); }
     .controls { display:flex; gap:10px; flex-wrap:wrap; }
-    .btn { padding:10px 14px; border-radius:10px; border:1px solid var(--stroke); background:rgba(255,255,255,0.02); color:var(--text); font-weight:600; }
+    .btn { padding:10px 14px; border-radius:10px; border:1px solid var(--stroke); background:rgba(15,23,42,0.04); color:var(--text); font-weight:600; }
     .btn:hover { border-color: var(--gold); box-shadow:0 10px 25px rgba(214,163,0,0.25); }
-    .btn.active { background: linear-gradient(120deg,var(--gold),var(--gold-soft)); color: var(--bg); border-color: transparent; }
-    .search input { padding:10px; border-radius:10px; border:1px solid var(--stroke); background:rgba(255,255,255,0.03); color:var(--text); min-width:260px; }
+    .btn.active { background: linear-gradient(120deg,var(--gold),var(--gold-soft)); color:#1f2328; border-color: transparent; }
+    .search input { padding:10px; border-radius:10px; border:1px solid var(--stroke); background:#fff; color:var(--text); min-width:260px; }
     .table-wrap { width:100%; overflow-x:auto; margin-top:16px; }
     table { min-width: 1200px; width:100%; border-collapse:collapse; }
     th, td { border-bottom:1px solid var(--stroke); border-right:1px solid var(--stroke); padding:10px; text-align:left; }
     th:last-child, td:last-child { border-right:0; }
-    tbody tr:nth-child(odd) { background: rgba(255,255,255,0.02); }
-    tbody tr:nth-child(even) { background: rgba(255,255,255,0.04); }
+    tbody tr:nth-child(odd) { background: rgba(15,23,42,0.02); }
+    tbody tr:nth-child(even) { background: rgba(15,23,42,0.04); }
     th { color: var(--muted); font-weight:600; white-space: nowrap; }
     th .sort-label { display:inline-flex; align-items:center; gap:6px; color:inherit; }
     th .sort-label:hover { color: var(--text); }
@@ -38,22 +38,22 @@
     th.sortable.active.asc .arrow.up { border-bottom-color: var(--gold); }
     th.sortable.active.desc .arrow.down { border-top-color: var(--gold); }
     .actions { display:flex; gap:6px; align-items:center; justify-content:center; }
-    .act-btn { display:inline-flex; align-items:center; justify-content:center; padding:8px 10px; border-radius:8px; border:1px solid var(--stroke); background:rgba(255,255,255,0.04); color:var(--text); font-weight:700; font-size:13px; }
+    .act-btn { display:inline-flex; align-items:center; justify-content:center; padding:8px 10px; border-radius:8px; border:1px solid var(--stroke); background:rgba(15,23,42,0.04); color:var(--text); font-weight:700; font-size:13px; }
     .act-btn:hover { border-color: var(--gold); box-shadow:0 6px 14px rgba(214,163,0,0.2); }
-    .act-btn.danger { border-color: rgba(240,91,86,0.5); color:#ff7d7d; }
+    .act-btn.danger { border-color: rgba(240,91,86,0.5); color:#d24d4d; }
     .cards { display:grid; grid-template-columns: repeat(auto-fit, minmax(440px, 1fr)); gap:16px; margin-top:18px; }
-    .card { background:var(--card); border:1px solid var(--stroke); border-radius:16px; padding:16px; box-shadow:0 18px 45px rgba(0,0,0,0.35); display:grid; gap:10px; }
+    .card { background:var(--card); border:1px solid var(--stroke); border-radius:16px; padding:16px; box-shadow:0 18px 45px rgba(15,23,42,0.08); display:grid; gap:10px; }
     .row { display:flex; flex-wrap:wrap; gap:8px; }
-    .tag { display:inline-flex; align-items:center; gap:6px; padding:6px 10px; border-radius:10px; border:1px solid var(--stroke); background:rgba(255,255,255,0.03); }
-    .pill { display:inline-flex; align-items:center; gap:6px; padding:6px 10px; border-radius:999px; border:1px solid var(--stroke); background:rgba(214,163,0,0.12); color:var(--gold); font-weight:600; }
-    .section { border:1px solid var(--stroke); border-radius:12px; padding:10px; background:rgba(255,255,255,0.02); }
+    .tag { display:inline-flex; align-items:center; gap:6px; padding:6px 10px; border-radius:10px; border:1px solid var(--stroke); background:rgba(15,23,42,0.04); }
+    .pill { display:inline-flex; align-items:center; gap:6px; padding:6px 10px; border-radius:999px; border:1px solid var(--stroke); background:rgba(199,154,32,0.18); color:var(--gold); font-weight:600; }
+    .section { border:1px solid var(--stroke); border-radius:12px; padding:10px; background:rgba(15,23,42,0.04); }
   </style>
 </head>
 <body>
   <div class="wrap">
     <header>
       <div>
-        <div class="muted">FULLBOX</div>
+        <div class="muted">FULLBOX · {% include "partials/current_user.html" %}</div>
         <h1>Клиенты</h1>
         <div class="muted">Список в табличном и карточном виде</div>
       </div>
@@ -76,7 +76,7 @@
       </form>
       <form method="get" style="display:flex; gap:8px; align-items:center;">
         <input type="hidden" name="view" value="{{ view_mode }}">
-        <select name="filter_field" class="btn" style="padding:9px 12px; background:rgba(255,255,255,0.03); color:var(--text); border-radius:10px; border:1px solid var(--stroke);">
+        <select name="filter_field" class="btn" style="padding:9px 12px; background:#fff; color:var(--text); border-radius:10px; border:1px solid var(--stroke);">
           <option value="">Поле фильтра</option>
           <option value="agn_name" {% if filter_field == 'agn_name' %}selected{% endif %}>Название</option>
           <option value="inn" {% if filter_field == 'inn' %}selected{% endif %}>ИНН</option>
@@ -84,7 +84,7 @@
           <option value="email" {% if filter_field == 'email' %}selected{% endif %}>Email</option>
           <option value="phone" {% if filter_field == 'phone' %}selected{% endif %}>Телефон</option>
         </select>
-        <input type="text" name="filter_value" value="{{ filter_value }}" placeholder="Значение" class="btn" style="min-width:180px; background:rgba(255,255,255,0.03);">
+        <input type="text" name="filter_value" value="{{ filter_value }}" placeholder="Значение" class="btn" style="min-width:180px; background:#fff;">
         <input type="hidden" name="archived" value="{% if show_archived %}1{% else %}0{% endif %}">
         <button class="btn" type="submit">Фильтр</button>
       </form>

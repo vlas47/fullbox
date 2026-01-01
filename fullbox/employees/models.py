@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.db import models
 
 
@@ -14,6 +15,14 @@ class Employee(models.Model):
     ]
 
     full_name = models.CharField('ФИО', max_length=255)
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="employee_profile",
+        verbose_name="Пользователь",
+    )
     role = models.CharField('Роль', max_length=32, choices=ROLE_CHOICES)
     email = models.EmailField('Email', blank=True, null=True)
     phone = models.CharField('Телефон', max_length=32, blank=True, null=True)

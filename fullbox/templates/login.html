@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Вход | FULLBOX</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root { --bg:#0b0b0f; --card:#14141f; --gold:#d6a300; --gold-soft:#e7c34a; --text:#e8e8ed; --muted:#9aa0b3; --stroke: rgba(255,255,255,0.08); }
+    * { box-sizing: border-box; }
+    body { margin:0; background:var(--bg); color:var(--text); font-family:'Space Grotesk',system-ui,sans-serif; }
+    .wrap { max-width: 980px; margin: 0 auto; padding: 40px 18px 64px; }
+    .card { background:var(--card); border:1px solid var(--stroke); border-radius:18px; padding:24px; box-shadow:0 20px 50px rgba(0,0,0,0.4); }
+    .layout { display:grid; grid-template-columns: minmax(260px, 1fr) minmax(320px, 1.2fr); gap:20px; }
+    h1 { margin:0 0 12px; letter-spacing:-0.5px; }
+    .muted { color: var(--muted); }
+    label { display:block; font-weight:600; margin:12px 0 6px; }
+    input { width:100%; padding:12px; border-radius:12px; border:1px solid var(--stroke); background:#10111a; color:var(--text); font-family:inherit; }
+    .btn { width:100%; margin-top:16px; padding:12px; border-radius:12px; border:1px solid var(--stroke); background: linear-gradient(120deg,var(--gold),var(--gold-soft)); color:#14141f; font-weight:700; cursor:pointer; }
+    .error { margin-top:12px; padding:10px 12px; border-radius:12px; background:rgba(239,68,68,0.18); color:#fecaca; border:1px solid rgba(239,68,68,0.4); }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <div class="layout">
+        <div>
+          <h1>Вход</h1>
+          <p class="muted">Используйте корпоративный логин и пароль.</p>
+          <form method="post">
+            {% csrf_token %}
+            <label for="username">Логин</label>
+            <input id="username" name="username" autocomplete="username" required>
+            <label for="password">Пароль</label>
+            <input id="password" name="password" type="password" autocomplete="current-password" required>
+            <button class="btn" type="submit">Войти</button>
+          </form>
+          {% if error %}
+            <div class="error">{{ error }}</div>
+          {% endif %}
+        </div>
+        <div>
+          <h2 style="margin:0 0 8px;">Логины сотрудников</h2>
+          <div class="muted" style="margin-bottom:10px;">(Временно для разработки)</div>
+          <div style="display:grid; gap:8px;">
+            {% for employee in employees %}
+              <div style="display:flex; justify-content:space-between; gap:8px; padding:8px 10px; border:1px solid var(--stroke); border-radius:10px; background:#10111a;">
+                <div>{{ employee.full_name }}</div>
+                <div class="muted" style="white-space:nowrap;">{{ employee.user.username|default:"-" }}</div>
+              </div>
+            {% empty %}
+              <div class="muted">Сотрудники не найдены.</div>
+            {% endfor %}
+          </div>
+          <h2 style="margin:18px 0 8px;">Логины клиентов</h2>
+          <div class="muted" style="margin-bottom:10px;">(Временно для разработки)</div>
+          <div style="display:grid; gap:8px; max-height:320px; overflow:auto;">
+            {% for client in clients %}
+              <div style="display:flex; justify-content:space-between; gap:8px; padding:8px 10px; border:1px solid var(--stroke); border-radius:10px; background:#10111a;">
+                <div>{{ client.agn_name|default:client.fio_agn|default:"Клиент" }}</div>
+                <div class="muted" style="white-space:nowrap;">{{ client.portal_user.username|default:"-" }}</div>
+              </div>
+            {% empty %}
+              <div class="muted">Клиенты не найдены.</div>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

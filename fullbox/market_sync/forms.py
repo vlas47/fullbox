@@ -1,3 +1,5 @@
+import re
+
 from django import forms
 
 from sku.models import MarketCredential
@@ -33,7 +35,13 @@ class OzonSettingsForm(forms.ModelForm):
         client_id = (self.cleaned_data.get("client_id") or "").strip()
         if not client_id:
             raise forms.ValidationError("Укажите Client ID Ozon.")
-        return client_id
+        match = re.fullmatch(r"(\d+)(?:\.0+)?", client_id)
+        if not match:
+            raise forms.ValidationError("Client ID Ozon должен быть положительным числом.")
+        normalized = match.group(1)
+        if int(normalized) <= 0:
+            raise forms.ValidationError("Client ID Ozon должен быть положительным числом.")
+        return normalized
 
     def clean_market_key(self):
         token = (self.cleaned_data.get("market_key") or "").strip()

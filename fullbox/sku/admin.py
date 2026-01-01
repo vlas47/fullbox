@@ -62,7 +62,7 @@ class SKUAdmin(admin.ModelAdmin):
 
 @admin.register(SKUBarcode)
 class SKUBarcodeAdmin(admin.ModelAdmin):
-    list_display = ('value', 'sku', 'is_primary')
+    list_display = ("value", "sku", "size", "is_primary")
     list_filter = ('is_primary',)
     search_fields = ('value', 'sku__sku_code', 'sku__name')
 

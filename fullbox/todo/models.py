@@ -1,4 +1,5 @@
 import os
+import re
 from datetime import timedelta
 
 from django.conf import settings
@@ -6,6 +7,18 @@ from django.db import models
 from django.utils import timezone
 
 from employees.models import Employee
+
+
+_RECEIVING_ROUTE_RE = re.compile(r"/orders/receiving/([^/]+)/")
+
+
+def _extract_receiving_order_id(route: str | None) -> str | None:
+    if not route:
+        return None
+    match = _RECEIVING_ROUTE_RE.search(route)
+    if not match:
+        return None
+    return match.group(1)
 
 
 def default_due_date():
@@ -66,6 +79,12 @@ class Task(models.Model):
         verbose_name_plural = "Задачи"
 
     def __str__(self) -> str:
+        return self.title
+
+    def display_title(self) -> str:
+        order_id = _extract_receiving_order_id(self.route)
+        if order_id:
+            return f"Заявка на приемку товара №{order_id}"
         return self.title
 
 

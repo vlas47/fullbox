@@ -29,7 +29,7 @@
   <div class="wrap">
     <header>
       <div>
-        <div class="muted">FULLBOX</div>
+        <div class="muted">FULLBOX · {% include "partials/current_user.html" %}</div>
         <h1>Журнал заявок</h1>
       </div>
       <div style="display:flex; gap:10px; flex-wrap:wrap;">
@@ -46,6 +46,7 @@
           <th>Тип</th>
           <th>ID заявки</th>
           <th>Действие</th>
+          <th>Статус</th>
           <th>Клиент</th>
           <th>Пользователь</th>
           <th>Описание</th>
@@ -58,12 +59,13 @@
             <td><span class="pill">{{ entry.order_type }}</span></td>
             <td>{{ entry.order_id }}</td>
             <td>{{ entry.get_action_display }}</td>
+            <td>{{ entry.payload.status_label|default:entry.payload.status|default:"-" }}</td>
             <td>{{ entry.agency|default:"-" }}</td>
             <td>{{ entry.user|default:"-" }}</td>
             <td>{{ entry.description|default:"-" }}</td>
           </tr>
         {% empty %}
-          <tr><td colspan="7">Пока нет записей</td></tr>
+          <tr><td colspan="8">Пока нет записей</td></tr>
         {% endfor %}
       </tbody>
     </table>

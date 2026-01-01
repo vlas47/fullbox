@@ -8,90 +8,154 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600&display=swap" rel="stylesheet">
   <style>
-    :root { --bg:#0b0b0f; --card:#14141f; --card-soft:#171726; --gold:#d6a300; --gold-soft:#e7c34a; --muted:#9aa0b3; --stroke: rgba(255,255,255,0.08); --text:#e8e8ed; --danger:#ff6b6b; --success:#1db954; }
+    :root { --bg:#f6f4ed; --card:#ffffff; --card-soft:#f8f6f1; --gold:#c79a1c; --gold-soft:#f2d48c; --muted:#6b7280; --stroke: rgba(31,35,40,0.12); --text:#1f2328; --danger:#d14343; --success:#1f9d55; }
+    * { box-sizing: border-box; }
     body { margin:0; background:var(--bg); color:var(--text); font-family:'Space Grotesk',system-ui,sans-serif; }
     a { color: inherit; text-decoration: none; }
-    .wrap { max-width: 1100px; margin: 0 auto; padding: 24px 18px 64px; }
+    .wrap { max-width: 1600px; margin: 0 auto; padding: 28px 20px 70px; }
     header { display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; }
     .btn-row { display:flex; gap:10px; flex-wrap:wrap; }
-    .tab { padding:10px 14px; border-radius:10px; border:1px solid var(--stroke); background:rgba(255,255,255,0.02); color:var(--text); font-weight:600; }
-    .tab.active { border-color: var(--gold); color: var(--bg); background: linear-gradient(120deg,var(--gold),#e7c34a); box-shadow:0 10px 30px rgba(214,163,0,0.25); }
-    .card { background:var(--card); border:1px solid var(--stroke); border-radius:16px; padding:16px; box-shadow:0 20px 40px rgba(0,0,0,0.25); }
+    .tab { padding:10px 14px; border-radius:10px; border:1px solid var(--stroke); background:rgba(15,23,42,0.04); color:var(--text); font-weight:600; }
+    .tab.active { border-color: var(--gold); color:#1f2328; background: linear-gradient(120deg,var(--gold),var(--gold-soft)); box-shadow:0 10px 30px rgba(199,154,32,0.2); }
+    .card { background:var(--card); border:1px solid var(--stroke); border-radius:18px; padding:20px; box-shadow:0 20px 40px rgba(15,23,42,0.12); }
     h1 { margin:0 0 6px; letter-spacing:-0.5px; }
     .muted { color: var(--muted); }
     table { width:100%; border-collapse:collapse; margin-top:12px; }
     th, td { border-bottom:1px solid var(--stroke); padding:10px; text-align:left; }
     th { color: var(--muted); font-weight:600; }
-    .notice { border:1px solid rgba(29,185,84,0.4); background:rgba(29,185,84,0.12); color:#b7f7c8; border-radius:12px; padding:10px 12px; margin:10px 0; }
-    .error { border:1px solid rgba(255,107,107,0.4); background:rgba(255,107,107,0.12); color:#ffd2d2; border-radius:12px; padding:10px 12px; margin:10px 0; }
+    .notice { border:1px solid rgba(31,157,85,0.35); background:rgba(31,157,85,0.12); color:#166534; border-radius:12px; padding:10px 12px; margin:10px 0; }
+    .error { border:1px solid rgba(209,67,67,0.35); background:rgba(209,67,67,0.12); color:#7f1d1d; border-radius:12px; padding:10px 12px; margin:10px 0; }
     .section-header { display:flex; justify-content:space-between; align-items:flex-end; gap:12px; flex-wrap:wrap; }
     .receiving-form { display:grid; gap:14px; margin-top:12px; }
+    .receiving-layout { display:grid; grid-template-columns: minmax(220px, 2.5fr) minmax(0, 7.5fr); gap:18px; align-items:start; }
+    .receiving-left, .receiving-right { display:grid; gap:14px; }
     .meta-grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap:12px; }
+    .meta-grid + .meta-grid { margin-top:12px; }
+    .field.span-2 { grid-column: span 2; }
+    .field.span-all { grid-column: 1 / -1; }
     .field label { display:block; font-weight:600; margin-bottom:6px; color:var(--muted); }
     .required { color: var(--danger); margin-left:4px; }
     .hint { color:var(--muted); font-size:12px; margin-top:4px; }
     .small { font-size:12px; }
-    input, textarea, select { width:100%; padding:9px 10px; border-radius:10px; border:1px solid var(--stroke); background:var(--card-soft); color:var(--text); font-size:14px; }
+    .datetime-field { display:grid; gap:8px; }
+    .datetime-row { display:grid; grid-template-columns: minmax(140px, 1fr) minmax(120px, 1fr); gap:8px; }
+    .datetime-chips { display:flex; flex-wrap:wrap; gap:8px; }
+    .datetime-chip { border:1px solid var(--stroke); background:rgba(15,23,42,0.04); color:var(--text); border-radius:999px; padding:6px 10px; font-size:12px; cursor:pointer; font-weight:600; }
+    .datetime-chip:hover { border-color: var(--gold); box-shadow:0 10px 20px rgba(199,154,32,0.12); }
+    input, textarea, select { width:100%; padding:9px 10px; border-radius:10px; border:1px solid var(--stroke); background:#fff; color:var(--text); font-size:14px; }
+    .static-field { width:100%; padding:9px 10px; border-radius:10px; border:1px solid var(--stroke); background:rgba(15,23,42,0.03); font-size:14px; font-weight:600; }
     textarea { resize:vertical; min-height:64px; }
     input[readonly] { color:var(--muted); }
-    .table-wrap { overflow:auto; border-radius:14px; border:1px solid var(--stroke); background:rgba(12,12,18,0.6); }
-    .receiving-table { width:100%; border-collapse:collapse; min-width:860px; margin:0; }
+    .table-wrap { overflow:auto; border-radius:14px; border:1px solid var(--stroke); background:rgba(15,23,42,0.03); }
+    .receiving-table { width:100%; border-collapse:collapse; min-width:980px; margin:0; }
     .receiving-table th, .receiving-table td { padding:8px; border-bottom:1px solid var(--stroke); vertical-align:top; }
-    .receiving-table th { text-align:left; font-size:12px; text-transform:uppercase; letter-spacing:1px; color:var(--muted); background:rgba(255,255,255,0.03); }
+    .receiving-table th { text-align:left; font-size:12px; text-transform:uppercase; letter-spacing:1px; color:var(--muted); background:#ffffff; position: sticky; top: 0; z-index: 2; }
     .table-actions { display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; }
     .row-action { padding:6px 10px; border-radius:8px; border:1px solid var(--stroke); background:transparent; color:var(--text); cursor:pointer; font-size:12px; }
     .row-action:hover { border-color: var(--gold); }
     .barcode-stack { display:flex; flex-direction:column; gap:6px; }
-    .barcode-main { font-weight:600; }
-    .barcode-toggle { border:none; background:rgba(255,255,255,0.08); color:var(--text); border-radius:999px; padding:4px 8px; font-size:11px; cursor:pointer; width:max-content; }
-    .barcode-toggle.active { background:rgba(214,163,0,0.2); color:var(--gold-soft); }
+    .barcode-main { font-weight:600; font-size:12px; }
+    .barcode-more { font-size:10px; }
+    .barcode-toggle { border:none; background:rgba(15,23,42,0.06); color:var(--text); border-radius:999px; padding:4px 8px; font-size:11px; cursor:pointer; width:max-content; }
+    .barcode-toggle.active { background:rgba(199,154,32,0.2); color:#7a5a10; }
     .barcode-more { display:flex; flex-wrap:wrap; gap:6px; font-size:12px; color:var(--muted); }
-    .barcode-more span { padding:4px 6px; border-radius:8px; border:1px solid var(--stroke); background:rgba(255,255,255,0.03); }
+    .barcode-more span { padding:4px 6px; border-radius:8px; border:1px solid var(--stroke); background:rgba(15,23,42,0.04); }
     .action-bar { display:flex; gap:8px; flex-wrap:wrap; justify-content:flex-end; }
-    .action-btn { padding:10px 14px; border-radius:10px; border:1px solid var(--stroke); background:rgba(255,255,255,0.02); color:var(--text); font-weight:600; }
-    .action-btn.primary { background: linear-gradient(120deg,var(--gold),var(--gold-soft)); color:var(--bg); border-color: transparent; }
-    .ghost-btn { padding:8px 12px; border-radius:10px; border:1px solid var(--stroke); background:rgba(255,255,255,0.02); color:var(--text); font-weight:600; }
-    .ghost-btn:hover { border-color: var(--gold); box-shadow:0 10px 25px rgba(214,163,0,0.18); }
+    .bottom-grid { display:grid; grid-template-columns: 1fr auto; gap:12px; align-items:end; }
+    .receiving-page { height: 100vh; overflow: hidden; }
+    .receiving-page .wrap { height: 100vh; display: flex; flex-direction: column; }
+    .receiving-page header { flex: 0 0 auto; }
+    .receiving-page .card { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+    .receiving-page .receiving-form { flex: 1 1 auto; min-height: 0; }
+    .receiving-page .receiving-layout { height: 100%; min-height: 0; }
+    .receiving-page .receiving-left,
+    .receiving-page .receiving-right { min-height: 0; height: 100%; }
+    .receiving-page .receiving-left { overflow: auto; padding-right: 4px; }
+    .receiving-page .receiving-right { overflow: hidden; grid-template-rows: auto minmax(0, 1fr) auto auto; }
+    .receiving-page .table-wrap { height: 100%; min-height: 0; overflow: auto; }
+    @media (max-width: 1200px) {
+      .receiving-layout { grid-template-columns: 1fr; }
+      .bottom-grid { grid-template-columns: 1fr; }
+      .receiving-page { height: auto; overflow: auto; }
+      .receiving-page .wrap { height: auto; }
+      .receiving-page .card { overflow: visible; }
+      .receiving-page .receiving-form { height: auto; }
+      .receiving-page .receiving-layout { height: auto; }
+      .receiving-page .receiving-left { overflow: visible; padding-right: 0; }
+      .receiving-page .table-wrap { height: auto; }
+    }
+    .action-btn { padding:10px 14px; border-radius:10px; border:1px solid var(--stroke); background:rgba(15,23,42,0.04); color:var(--text); font-weight:600; }
+    .action-btn.primary { background: linear-gradient(120deg,var(--gold),var(--gold-soft)); color:#1f2328; border-color: transparent; }
+      .ghost-btn { padding:8px 12px; border-radius:10px; border:1px solid var(--stroke); background:rgba(15,23,42,0.04); color:var(--text); font-weight:600; }
+      .ghost-btn:hover { border-color: var(--gold); box-shadow:0 10px 25px rgba(214,163,0,0.18); }
+      .order-link { font-weight:600; }
   </style>
 </head>
-<body>
+<body class="{% if active_tab == 'receiving' %}receiving-page{% endif %}">
   <div class="wrap">
     <header>
       <div>
-        <div class="muted">FULBOX</div>
-        <h1>Заявки</h1>
+        <div class="muted">FULLBOX · {% include "partials/current_user.html" %}</div>
+        <h1>Заявка на приемку, статус: {{ status_label }}{% if order_number %} · № {{ order_number }}{% endif %}</h1>
       </div>
       <div class="btn-row">
-        <a class="tab {% if active_tab == 'journal' %}active{% endif %}" href="/orders/">Журнал заявок</a>
-        <a class="tab {% if active_tab == 'receiving' %}active{% endif %}" href="/orders/receiving/">Приемка</a>
-        <a class="tab {% if active_tab == 'processing' %}active{% endif %}" href="/orders/processing/">Обработка</a>
-        <a class="tab {% if active_tab == 'shipping' %}active{% endif %}" href="/orders/shipping/">Отгрузка</a>
-        <a class="tab {% if active_tab == 'other' %}active{% endif %}" href="/orders/other/">Прочее</a>
-        <a class="tab" href="/">На главную</a>
+        {% if client_view %}
+          <a class="tab {% if active_tab == 'journal' %}active{% endif %}" href="/orders/?client={{ agency.id }}">Журнал заявок</a>
+        {% else %}
+          <a class="tab {% if active_tab == 'journal' %}active{% endif %}" href="/orders/">Журнал заявок</a>
+        {% endif %}
+          {% if client_view %}
+            <a class="tab" href="/client/dashboard/?client={{ agency.id }}">В кабинет</a>
+          {% else %}
+            <a class="tab" href="{{ cabinet_url }}">В кабинет</a>
+          {% endif %}
+        <a class="tab" href="/logout/">Выход</a>
       </div>
     </header>
 
     <div class="card">
       {% if active_tab == 'journal' %}
         <h3>Журнал заявок</h3>
-        <p class="muted">Пока пусто. Здесь будет список всех заявок с фильтрами и статусами.</p>
+        <p class="muted">История заявок хранится в аудите.</p>
         <table>
-          <thead><tr><th>№</th><th>Тип</th><th>Клиент</th><th>Статус</th><th>Дата</th></tr></thead>
+          <thead>
+            <tr>
+              <th>Когда</th>
+              <th>Тип</th>
+              <th>№ заявки</th>
+              <th>Действие</th>
+              <th>Статус</th>
+              <th>Клиент</th>
+            </tr>
+          </thead>
           <tbody>
-            <tr><td colspan="5" class="muted">Нет данных</td></tr>
+            {% for entry in entries %}
+              <tr>
+                <td>{{ entry.created_at|date:"d.m.Y H:i" }}</td>
+                <td>{{ entry.type_label }}</td>
+                <td><a class="order-link" href="{{ entry.detail_url }}">{{ entry.order_id }}</a></td>
+                <td>{{ entry.action_label }}</td>
+                <td>{{ entry.status_label }}</td>
+                <td>{{ entry.client_label|default:"-" }}</td>
+              </tr>
+            {% empty %}
+              <tr><td colspan="6" class="muted">Нет данных</td></tr>
+            {% endfor %}
           </tbody>
         </table>
       {% elif active_tab == 'receiving' %}
         <div class="section-header">
           <div>
-            <h3>Заявка на приемку</h3>
             <div class="muted">Заполните обязательные поля и состав поставки.</div>
           </div>
           <div class="btn-row">
             {% if agency %}
-              <a class="ghost-btn" href="/client/{{ agency.id }}/sku/">Номенклатура клиента</a>
+              <a class="ghost-btn" id="download-template" href="#">Скачать шаблон</a>
+              <button class="ghost-btn" id="upload-template" type="button">Загрузить шаблон</button>
+              <input id="template-file" type="file" accept=".xlsx,.xls,.csv" hidden>
+              <a class="ghost-btn" href="/client/{{ agency.id }}/sku/?return_to={{ request.get_full_path|urlencode }}">Номенклатура клиента</a>
             {% else %}
-              <span class="muted small">Выберите клиента, чтобы загрузить SKU.</span>
+              <span class="muted small">Клиент не выбран.</span>
             {% endif %}
           </div>
         </div>
@@ -99,118 +163,221 @@
         {% if error %}
           <div class="error">{{ error }}</div>
         {% endif %}
-        {% if submitted %}
+        {% if draft_saved %}
+          <div class="notice">Черновик сохранен. Можете продолжить заполнение.</div>
+        {% elif submitted %}
           <div class="notice">Заявка на приемку отправлена. Мы свяжемся с вами для уточнения деталей.</div>
         {% endif %}
 
         <form class="receiving-form" method="post" enctype="multipart/form-data">
           {% csrf_token %}
+          {% if edit_mode %}
+            <input type="hidden" name="edit_order_id" value="{{ edit_order_id }}">
+          {% endif %}
 
-          <div class="meta-grid">
-            <div class="field">
-              <label>Клиент <span class="required">*</span></label>
-              <select name="agency_id" id="agency-select" required>
-                <option value="">Выберите клиента</option>
-                {% for item in agencies %}
-                  <option value="{{ item.id }}" {% if agency and agency.id == item.id %}selected{% endif %}>
-                    {{ item.agn_name|default:item.inn|default:"Клиент" }}
-                  </option>
-                {% endfor %}
-              </select>
-            </div>
-            <div class="field">
-              <label>Плановая дата/время прибытия <span class="required">*</span></label>
-              <input
-                type="datetime-local"
-                name="eta_at"
-                required
-                data-min-hours="{{ min_past_hours }}"
-                data-now="{{ current_time|date:'Y-m-d\\TH:i' }}"
-              >
-              <div class="hint">Не раньше текущего времени минус {{ min_past_hours|default:"X" }} часов.</div>
-            </div>
-            <div class="field">
-              <label>Ожидаемое количество коробов</label>
-              <input type="number" name="expected_boxes" min="0" placeholder="0">
-              <div class="hint">Можно оставить 0.</div>
-            </div>
-            <div class="field">
-              <label>Документы</label>
-              <input type="file" name="documents" multiple accept=".pdf,.jpg,.jpeg,.png,.xlsx,.doc,.docx">
-              <div class="hint">PDF/JPG/PNG/XLSX/DOCX.</div>
-            </div>
-          </div>
-
-          <div class="section-header">
-            <div>
-              <h3>Состав поставки</h3>
-              <div class="muted small">Если SKU нет в списке - заведите его в номенклатуре.</div>
-            </div>
-          </div>
-
-          <div class="table-wrap">
-            <table class="receiving-table">
-              <thead>
-                <tr>
-                  <th>Артикул (SKU) *</th>
-                  <th>Наименование</th>
-                  <th>ШК</th>
-                  <th>Количество (план) *</th>
-                  <th>Комментарий по позиции</th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody id="items-body">
-                <tr class="item-row">
-                  <td>
-                    <input type="text" name="sku_code[]" class="sku-input" list="sku-options" placeholder="SKU" required>
-                    <input type="hidden" name="sku_id[]" class="sku-id">
-                  </td>
-                  <td>
-                    <input type="text" name="item_name[]" class="sku-name" readonly placeholder="Автоподтягивается">
-                  </td>
-                  <td>
-                    <div class="barcode-stack">
-                      <span class="barcode-main">-</span>
-                      <button type="button" class="barcode-toggle" hidden>+0</button>
-                      <div class="barcode-more" hidden></div>
+          <div class="receiving-layout">
+            <div class="receiving-left">
+              <div class="meta-grid">
+                <div class="field">
+                  <label>Клиент <span class="required">*</span></label>
+                  {% if agency %}
+                    <div class="static-field">
+                      {{ agency.agn_name|default:agency.inn|default:"Клиент" }}
                     </div>
-                  </td>
-                  <td>
-                    <input type="number" name="qty[]" class="qty-input" min="1" required placeholder="0">
-                  </td>
-                  <td>
-                    <input type="text" name="position_comment[]" placeholder="Комментарий">
-                  </td>
-                  <td>
-                    <button type="button" class="row-action remove-row">Удалить</button>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-
-          <div class="table-actions">
-            <button type="button" class="action-btn" id="add-row">+ Добавить строку</button>
-            <div class="muted small">Минимум одна позиция обязательна.</div>
-          </div>
-
-          <div class="meta-grid">
-            <div class="field">
-              <label>Комментарий</label>
-              <textarea name="comment" rows="2" placeholder="Дополнительная информация"></textarea>
+                    {% if agency.inn %}
+                      <div class="hint">ИНН {{ agency.inn }}</div>
+                    {% endif %}
+                  {% else %}
+                    <div class="static-field">Клиент не выбран</div>
+                  {% endif %}
+                  <input type="hidden" name="agency_id" value="{{ agency.id|default:'' }}">
+                </div>
+              </div>
+              <div class="meta-grid">
+                <div class="field">
+                  <label>Плановая дата/время прибытия <span class="required">*</span></label>
+                  <div class="datetime-field">
+                    <div class="datetime-row">
+                      <input type="date" id="eta-date" required>
+                      <input type="time" id="eta-time" required step="300">
+                    </div>
+                    <div class="datetime-chips">
+                      <button class="datetime-chip" type="button" data-offset="0" data-time="10:00">Сегодня 10:00</button>
+                      <button class="datetime-chip" type="button" data-offset="0" data-time="16:00">Сегодня 16:00</button>
+                      <button class="datetime-chip" type="button" data-offset="1" data-time="10:00">Завтра 10:00</button>
+                      <button class="datetime-chip" type="button" data-offset="1" data-time="16:00">Завтра 16:00</button>
+                    </div>
+                    <input
+                      type="hidden"
+                      name="eta_at"
+                      id="eta_at"
+                      data-min-hours="{{ min_past_hours }}"
+                      data-now="{{ current_time|date:'Y-m-d\\TH:i' }}"
+                      value="{{ edit_payload.eta_at|default:'' }}"
+                    >
+                  </div>
+                  <div class="hint">Поставки только на следующий день. После 18:00 — не раньше 13:00 следующего дня.</div>
+                </div>
+                <div class="field">
+                  <label>Количество мест к приемке (план)</label>
+                  <input type="number" name="expected_boxes" min="1" required placeholder="0" value="{{ edit_payload.expected_boxes|default:'' }}">
+                </div>
+                <div class="field">
+                  <label>Тип мест</label>
+                  <select name="place_type" required>
+                    <option value="">Выберите</option>
+                    <option value="pallet" {% if edit_payload.place_type == "pallet" %}selected{% endif %}>Паллет</option>
+                    <option value="box" {% if edit_payload.place_type == "box" %}selected{% endif %}>Короб</option>
+                    <option value="bag" {% if edit_payload.place_type == "bag" %}selected{% endif %}>Мешок</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label>Документы</label>
+                  <input type="file" name="documents" multiple accept=".pdf,.jpg,.jpeg,.png,.xlsx,.doc,.docx">
+                  <div class="hint">PDF/JPG/PNG/XLSX/DOCX.</div>
+                </div>
+              </div>
+              <div class="meta-grid">
+                <div class="field">
+                  <label>Номер авто</label>
+                  <input type="text" name="vehicle_number" required placeholder="A123BC77" value="{{ edit_payload.vehicle_number|default:'' }}">
+                </div>
+                <div class="field">
+                  <label>Телефон водителя</label>
+                  <input type="tel" name="driver_phone" required inputmode="tel" placeholder="+7 900 000-00-00" value="{{ edit_payload.driver_phone|default:'' }}">
+                </div>
+              </div>
             </div>
-            <div class="action-bar">
-              <button type="submit" class="action-btn primary" name="submit_action" value="send">Отправить</button>
-              <button type="submit" class="action-btn" name="submit_action" value="draft">Сохранить черновик</button>
-              <a class="action-btn" href="/orders/">Отмена</a>
+            <div class="receiving-right">
+              <div class="section-header">
+                <div>
+                  <h3>Состав поставки</h3>
+                  <div class="muted small">Если SKU нет в списке - заведите его в номенклатуре.</div>
+                </div>
+              </div>
+
+              <div class="table-wrap">
+                <table class="receiving-table">
+                  <thead>
+                    <tr>
+                      <th>Артикул (SKU) *</th>
+                      <th>Наименование</th>
+                      <th>Размер</th>
+                      <th>ШК</th>
+                      <th>Количество (план) *</th>
+                      <th>Комментарий по позиции</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody id="items-body">
+                    {% if edit_mode and edit_payload.items %}
+                      {% for item in edit_payload.items %}
+                        <tr class="item-row" data-preferred-size="{{ item.size|default:'' }}">
+                          <td>
+                            <input type="text" name="sku_code[]" class="sku-input" list="sku-options" placeholder="SKU" value="{{ item.sku_code|default:'' }}">
+                            <input type="hidden" name="sku_id[]" class="sku-id" value="{{ item.sku_id|default:'' }}">
+                          </td>
+                          <td>
+                            <input type="text" name="item_name[]" class="sku-name" placeholder="Начните вводить" value="{{ item.name|default:'' }}">
+                          </td>
+                          <td class="size-cell">
+                            <input type="text" name="size[]" class="size-input" placeholder="Размер" value="{{ item.size|default:'' }}">
+                          </td>
+                          <td>
+                            <div class="barcode-stack">
+                              <span class="barcode-main">-</span>
+                              <button type="button" class="barcode-toggle" hidden>+0</button>
+                              <div class="barcode-more" hidden></div>
+                            </div>
+                          </td>
+                          <td>
+                            <input type="number" name="qty[]" class="qty-input" min="1" placeholder="0" value="{{ item.qty|default:'' }}">
+                          </td>
+                          <td>
+                            <input type="text" name="position_comment[]" placeholder="Комментарий" value="{{ item.comment|default:'' }}">
+                          </td>
+                          <td>
+                            <button type="button" class="row-action remove-row">Удалить</button>
+                          </td>
+                        </tr>
+                      {% endfor %}
+                    {% else %}
+                      <tr class="item-row">
+                        <td>
+                          <input type="text" name="sku_code[]" class="sku-input" list="sku-options" placeholder="SKU">
+                          <input type="hidden" name="sku_id[]" class="sku-id">
+                        </td>
+                        <td>
+                          <input type="text" name="item_name[]" class="sku-name" placeholder="Начните вводить">
+                        </td>
+                        <td class="size-cell">
+                          <input type="text" name="size[]" class="size-input" placeholder="Размер">
+                        </td>
+                        <td>
+                          <div class="barcode-stack">
+                            <span class="barcode-main">-</span>
+                            <button type="button" class="barcode-toggle" hidden>+0</button>
+                            <div class="barcode-more" hidden></div>
+                          </div>
+                        </td>
+                        <td>
+                          <input type="number" name="qty[]" class="qty-input" min="1" placeholder="0">
+                        </td>
+                        <td>
+                          <input type="text" name="position_comment[]" placeholder="Комментарий">
+                        </td>
+                        <td>
+                          <button type="button" class="row-action remove-row">Удалить</button>
+                        </td>
+                      </tr>
+                    {% endif %}
+                  </tbody>
+                </table>
+              </div>
+
+      <div class="table-actions">
+        <button type="button" class="action-btn" id="add-row">+ Добавить строку</button>
+        <div class="muted small">Заявку на прием можно отправить без добавления товара.</div>
+      </div>
+
+              <div class="bottom-grid">
+                <div class="field">
+                  <label>Комментарий</label>
+                  <textarea name="comment" rows="2" placeholder="Дополнительная информация">{{ edit_payload.comment|default:'' }}</textarea>
+                </div>
+                <div class="action-bar">
+                  {% if edit_mode %}
+                    <button type="submit" class="action-btn primary" name="submit_action" value="update">Сохранить изменения</button>
+                    <button type="button" class="action-btn" id="clear-form">Очистить</button>
+                    {% if edit_order_id %}
+                      <a class="action-btn" href="/orders/receiving/{{ edit_order_id }}/">Отмена</a>
+                    {% else %}
+                      <a class="action-btn" href="/orders/">Отмена</a>
+                    {% endif %}
+                  {% else %}
+                    <button type="submit" class="action-btn primary" name="submit_action" value="send">Отправить</button>
+                    <button type="submit" class="action-btn" name="submit_action" value="draft">Сохранить черновик</button>
+                    <button type="button" class="action-btn" id="clear-form">Очистить</button>
+                    {% if agency %}
+                      <a class="action-btn" href="/orders/?client={{ agency.id }}">Отмена</a>
+                    {% else %}
+                      <a class="action-btn" href="/orders/">Отмена</a>
+                    {% endif %}
+                  {% endif %}
+                </div>
+              </div>
             </div>
           </div>
         </form>
 
         <datalist id="sku-options">
           {% for sku in sku_options %}
-            <option value="{{ sku.code }}" data-id="{{ sku.id }}" data-name="{{ sku.name }}" data-barcodes="{{ sku.barcodes_joined }}"></option>
+            <option value="{{ sku.code }}" data-id="{{ sku.id }}" data-name="{{ sku.name }}" data-barcodes="{{ sku.barcodes_joined }}" data-sizes="{{ sku.sizes_json|escape }}"></option>
+          {% endfor %}
+        </datalist>
+        <datalist id="sku-name-options">
+          {% for sku in sku_options %}
+            <option value="{{ sku.name }}" data-id="{{ sku.id }}" data-code="{{ sku.code }}" data-barcodes="{{ sku.barcodes_joined }}" data-sizes="{{ sku.sizes_json|escape }}"></option>
           {% endfor %}
         </datalist>
       {% elif active_tab == 'processing' %}
@@ -233,7 +400,20 @@
       }
       const addBtn = document.getElementById('add-row');
       const optionNodes = document.querySelectorAll('#sku-options option');
+      const nameOptionNodes = document.querySelectorAll('#sku-name-options option');
       const skuMap = {};
+      const skuNameMap = {};
+      const parseSizes = (raw) => {
+        if (!raw) {
+          return {};
+        }
+        try {
+          const parsed = JSON.parse(raw);
+          return parsed && typeof parsed === 'object' ? parsed : {};
+        } catch (err) {
+          return {};
+        }
+      };
 
       optionNodes.forEach((option) => {
         const code = option.value.trim();
@@ -241,24 +421,35 @@
           return;
         }
         const barcodes = (option.dataset.barcodes || '').split('|').filter(Boolean);
+        const sizes = parseSizes(option.dataset.sizes);
         skuMap[code] = {
           id: option.dataset.id || '',
           name: option.dataset.name || '',
           barcodes,
+          sizes,
+        };
+      });
+      nameOptionNodes.forEach((option) => {
+        const name = option.value.trim();
+        if (!name || skuNameMap[name]) {
+          return;
+        }
+        skuNameMap[name] = {
+          id: option.dataset.id || '',
+          code: option.dataset.code || '',
+          name,
+          barcodes: (option.dataset.barcodes || '').split('|').filter(Boolean),
+          sizes: parseSizes(option.dataset.sizes),
         };
       });
 
-      function applySku(row, code) {
-        const nameInput = row.querySelector('.sku-name');
-        const idInput = row.querySelector('.sku-id');
+      function renderBarcodes(row, barcodes) {
         const main = row.querySelector('.barcode-main');
         const toggle = row.querySelector('.barcode-toggle');
         const more = row.querySelector('.barcode-more');
-        const data = skuMap[code];
+        const list = Array.isArray(barcodes) ? barcodes.filter(Boolean) : [];
 
-        if (!data) {
-          nameInput.value = '';
-          idInput.value = '';
+        if (!list.length) {
           main.textContent = '-';
           toggle.hidden = true;
           toggle.classList.remove('active');
@@ -267,23 +458,11 @@
           return;
         }
 
-        nameInput.value = data.name || '';
-        idInput.value = data.id || '';
-
-        if (!data.barcodes.length) {
-          main.textContent = '-';
-          toggle.hidden = true;
-          toggle.classList.remove('active');
-          more.hidden = true;
-          more.innerHTML = '';
-          return;
-        }
-
-        main.textContent = data.barcodes[0];
-        if (data.barcodes.length > 1) {
+        main.textContent = list[0];
+        if (list.length > 1) {
           toggle.hidden = false;
-          toggle.textContent = `+${data.barcodes.length - 1}`;
-          more.innerHTML = data.barcodes.slice(1).map(value => `<span>${value}</span>`).join('');
+          toggle.textContent = `+${list.length - 1}`;
+          more.innerHTML = list.slice(1).map(value => `<span>${value}</span>`).join('');
         } else {
           toggle.hidden = true;
           toggle.classList.remove('active');
@@ -292,8 +471,123 @@
         }
       }
 
+      function bindSizeListener(row) {
+        const sizeInput = row.querySelector('.size-input');
+        if (!sizeInput || sizeInput.dataset.bound === '1') {
+          return;
+        }
+        sizeInput.dataset.bound = '1';
+        const handler = () => updateBarcodesForRow(row);
+        sizeInput.addEventListener('change', handler);
+        sizeInput.addEventListener('input', handler);
+      }
+
+      function syncSizeField(row, sizeOptions, preferred) {
+        const cell = row.querySelector('.size-cell');
+        if (!cell) {
+          return '';
+        }
+        const current = preferred || (row.querySelector('.size-input')?.value || '').trim();
+        const hasOptions = Array.isArray(sizeOptions) && sizeOptions.length > 0;
+        let input = row.querySelector('.size-input');
+
+        if (hasOptions) {
+          let select = input;
+          if (!select || select.tagName !== 'SELECT') {
+            select = document.createElement('select');
+            select.name = 'size[]';
+            select.className = 'size-input';
+            cell.innerHTML = '';
+            cell.appendChild(select);
+          }
+          select.innerHTML = '';
+          const placeholder = document.createElement('option');
+          placeholder.value = '';
+          placeholder.textContent = 'Выберите';
+          select.appendChild(placeholder);
+          sizeOptions.forEach((size) => {
+            const option = document.createElement('option');
+            option.value = size;
+            option.textContent = size;
+            select.appendChild(option);
+          });
+          if (current && sizeOptions.includes(current)) {
+            select.value = current;
+          }
+          bindSizeListener(row);
+          return select.value || '';
+        }
+
+        if (!input || input.tagName === 'SELECT') {
+          const textInput = document.createElement('input');
+          textInput.type = 'text';
+          textInput.name = 'size[]';
+          textInput.className = 'size-input';
+          textInput.placeholder = 'Размер';
+          textInput.value = current;
+          cell.innerHTML = '';
+          cell.appendChild(textInput);
+          input = textInput;
+        }
+        bindSizeListener(row);
+        return input.value.trim();
+      }
+
+      function updateBarcodesForRow(row) {
+        const code = row.querySelector('.sku-input').value.trim();
+        const data = skuMap[code];
+        if (!data) {
+          renderBarcodes(row, []);
+          return;
+        }
+        const sizeValue = row.querySelector('.size-input')?.value.trim();
+        const sizeOptions = Object.keys(data.sizes || {}).filter(Boolean);
+        if (sizeOptions.length && (!sizeValue || !data.sizes[sizeValue])) {
+          renderBarcodes(row, []);
+          return;
+        }
+        const barcodes = sizeValue && data.sizes[sizeValue] ? data.sizes[sizeValue] : data.barcodes;
+        renderBarcodes(row, barcodes);
+      }
+
+      function applySku(row, code) {
+        const nameInput = row.querySelector('.sku-name');
+        const idInput = row.querySelector('.sku-id');
+        const data = skuMap[code];
+
+        if (!data) {
+          nameInput.value = '';
+          idInput.value = '';
+          const sizeInput = row.querySelector('.size-input');
+          if (sizeInput) {
+            sizeInput.value = '';
+          }
+          syncSizeField(row, [], '');
+          renderBarcodes(row, []);
+          return;
+        }
+
+        nameInput.value = data.name || '';
+        idInput.value = data.id || '';
+
+        const sizeOptions = Object.keys(data.sizes || {}).filter(Boolean);
+        sizeOptions.sort((a, b) => a.localeCompare(b, 'ru', { numeric: true, sensitivity: 'base' }));
+        const preferredSize = row.dataset.preferredSize || '';
+        row.dataset.preferredSize = '';
+        const selectedSize = syncSizeField(row, sizeOptions, preferredSize);
+
+        if (sizeOptions.length && !selectedSize) {
+          renderBarcodes(row, []);
+          return;
+        }
+
+        const barcodes = selectedSize && data.sizes[selectedSize] ? data.sizes[selectedSize] : data.barcodes;
+        renderBarcodes(row, barcodes);
+      }
+
       function wireRow(row) {
         const skuInput = row.querySelector('.sku-input');
+        const nameInput = row.querySelector('.sku-name');
         const toggle = row.querySelector('.barcode-toggle');
         const more = row.querySelector('.barcode-more');
         const remove = row.querySelector('.remove-row');
@@ -301,6 +595,29 @@
         skuInput.addEventListener('input', () => {
           applySku(row, skuInput.value.trim());
         });
+        const updateNameList = () => {
+          if (!nameInput) {
+            return;
+          }
+          const value = nameInput.value.trim();
+          if (value.length >= 2) {
+            nameInput.setAttribute('list', 'sku-name-options');
+          } else {
+            nameInput.removeAttribute('list');
+          }
+        };
+        if (nameInput) {
+          nameInput.addEventListener('focus', updateNameList);
+          nameInput.addEventListener('input', () => {
+            updateNameList();
+            const value = nameInput.value.trim();
+            const data = skuNameMap[value];
+            if (data && data.code) {
+              skuInput.value = data.code;
+              applySku(row, data.code);
+            }
+          });
+        }
 
         toggle.addEventListener('click', () => {
           const willShow = more.hidden;
@@ -312,10 +629,32 @@
           const rows = document.querySelectorAll('.item-row');
           if (rows.length > 1) {
             row.remove();
-          } else {
-            alert('Нужна минимум одна позиция.');
+            return;
           }
+          row.querySelectorAll('input').forEach((input) => {
+            input.value = '';
+          });
+          row.querySelectorAll('select').forEach((select) => {
+            select.value = '';
+          });
+          syncSizeField(row, [], '');
+          row.querySelectorAll('.barcode-main').forEach((el) => {
+            el.textContent = '-';
+          });
+          row.querySelectorAll('.barcode-toggle').forEach((el) => {
+            el.hidden = true;
+            el.classList.remove('active');
+          });
+          row.querySelectorAll('.barcode-more').forEach((el) => {
+            el.hidden = true;
+            el.innerHTML = '';
+          });
         });
+
+        const initialCode = skuInput.value.trim();
+        if (initialCode) {
+          applySku(row, initialCode);
+        }
       }
 
       addBtn.addEventListener('click', () => {
@@ -335,26 +674,382 @@
           el.hidden = true;
           el.innerHTML = '';
         });
+        syncSizeField(clone, [], '');
         wireRow(clone);
         tableBody.appendChild(clone);
       });
 
       tableBody.querySelectorAll('.item-row').forEach(wireRow);
 
+      const clientId = '{{ agency.id|default:"" }}';
+      const submitted = '{{ submitted|yesno:"1,0" }}' === '1';
+      const draftKey = clientId ? `receiving_draft_${clientId}` : '';
       const form = tableBody.closest('form');
-      form.addEventListener('submit', (event) => {
-        const rows = Array.from(document.querySelectorAll('.item-row'));
-        const filledRows = rows.filter((row) => {
-          const sku = row.querySelector('.sku-input').value.trim();
-          const qty = Number(row.querySelector('.qty-input').value);
-          return sku && qty > 0;
-        });
-        if (!filledRows.length) {
-          event.preventDefault();
-          alert('Добавьте хотя бы одну позицию с SKU и количеством.');
+      const saveDraft = () => {
+        if (!draftKey) {
           return;
         }
-        const invalidSku = rows.some((row) => {
+        const rows = Array.from(tableBody.querySelectorAll('.item-row'));
+        const items = rows
+          .map((row) => {
+            const sku_code = row.querySelector('.sku-input')?.value.trim() || '';
+            const name = row.querySelector('.sku-name')?.value.trim() || '';
+            const qty = row.querySelector('.qty-input')?.value.trim() || '';
+            const size = row.querySelector('.size-input')?.value.trim() || '';
+            const comment = row.querySelector('input[name="position_comment[]"]')?.value.trim() || '';
+            if (!sku_code && !name && !qty && !size && !comment) {
+              return null;
+            }
+            return { sku_code, name, qty, size, comment };
+          })
+          .filter(Boolean);
+        const payload = {
+          meta: {
+            eta_at: form.querySelector('[name="eta_at"]')?.value || '',
+            expected_boxes: form.querySelector('[name="expected_boxes"]')?.value || '',
+            place_type: form.querySelector('[name="place_type"]')?.value || '',
+            vehicle_number: form.querySelector('[name="vehicle_number"]')?.value || '',
+            driver_phone: form.querySelector('[name="driver_phone"]')?.value || '',
+            comment: form.querySelector('[name="comment"]')?.value || '',
+          },
+          items,
+          saved_at: Date.now(),
+        };
+        localStorage.setItem(draftKey, JSON.stringify(payload));
+      };
+
+      const restoreDraft = () => {
+        if (!draftKey || submitted) {
+          return;
+        }
+        let payload = null;
+        try {
+          payload = JSON.parse(localStorage.getItem(draftKey) || '');
+        } catch (err) {
+          payload = null;
+        }
+        if (!payload || typeof payload !== 'object') {
+          return;
+        }
+        const meta = payload.meta || {};
+        const setValue = (name, value) => {
+          const field = form.querySelector(`[name="${name}"]`);
+          if (field && value) {
+            field.value = value;
+          }
+          if (name === 'eta_at' && value) {
+            const dateField = document.getElementById('eta-date');
+            const timeField = document.getElementById('eta-time');
+            if (dateField && timeField && value.includes('T')) {
+              const [datePart, timePart] = value.split('T');
+              dateField.value = datePart;
+              timeField.value = (timePart || '').slice(0, 5);
+            }
+          }
+        };
+        setValue('eta_at', meta.eta_at);
+        setValue('expected_boxes', meta.expected_boxes);
+        setValue('place_type', meta.place_type);
+        setValue('vehicle_number', meta.vehicle_number);
+        setValue('driver_phone', meta.driver_phone);
+        setValue('comment', meta.comment);
+
+        const items = Array.isArray(payload.items) ? payload.items : [];
+        if (!items.length) {
+          return;
+        }
+        const rows = Array.from(tableBody.querySelectorAll('.item-row'));
+        rows.slice(1).forEach((row) => row.remove());
+        const baseRow = rows[0];
+        const fillRow = (row, item) => {
+          const code = item.sku_code || '';
+          const qty = item.qty || '';
+          const size = item.size || '';
+          const name = item.name || '';
+          const comment = item.comment || '';
+          row.querySelector('.sku-input').value = code;
+          row.querySelector('.qty-input').value = qty;
+          row.dataset.preferredSize = size || '';
+          applySku(row, code);
+          if (name) {
+            row.querySelector('.sku-name').value = name;
+          }
+          const commentField = row.querySelector('input[name="position_comment[]"]');
+          if (commentField && comment) {
+            commentField.value = comment;
+          }
+        };
+        fillRow(baseRow, items[0]);
+        items.slice(1).forEach((item) => {
+          const clone = baseRow.cloneNode(true);
+          clone.querySelectorAll('input').forEach((input) => {
+            input.value = '';
+          });
+          clone.querySelectorAll('select').forEach((select) => {
+            select.value = '';
+          });
+          clone.querySelectorAll('.barcode-main').forEach((el) => {
+            el.textContent = '-';
+          });
+          clone.querySelectorAll('.barcode-toggle').forEach((el) => {
+            el.hidden = true;
+            el.classList.remove('active');
+          });
+          clone.querySelectorAll('.barcode-more').forEach((el) => {
+            el.hidden = true;
+            el.innerHTML = '';
+          });
+          syncSizeField(clone, [], '');
+          wireRow(clone);
+          tableBody.appendChild(clone);
+          fillRow(clone, item);
+        });
+      };
+
+      restoreDraft();
+
+      if (clientId) {
+        const cartKey = `order_cart_${clientId}`;
+        const stored = localStorage.getItem(cartKey);
+        if (stored) {
+          let items = [];
+          try {
+            items = JSON.parse(stored);
+          } catch (err) {
+            items = [];
+          }
+          const findExistingRow = (code, size) => {
+            return Array.from(tableBody.querySelectorAll('.item-row')).find((row) => {
+              const skuValue = row.querySelector('.sku-input').value.trim();
+              const sizeValue = row.querySelector('.size-input')?.value.trim() || '';
+              return skuValue === code && (sizeValue || '') === (size || '');
+            });
+          };
+          const findEmptyRow = () => {
+            return Array.from(tableBody.querySelectorAll('.item-row')).find((row) => {
+              const skuValue = row.querySelector('.sku-input').value.trim();
+              const qtyValue = row.querySelector('.qty-input').value.trim();
+              return !skuValue && !qtyValue;
+            });
+          };
+          const addRowWithSku = (code, qty, size) => {
+            if (!code) {
+              return;
+            }
+            const existing = findExistingRow(code, size || '');
+            if (existing) {
+              existing.querySelector('.qty-input').value = qty;
+              existing.dataset.preferredSize = size || '';
+              applySku(existing, code);
+              return;
+            }
+            let row = findEmptyRow();
+            if (!row) {
+              const baseRow = tableBody.querySelector('.item-row');
+              row = baseRow.cloneNode(true);
+              row.querySelectorAll('input').forEach((input) => {
+                input.value = '';
+              });
+              row.querySelectorAll('select').forEach((select) => {
+                select.value = '';
+              });
+              row.querySelectorAll('.barcode-main').forEach((el) => {
+                el.textContent = '-';
+              });
+              row.querySelectorAll('.barcode-toggle').forEach((el) => {
+                el.hidden = true;
+                el.classList.remove('active');
+              });
+              row.querySelectorAll('.barcode-more').forEach((el) => {
+                el.hidden = true;
+                el.innerHTML = '';
+              });
+              syncSizeField(row, [], '');
+              wireRow(row);
+              tableBody.appendChild(row);
+            }
+            row.querySelector('.sku-input').value = code;
+            row.querySelector('.qty-input').value = qty;
+            row.dataset.preferredSize = size || '';
+            applySku(row, code);
+          };
+          items.forEach((item) => addRowWithSku(item.code, item.qty, item.size));
+          localStorage.removeItem(cartKey);
+        }
+      }
+
+      let draftTimer = null;
+      const scheduleSave = () => {
+        if (!draftKey) {
+          return;
+        }
+        if (draftTimer) {
+          clearTimeout(draftTimer);
+        }
+        draftTimer = setTimeout(saveDraft, 200);
+      };
+      form.addEventListener('input', scheduleSave);
+      form.addEventListener('change', scheduleSave);
+      window.addEventListener('beforeunload', saveDraft);
+      if (submitted && draftKey) {
+        localStorage.removeItem(draftKey);
+      }
+      const cancelLink = form.querySelector('a.action-btn[href="/orders/"]');
+      if (cancelLink && draftKey) {
+        cancelLink.addEventListener('click', () => localStorage.removeItem(draftKey));
+      }
+      const skuLink = document.querySelector('.ghost-btn[href*="/client/"][href*="/sku/"]');
+      if (skuLink && draftKey) {
+        skuLink.addEventListener('click', saveDraft);
+      }
+      const clearButton = form.querySelector('#clear-form');
+      if (clearButton) {
+        clearButton.addEventListener('click', () => {
+          if (draftKey) {
+            localStorage.removeItem(draftKey);
+          }
+          if (clientId) {
+            const cartKey = `order_cart_${clientId}`;
+            localStorage.removeItem(cartKey);
+          }
+          const fields = [
+            'eta_at',
+            'expected_boxes',
+            'place_type',
+            'vehicle_number',
+            'driver_phone',
+            'comment',
+          ];
+          fields.forEach((name) => {
+            const field = form.querySelector(`[name="${name}"]`);
+            if (field) {
+              field.value = '';
+            }
+          });
+          const etaDate = document.getElementById('eta-date');
+          const etaTime = document.getElementById('eta-time');
+          if (etaDate) {
+            etaDate.value = '';
+          }
+          if (etaTime) {
+            etaTime.value = '';
+          }
+          const docsField = form.querySelector('input[name="documents"]');
+          if (docsField) {
+            docsField.value = '';
+          }
+          const rows = Array.from(tableBody.querySelectorAll('.item-row'));
+          rows.slice(1).forEach((row) => row.remove());
+          const baseRow = rows[0];
+          if (baseRow) {
+            baseRow.querySelectorAll('input').forEach((input) => {
+              if (input.type === 'hidden') {
+                return;
+              }
+              input.value = '';
+            });
+            baseRow.querySelectorAll('select').forEach((select) => {
+              select.value = '';
+            });
+            baseRow.querySelectorAll('.barcode-main').forEach((el) => {
+              el.textContent = '-';
+            });
+            baseRow.querySelectorAll('.barcode-toggle').forEach((el) => {
+              el.hidden = true;
+              el.classList.remove('active');
+            });
+            baseRow.querySelectorAll('.barcode-more').forEach((el) => {
+              el.hidden = true;
+              el.innerHTML = '';
+            });
+            syncSizeField(baseRow, [], '');
+          }
+        });
+      }
+
+      form.addEventListener('submit', (event) => {
+        const etaHidden = form.querySelector('#eta_at');
+        if (etaHidden) {
+          const etaValue = (etaHidden.value || '').trim();
+          if (!etaValue) {
+            event.preventDefault();
+            alert('Заполните плановую дату и время прибытия.');
+            return;
+          }
+          const minValue = etaHidden.dataset.minValue;
+          if (minValue) {
+            const selected = new Date(etaValue);
+            const minDate = new Date(minValue);
+            if (selected < minDate) {
+              event.preventDefault();
+              alert('Плановая дата/время не может быть раньше допустимого минимума.');
+              return;
+            }
+          }
+        }
+        const requiredFields = [
+          { name: 'expected_boxes', label: 'Количество мест', check: (val) => Number(val) > 0 },
+          { name: 'place_type', label: 'Тип мест' },
+          { name: 'vehicle_number', label: 'Номер авто' },
+          { name: 'driver_phone', label: 'Телефон водителя' },
+        ];
+        for (const field of requiredFields) {
+          const input = form.querySelector(`[name="${field.name}"]`);
+          const value = (input?.value || '').trim();
+          if (!value) {
+            event.preventDefault();
+            alert(`Заполните поле: ${field.label}.`);
+            return;
+          }
+          if (field.check && !field.check(value)) {
+            event.preventDefault();
+            alert(`Проверьте поле: ${field.label}.`);
+            return;
+          }
+          if (field.name === 'driver_phone') {
+            const digits = value.replace(/\D/g, '');
+            if (digits.length !== 11 || !['7', '8'].includes(digits[0])) {
+              event.preventDefault();
+              alert('Введите корректный телефон водителя.');
+              return;
+            }
+          }
+        }
+        const rows = Array.from(document.querySelectorAll('.item-row'));
+        const rowsWithData = rows.filter((row) => {
+          const sku = row.querySelector('.sku-input').value.trim();
+          const qty = Number(row.querySelector('.qty-input').value);
+          return sku || qty > 0;
+        });
+        const invalidRow = rowsWithData.some((row) => {
+          const sku = row.querySelector('.sku-input').value.trim();
+          const qty = Number(row.querySelector('.qty-input').value);
+          return !sku || qty <= 0;
+        });
+        if (invalidRow) {
+          event.preventDefault();
+          alert('Заполните SKU и количество или очистите строку.');
+          return;
+        }
+        const missingSize = rowsWithData.some((row) => {
+          const sku = row.querySelector('.sku-input').value.trim();
+          const data = skuMap[sku];
+          if (!data) {
+            return false;
+          }
+          const sizeOptions = Object.keys(data.sizes || {}).filter(Boolean);
+          if (!sizeOptions.length) {
+            return false;
+          }
+          const sizeValue = row.querySelector('.size-input')?.value.trim();
+          return !sizeValue || !data.sizes[sizeValue];
+        });
+        if (missingSize) {
+          event.preventDefault();
+          alert('Выберите размер для позиции в заявке.');
+          return;
+        }
+        const invalidSku = rowsWithData.some((row) => {
           const sku = row.querySelector('.sku-input').value.trim();
           return sku && !skuMap[sku];
         });
@@ -362,36 +1057,134 @@
           event.preventDefault();
           alert('SKU не найден в номенклатуре. Сначала заведите его в списке SKU.');
         }
+        if (draftKey && !event.defaultPrevented) {
+          const submitter = event.submitter || document.activeElement;
+          const actionValue = submitter && submitter.name === 'submit_action' ? submitter.value : '';
+          const isDraftSubmit = actionValue === 'draft';
+          if (isDraftSubmit) {
+            saveDraft();
+          } else {
+            localStorage.removeItem(draftKey);
+          }
+        }
       });
 
       const etaInput = document.querySelector('[data-min-hours]');
       if (etaInput) {
-        const minHours = Number(etaInput.dataset.minHours || '0');
-        const nowValue = etaInput.dataset.now;
-        const now = nowValue ? new Date(nowValue) : new Date();
-        const minDate = new Date(now.getTime() - minHours * 3600 * 1000);
-        const pad = (value) => String(value).padStart(2, '0');
-        const toInputValue = (date) => `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
-        etaInput.min = toInputValue(minDate);
-        if (!etaInput.value) {
-          etaInput.value = toInputValue(now);
+        const etaDate = document.getElementById('eta-date');
+        const etaTime = document.getElementById('eta-time');
+        if (etaDate && etaTime) {
+          const nowValue = etaInput.dataset.now;
+          const now = nowValue ? new Date(nowValue) : new Date();
+          const pad = (value) => String(value).padStart(2, '0');
+          const toInputValue = (date) => `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+          const toDateValue = (date) => `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+
+          const nextDay = new Date(now);
+          nextDay.setDate(nextDay.getDate() + 1);
+          nextDay.setHours(0, 0, 0, 0);
+          const isEvening = now.getHours() >= 18;
+          const minHour = isEvening ? 13 : 10;
+          const minDateTime = new Date(nextDay);
+          minDateTime.setHours(minHour, 0, 0, 0);
+          const minDateValue = toDateValue(nextDay);
+          const minTimeValue = `${pad(minHour)}:00`;
+
+          etaInput.dataset.minValue = toInputValue(minDateTime);
+          etaDate.min = minDateValue;
+
+          const applyDateTime = (date) => {
+            const formatted = toInputValue(date);
+            const [datePart, timePart] = formatted.split('T');
+            etaDate.value = datePart;
+            etaTime.value = timePart;
+            etaInput.value = formatted;
+          };
+
+          if (etaInput.value) {
+            const [datePart, timePart] = etaInput.value.split('T');
+            if (datePart) {
+              etaDate.value = datePart;
+            }
+            if (timePart) {
+              etaTime.value = timePart.slice(0, 5);
+            }
+          } else {
+            applyDateTime(minDateTime);
+          }
+
+          const syncHidden = () => {
+            let datePart = etaDate.value;
+            let timePart = etaTime.value;
+            if (datePart === minDateValue && timePart && timePart < minTimeValue) {
+              timePart = minTimeValue;
+              etaTime.value = timePart;
+            }
+            if (datePart && timePart) {
+              etaInput.value = `${datePart}T${timePart}`;
+            } else {
+              etaInput.value = '';
+            }
+          };
+          etaDate.addEventListener('change', syncHidden);
+          etaTime.addEventListener('change', syncHidden);
+
+          const labelForOffset = (offset) => {
+            if (offset === 1) {
+              return 'Завтра';
+            }
+            if (offset === 2) {
+              return 'Послезавтра';
+            }
+            return `Через ${offset} дн.`;
+          };
+          const options = [
+            { offset: 1, time: minTimeValue },
+            { offset: 1, time: '16:00' },
+            { offset: 2, time: '10:00' },
+            { offset: 2, time: '16:00' },
+          ];
+          document.querySelectorAll('.datetime-chip').forEach((chip, idx) => {
+            const option = options[idx];
+            if (!option) {
+              chip.hidden = true;
+              return;
+            }
+            chip.hidden = false;
+            chip.dataset.offset = option.offset;
+            chip.dataset.time = option.time;
+            chip.textContent = `${labelForOffset(option.offset)} ${option.time}`;
+            chip.addEventListener('click', () => {
+              const target = new Date(now);
+              target.setDate(target.getDate() + option.offset);
+              const [hh, mm] = option.time.split(':').map((part) => Number(part));
+              target.setHours(hh || 0, mm || 0, 0, 0);
+              applyDateTime(target);
+            });
+          });
         }
       }
 
-      const agencySelect = document.getElementById('agency-select');
-      if (agencySelect) {
-        agencySelect.addEventListener('change', () => {
-          const value = agencySelect.value;
-          if (!value) {
-            return;
-          }
-          const url = new URL(window.location.href);
-          url.searchParams.set('client', value);
-          url.searchParams.delete('ok');
-          window.location = url.toString();
+      const downloadTemplate = document.getElementById('download-template');
+      if (downloadTemplate) {
+        downloadTemplate.addEventListener('click', (event) => {
+          event.preventDefault();
+          alert('Пока без файла-шаблона.');
         });
       }
+      const uploadTemplate = document.getElementById('upload-template');
+      const templateFile = document.getElementById('template-file');
+      if (uploadTemplate && templateFile) {
+        uploadTemplate.addEventListener('click', () => templateFile.click());
+        templateFile.addEventListener('change', () => {
+          if (templateFile.files && templateFile.files.length) {
+            alert(`Файл выбран: ${templateFile.files[0].name}. Загрузка будет добавлена позже.`);
+          }
+        });
+      }
+
     })();
   </script>
 </body>
 </html>
+

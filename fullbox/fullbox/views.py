@@ -2,13 +2,21 @@ from pathlib import Path
 import time
 
 import requests
-from django.contrib.auth import get_user_model, login
-from django.http import FileResponse, HttpResponse, HttpResponseRedirect
+from django.contrib.auth import authenticate, get_user_model, login, logout
+from django.http import (
+    FileResponse,
+    HttpResponse,
+    HttpResponseForbidden,
+    HttpResponseNotFound,
+    HttpResponseRedirect,
+)
 from django.shortcuts import redirect, render
 from django.utils.html import escape
-from sku.models import Agency
+from employees.models import Employee
 
 from django.conf import settings
+from employees.access import get_employee_for_user, get_request_role, resolve_cabinet_url
+from sku.models import Agency
 
 
 DEV_USERS = [
@@ -28,6 +36,8 @@ _REMOTE_JOURNAL_CACHE = {"ts": 0.0, "data": None}
 
 def login_menu(request):
     """Простое меню входа для разработки."""
+    if not settings.DEBUG:
+        return HttpResponseNotFound()
     usernames = [u[0] for u in DEV_USERS]
     existing = (
         get_user_model()
@@ -45,6 +55,8 @@ def login_menu(request):
 
 def dev_login(request, username):
     """Быстрый вход для разработки без ввода пароля."""
+    if not settings.DEBUG:
+        return HttpResponseNotFound()
     User = get_user_model()
     try:
         user = User.objects.get(username=username)
@@ -58,6 +70,31 @@ def dev_login(request, username):
     if next_url and not next_url.startswith("/"):
         next_url = None
 
+    employee_role = None
+    if username == "manager":
+        employee_role = "manager"
+    elif username == "storekeeper":
+        employee_role = "storekeeper"
+
+    if employee_role:
+        employee = (
+            Employee.objects.filter(role=employee_role, is_active=True)
+            .order_by("full_name")
+            .first()
+        )
+        if employee:
+            request.session["employee_id"] = employee.id
+            request.session["employee_name"] = employee.full_name
+            request.session["employee_role"] = employee.role
+        else:
+            request.session.pop("employee_id", None)
+            request.session.pop("employee_name", None)
+            request.session.pop("employee_role", None)
+    else:
+        request.session.pop("employee_id", None)
+        request.session.pop("employee_name", None)
+        request.session.pop("employee_role", None)
+
     if username == "developer":
         target = next_url or "/dev/"
     elif username == "admin":
@@ -69,8 +106,58 @@ def dev_login(request, username):
 
 def role_cabinet(request, role):
     """Простой кабинет для каждой роли (временно)."""
+    if not request.user.is_authenticated:
+        return HttpResponseForbidden("Доступ запрещен")
+    current_role = get_request_role(request)
+    if current_role != role:
+        return HttpResponseForbidden("Доступ запрещен")
     title = ROLE_TITLES.get(role, "Кабинет")
     return render(request, "role_cabinet.html", {"role": role, "title": title})
+
+
+def sign_in(request):
+    if request.user.is_authenticated:
+        return redirect(resolve_cabinet_url(get_request_role(request)))
+    error = None
+    employees = Employee.objects.select_related("user").order_by("role", "full_name")
+    clients = Agency.objects.select_related("portal_user").order_by("agn_name")
+    if request.method == "POST":
+        username = (request.POST.get("username") or "").strip()
+        password = request.POST.get("password") or ""
+        user = authenticate(request, username=username, password=password)
+        if not user:
+            error = "Неверный логин или пароль"
+        else:
+            login(request, user)
+            employee = get_employee_for_user(user)
+            agency = Agency.objects.filter(portal_user=user).first()
+            if employee:
+                request.session["employee_name"] = employee.full_name
+                request.session["employee_role"] = employee.role
+                return redirect(resolve_cabinet_url(get_request_role(request)))
+            if agency:
+                request.session.pop("employee_name", None)
+                request.session.pop("employee_role", None)
+                return redirect(f"/client/dashboard/?client={agency.id}")
+            else:
+                request.session.pop("employee_name", None)
+                request.session.pop("employee_role", None)
+            return redirect("/")
+    return render(
+        request,
+        "login.html",
+        {
+            "error": error,
+            "employees": employees,
+            "clients": clients,
+        },
+    )
+
+
+def sign_out(request):
+    logout(request)
+    request.session.flush()
+    return redirect("/login/")
 
 
 def project_description(request):

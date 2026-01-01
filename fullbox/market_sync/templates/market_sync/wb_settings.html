@@ -36,6 +36,28 @@
     .help { font-size:13px; color: var(--muted); }
     .error { color: var(--danger); font-size:13px; }
     .actions { display:flex; gap:10px; flex-wrap:wrap; }
+    .token-hidden { display:none; }
+    .token-status {
+      display:none;
+      align-items:center;
+      gap:10px;
+      padding:8px 10px;
+      border-radius:10px;
+      border:1px dashed var(--stroke);
+      background:rgba(255,255,255,0.02);
+      color:var(--muted);
+      font-size:13px;
+    }
+    .token-status.visible { display:flex; }
+    .token-reveal {
+      border:1px solid var(--stroke);
+      background:rgba(255,255,255,0.02);
+      color:var(--text);
+      border-radius:8px;
+      padding:4px 8px;
+      font-size:12px;
+      cursor:pointer;
+    }
     .sync-card { margin-top:16px; }
     .sync-head { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; }
     .sync-status { display:flex; align-items:center; gap:10px; }
@@ -57,7 +79,7 @@
   <div class="wrap">
     <header>
       <div>
-        <div class="muted">FULLBOX</div>
+        <div class="muted">FULLBOX · {% include "partials/current_user.html" %}</div>
         <h1>Настройка Wildberries</h1>
         {% if selected_client %}
           <div class="pill" style="margin-top:8px;">Клиент: {{ selected_client.agn_name|default:"Без названия" }}{% if selected_client.inn %} · ИНН {{ selected_client.inn }}{% endif %}</div>
@@ -65,7 +87,7 @@
       </div>
       <div style="display:flex; gap:10px; flex-wrap:wrap;">
         <a class="btn" href="/market-sync/{% if selected_client %}?client={{ selected_client.id }}{% endif %}">Назад</a>
-        <a class="btn" href="/">На главную</a>
+        <a class="btn" href="/logout/">Выход</a>
       </div>
     </header>
 
@@ -86,6 +108,10 @@
             <div class="error">{{ form.market_key.errors|striptags }}</div>
           {% endif %}
           {{ form.market_key }}
+          <div class="token-status" id="token-status">
+            Токен сохранен.
+            <button class="token-reveal" id="token-reveal" type="button">Изменить</button>
+          </div>
           <div class="help">Токен используется только для текущего клиента.</div>
         </div>
         <div class="actions" style="margin-top:12px;">
@@ -137,6 +163,10 @@
 </body>
 <script>
   (function() {
+    const tokenField = document.getElementById('id_market_key');
+    const tokenStatus = document.getElementById('token-status');
+    const tokenReveal = document.getElementById('token-reveal');
+    let tokenTimer = null;
     const syncBtn = document.querySelector('[data-sync-button]');
     const statusEl = document.querySelector('[data-sync-status]');
     const timeEl = document.querySelector('[data-sync-time]');
@@ -174,6 +204,62 @@
         return parts.pop().split(';').shift();
       }
       return '';
+    }
+
+    const hideToken = () => {
+      if (!tokenField || !tokenStatus) {
+        return;
+      }
+      if ((tokenField.value || '').trim().length === 0) {
+        return;
+      }
+      tokenField.classList.add('token-hidden');
+      tokenStatus.classList.add('visible');
+    };
+
+    const showToken = () => {
+      if (!tokenField || !tokenStatus) {
+        return;
+      }
+      tokenField.classList.remove('token-hidden');
+      tokenStatus.classList.remove('visible');
+    };
+
+    const scheduleTokenHide = () => {
+      if (!tokenField) {
+        return;
+      }
+      if (tokenTimer) {
+        clearTimeout(tokenTimer);
+      }
+      tokenTimer = setTimeout(hideToken, 5000);
+    };
+
+    if (tokenField) {
+      tokenField.addEventListener('input', () => {
+        showToken();
+        scheduleTokenHide();
+      });
+      tokenField.addEventListener('focus', () => {
+        if (tokenTimer) {
+          clearTimeout(tokenTimer);
+        }
+      });
+      tokenField.addEventListener('blur', scheduleTokenHide);
+      if ((tokenField.value || '').trim()) {
+        hideToken();
+      }
+    }
+
+    if (tokenReveal) {
+      tokenReveal.addEventListener('click', () => {
+        if (tokenField) {
+          tokenField.value = '';
+        }
+        showToken();
+        tokenField?.focus();
+        scheduleTokenHide();
+      });
     }
 
     syncBtn.addEventListener('click', async () => {
@@ -223,3 +309,4 @@
   })();
 </script>
 </html>
+

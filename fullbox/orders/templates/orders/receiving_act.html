@@ -1,0 +1,391 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ act_label }} · заявка № {{ order_id }}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    :root { --bg:#f6f4ed; --card:#ffffff; --card-soft:#f8f6f1; --gold:#c79a1c; --gold-soft:#f2d48c; --muted:#6b7280; --stroke: rgba(31,35,40,0.12); --text:#1f2328; --danger:#d14343; --success:#1f9d55; }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body { margin:0; background:var(--bg); color:var(--text); font-family:'Space Grotesk',system-ui,sans-serif; }
+    a { color: inherit; text-decoration: none; }
+    .wrap { max-width: none; margin: 0; padding: 24px 18px 64px; min-height: 100vh; }
+    .detail-layout { display:grid; grid-template-columns: 280px minmax(0, 1fr); gap:16px; align-items:start; min-height: calc(100vh - 88px); }
+    .detail-side { display:grid; gap:12px; }
+    .detail-main { display:grid; gap:12px; height: calc(100vh - 88px); overflow:hidden; }
+    .tab { padding:10px 14px; border-radius:10px; border:1px solid var(--stroke); background:rgba(15,23,42,0.04); color:var(--text); font-weight:600; }
+    .tab.primary { border-color: var(--gold); color:#1f2328; background: linear-gradient(120deg,var(--gold),var(--gold-soft)); box-shadow:0 10px 30px rgba(199,154,32,0.2); }
+    .card { background:var(--card); border:1px solid var(--stroke); border-radius:16px; padding:16px; box-shadow:0 20px 40px rgba(15,23,42,0.12); }
+    h1 { margin:0 0 6px; letter-spacing:-0.5px; }
+    .muted { color: var(--muted); }
+    .notice { border:1px solid rgba(31,157,85,0.35); background:rgba(31,157,85,0.12); color:#166534; border-radius:12px; padding:10px 12px; margin:10px 0; }
+    .error { border:1px solid rgba(209,67,67,0.35); background:rgba(209,67,67,0.12); color:#7f1d1d; border-radius:12px; padding:10px 12px; margin:10px 0; }
+    .side-card { background:var(--card); border:1px solid var(--stroke); border-radius:16px; padding:14px; box-shadow:0 16px 30px rgba(15,23,42,0.12); }
+    .side-title { font-weight:600; margin:0 0 8px; }
+    .side-actions { display:grid; gap:8px; }
+    .side-actions .tab { width:100%; display:inline-flex; justify-content:center; align-items:center; }
+    .info-list { display:grid; gap:10px; }
+    .info-item { display:grid; gap:4px; }
+    .info-label { font-size:11px; text-transform:uppercase; letter-spacing:1px; color:var(--muted); }
+    .info-value { font-weight:600; word-break:break-word; }
+    .table-card { display:flex; flex-direction:column; min-height:0; height:100%; overflow:hidden; }
+    .table-scroll { overflow:auto; min-height:0; flex:1; border:1px solid var(--stroke); border-radius:12px; }
+    .table-scroll table { margin-top:0; }
+    .table-scroll thead th { position: sticky; top: 0; background: #f3e6b8; z-index: 1; box-shadow: 0 2px 0 rgba(31,35,40,0.08); }
+    .table-scroll tbody tr:nth-child(even) { background: #fbf6e3; }
+    .table-scroll tbody tr.row-match { background: rgba(31,157,85,0.18); }
+    .table-scroll tbody tr.row-mismatch { background: rgba(244,114,182,0.22); }
+    table { width:100%; border-collapse:collapse; min-width:860px; }
+    th, td { border-bottom:1px solid var(--stroke); border-right:1px solid var(--stroke); padding:10px; text-align:left; vertical-align:top; }
+    th:last-child, td:last-child { border-right:none; }
+    th { color: var(--muted); font-weight:600; font-size:12px; text-transform:uppercase; letter-spacing:1px; background:rgba(15,23,42,0.04); }
+    input[type="number"], input[type="text"], input[type="datetime-local"] { width:100%; padding:8px 10px; border-radius:10px; border:1px solid var(--stroke); background:#fff; color:var(--text); font-size:14px; }
+    .action-bar { display:flex; justify-content:flex-end; gap:10px; margin-top:14px; flex-wrap:wrap; }
+    .action-left { display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+    .btn { padding:10px 14px; border-radius:10px; border:1px solid var(--stroke); background:rgba(15,23,42,0.04); color:var(--text); font-weight:600; cursor:pointer; }
+    .btn.primary { background: linear-gradient(120deg,var(--gold),var(--gold-soft)); color:#1f2328; border-color: transparent; }
+    .btn[disabled] { opacity:0.6; cursor:not-allowed; }
+    @media (max-width: 1100px) {
+      .detail-layout { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <form method="post">
+      {% csrf_token %}
+      <div class="detail-layout">
+        <aside class="detail-side">
+          <div class="side-card">
+            <div class="muted">FULLBOX · {% include "partials/current_user.html" %}</div>
+            <h3>{{ act_label }} · заявка № {{ order_id }}</h3>
+            <div class="muted">Статус: {{ status_label }}</div>
+          </div>
+
+          <div class="side-card">
+            <h4 class="side-title">Действия</h4>
+            <div class="side-actions">
+              {% if client_view %}
+                <a class="tab" href="/orders/receiving/{{ order_id }}/?client={{ client_param }}">К заявке</a>
+              {% else %}
+                <a class="tab" href="/orders/receiving/{{ order_id }}/">К заявке</a>
+              {% endif %}
+              <a class="tab" href="{{ cabinet_url }}">В кабинет</a>
+              <a class="tab" href="/logout/">Выход</a>
+            </div>
+          </div>
+
+          <div class="side-card">
+            <h4 class="side-title">Информация</h4>
+            <div class="info-list">
+              <div class="info-item">
+                <div class="info-label">От кого</div>
+                <div class="info-value">{{ client_label }}</div>
+              </div>
+              <div class="info-item">
+                <div class="info-label">Когда</div>
+                {% if can_submit %}
+                  <input type="datetime-local" name="eta_at" value="{{ arrival_input }}" required>
+                {% else %}
+                  <div class="info-value">{{ arrival_at }}</div>
+                {% endif %}
+              </div>
+              <div class="info-item">
+                <div class="info-label">На какой машине</div>
+                {% if can_submit %}
+                  <input type="text" name="vehicle_number" value="{{ vehicle_value }}" required>
+                {% else %}
+                  <div class="info-value">{{ vehicle_number }}</div>
+                {% endif %}
+              </div>
+              <div class="info-item">
+                <div class="info-label">Телефон водителя</div>
+                <div class="info-value">{{ driver_phone|default:"-" }}</div>
+              </div>
+            </div>
+          </div>
+        </aside>
+
+        <main class="detail-main">
+          <div class="card table-card">
+            <h3>Состав приемки</h3>
+            {% if ok %}
+              <div class="notice">Акт приемки создан.</div>
+            {% endif %}
+            {% if error %}
+              <div class="error">Не удалось создать акт приемки. Проверьте данные.</div>
+            {% endif %}
+            <div class="table-scroll">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Наименование</th>
+                    <th>Размер</th>
+                    <th>Кол-во по заявке</th>
+                    <th>Кол-во фактическое</th>
+                  </tr>
+                </thead>
+                <tbody id="act-items">
+                  {% for item in items %}
+                    <tr>
+                      <td>{{ item.name }}</td>
+                      <td>{{ item.size }}</td>
+                      <td>{{ item.planned_qty }}</td>
+                      <td>
+                        <input
+                          type="number"
+                          name="actual_qty[]"
+                          min="0"
+                          step="1"
+                          value="{{ item.actual_qty }}"
+                          {% if not can_submit %}disabled{% endif %}
+                          required
+                        >
+                      </td>
+                    </tr>
+                  {% empty %}
+                    <tr><td colspan="4" class="muted">В заявке нет товарных позиций.</td></tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+            {% if can_add_items %}
+              <template id="act-item-template">
+                <tr>
+                  <td><input type="text" name="extra_name[]" required></td>
+                  <td><input type="text" name="extra_size[]" placeholder="-"></td>
+                  <td><input type="number" name="extra_planned_qty[]" min="0" step="1" value="0"></td>
+                  <td><input type="number" name="extra_actual_qty[]" min="0" step="1" value="" required></td>
+                </tr>
+              </template>
+            {% endif %}
+            <div class="action-bar" style="justify-content:space-between;">
+              <div class="action-left">
+                {% if can_add_items %}
+                  <button class="btn" type="button" id="add-act-item">Добавить товар</button>
+                {% endif %}
+                {% if act_exists %}
+                  <span class="muted">Акт уже создан.</span>
+                {% endif %}
+              </div>
+              <div>
+                {% if can_submit %}
+                  <button class="btn primary" type="submit">Сохранить акт приемки</button>
+                {% else %}
+                  <button class="btn primary" type="button" disabled>Сохранить акт приемки</button>
+                {% endif %}
+              </div>
+            </div>
+          </div>
+        </main>
+      </div>
+    </form>
+  </div>
+  <script>
+    (function(){
+      const draftKey = 'receiving_act_draft_{{ order_id|default:"0" }}';
+      const addBtn = document.getElementById('add-act-item');
+      const tbody = document.getElementById('act-items');
+      const template = document.getElementById('act-item-template');
+      const form = document.querySelector('form');
+      const canSubmit = !!document.querySelector('button.btn.primary[type="submit"]');
+
+      const toNumber = (value) => {
+        const num = parseInt((value || '').toString().trim(), 10);
+        return Number.isFinite(num) ? num : null;
+      };
+
+      const stripLeadingZeros = (input) => {
+        const value = input.value || '';
+        if (value.length > 1 && value.startsWith('0')) {
+          const cleaned = value.replace(/^0+/, '');
+          input.value = cleaned === '' ? '0' : cleaned;
+        }
+      };
+
+      const clearZeroOnFocus = (input) => {
+        if (input.value === '0') {
+          input.value = '';
+        }
+      };
+
+      const getPlanned = (row) => {
+        const cell = row.querySelector('td:nth-child(3)');
+        if (!cell) return null;
+        const input = cell.querySelector('input');
+        const raw = input ? input.value : cell.textContent;
+        return toNumber(raw);
+      };
+
+      const getActual = (row) => {
+        const cell = row.querySelector('td:nth-child(4)');
+        if (!cell) return null;
+        const input = cell.querySelector('input');
+        const raw = input ? input.value : cell.textContent;
+        return toNumber(raw);
+      };
+
+      const updateRow = (row) => {
+        const planned = getPlanned(row);
+        const actual = getActual(row);
+        if (planned !== null && actual !== null && planned === actual) {
+          row.classList.add('row-match');
+          row.classList.remove('row-mismatch');
+        } else if (planned !== null && actual !== null && planned !== actual) {
+          row.classList.add('row-mismatch');
+          row.classList.remove('row-match');
+        } else {
+          row.classList.remove('row-match');
+          row.classList.remove('row-mismatch');
+        }
+      };
+
+      const bindRow = (row) => {
+        const plannedInput = row.querySelector('td:nth-child(3) input');
+        const actualInput = row.querySelector('td:nth-child(4) input');
+        if (plannedInput) {
+          plannedInput.addEventListener('focus', () => clearZeroOnFocus(plannedInput));
+          plannedInput.addEventListener('input', () => stripLeadingZeros(plannedInput));
+          plannedInput.addEventListener('input', () => updateRow(row));
+        }
+        if (actualInput) {
+          actualInput.addEventListener('focus', () => clearZeroOnFocus(actualInput));
+          actualInput.addEventListener('input', () => stripLeadingZeros(actualInput));
+          actualInput.addEventListener('input', () => updateRow(row));
+        }
+        updateRow(row);
+      };
+
+      if (tbody) {
+        tbody.querySelectorAll('tr').forEach(bindRow);
+      }
+
+      if (addBtn && tbody && template) {
+        addBtn.addEventListener('click', () => {
+          const row = template.content.firstElementChild.cloneNode(true);
+          tbody.appendChild(row);
+          bindRow(row);
+        });
+      }
+
+      const collectDraft = () => {
+        if (!canSubmit) return null;
+        const data = {
+          eta_at: null,
+          vehicle_number: null,
+          items: [],
+          extras: [],
+        };
+        const etaInput = document.querySelector('input[name="eta_at"]');
+        const vehicleInput = document.querySelector('input[name="vehicle_number"]');
+        if (etaInput) data.eta_at = etaInput.value || '';
+        if (vehicleInput) data.vehicle_number = vehicleInput.value || '';
+
+        if (tbody) {
+          const rows = Array.from(tbody.querySelectorAll('tr'));
+          rows.forEach((row) => {
+            const nameCell = row.querySelector('td:first-child');
+            const nameInput = nameCell ? nameCell.querySelector('input[name="extra_name[]"]') : null;
+            const sizeInput = row.querySelector('input[name="extra_size[]"]');
+            const plannedInput = row.querySelector('input[name="extra_planned_qty[]"]');
+            const actualInput = row.querySelector('td:nth-child(4) input');
+            if (nameInput || sizeInput || plannedInput) {
+              data.extras.push({
+                name: nameInput ? nameInput.value : '',
+                size: sizeInput ? sizeInput.value : '',
+                planned_qty: plannedInput ? plannedInput.value : '',
+                actual_qty: actualInput ? actualInput.value : '',
+              });
+            } else {
+              data.items.push({
+                actual_qty: actualInput ? actualInput.value : '',
+              });
+            }
+          });
+        }
+        return data;
+      };
+
+      const applyDraft = (draft) => {
+        if (!draft || !tbody) return;
+        const etaInput = document.querySelector('input[name="eta_at"]');
+        const vehicleInput = document.querySelector('input[name="vehicle_number"]');
+        if (etaInput && draft.eta_at) etaInput.value = draft.eta_at;
+        if (vehicleInput && draft.vehicle_number) vehicleInput.value = draft.vehicle_number;
+
+        const rows = Array.from(tbody.querySelectorAll('tr'));
+        const itemRows = rows.filter((row) => !row.querySelector('input[name="extra_name[]"]'));
+        itemRows.forEach((row, idx) => {
+          const actualInput = row.querySelector('td:nth-child(4) input');
+          if (actualInput && draft.items && draft.items[idx]) {
+            actualInput.value = draft.items[idx].actual_qty || actualInput.value;
+            updateRow(row);
+          }
+        });
+
+        if (draft.extras && draft.extras.length && template && addBtn) {
+          draft.extras.forEach((extra) => {
+            const row = template.content.firstElementChild.cloneNode(true);
+            const nameInput = row.querySelector('input[name="extra_name[]"]');
+            const sizeInput = row.querySelector('input[name="extra_size[]"]');
+            const plannedInput = row.querySelector('input[name="extra_planned_qty[]"]');
+            const actualInput = row.querySelector('input[name="extra_actual_qty[]"]');
+            if (nameInput) nameInput.value = extra.name || '';
+            if (sizeInput) sizeInput.value = extra.size || '';
+            if (plannedInput) plannedInput.value = extra.planned_qty || '';
+            if (actualInput) actualInput.value = extra.actual_qty || '';
+            tbody.appendChild(row);
+            bindRow(row);
+          });
+        }
+      };
+
+      const saveDraft = () => {
+        const draft = collectDraft();
+        if (!draft) return;
+        try {
+          localStorage.setItem(draftKey, JSON.stringify(draft));
+        } catch (e) {
+          // Ignore storage errors.
+        }
+      };
+
+      const scheduleSave = (() => {
+        let timer = null;
+        return () => {
+          if (!canSubmit) return;
+          if (timer) clearTimeout(timer);
+          timer = setTimeout(saveDraft, 300);
+        };
+      })();
+
+      if (canSubmit) {
+        try {
+          const raw = localStorage.getItem(draftKey);
+          if (raw) {
+            const draft = JSON.parse(raw);
+            applyDraft(draft);
+          }
+        } catch (e) {
+          // Ignore parse errors.
+        }
+      }
+
+      if (form && canSubmit) {
+        form.addEventListener('input', scheduleSave);
+        form.addEventListener('submit', () => {
+          try {
+            localStorage.removeItem(draftKey);
+          } catch (e) {
+            // Ignore storage errors.
+          }
+        });
+      }
+    })();
+  </script>
+</body>
+</html>

@@ -1,37 +1,258 @@
+import json
+import re
+from datetime import timedelta
+
 from django.db import models
+from django.http import HttpResponseForbidden, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
-from django.views.generic import ListView, CreateView, UpdateView, TemplateView, FormView
-from django.http import JsonResponse
 from django.utils import timezone
+from django.views.generic import ListView, CreateView, UpdateView, TemplateView, FormView
 import uuid
 
-from sku.models import Agency, SKU
+from employees.models import Employee
+from employees.access import get_request_role, is_staff_role
+from sku.models import Agency, SKU, SKUBarcode
 from sku.views import SKUCreateView, SKUUpdateView, SKUDuplicateView
+from todo.models import Task
 from .forms import AgencyForm
 from .services import fetch_party_by_inn
-from audit.models import log_order_action
+from audit.models import OrderAuditEntry, log_order_action
+
+
+def _staff_allowed(request) -> bool:
+    if not request.user.is_authenticated:
+        return False
+    role = get_request_role(request)
+    return request.user.is_staff or is_staff_role(role)
+
+
+def _get_client_for_request(request):
+    if not request.user.is_authenticated:
+        return None, False, False
+    direct_client = Agency.objects.filter(portal_user=request.user).first()
+    if direct_client:
+        return direct_client, True, True
+    staff_allowed = _staff_allowed(request)
+    if not staff_allowed:
+        return None, False, False
+    client_id = request.GET.get("client") or request.GET.get("agency")
+    if client_id:
+        return Agency.objects.filter(pk=client_id).first(), False, True
+    return None, False, True
+
+
+def _check_agency_access(request, agency) -> bool:
+    if not request.user.is_authenticated or not agency:
+        return False
+    direct_client = Agency.objects.filter(portal_user=request.user).first()
+    if direct_client:
+        return direct_client.id == agency.id
+    return _staff_allowed(request)
+
+
+def _manager_due_date(now):
+    cutoff = now.replace(hour=15, minute=0, second=0, microsecond=0)
+    if now < cutoff:
+        return now
+    return now + timedelta(days=1)
+
+
+def _create_manager_task(order_id, agency, request, submitted_at):
+    if not agency:
+        return
+    manager = (
+        Employee.objects.filter(role="manager", is_active=True)
+        .order_by("full_name")
+        .first()
+    )
+    if not manager:
+        return
+    description = f"Клиент: {agency.agn_name or agency.inn or agency.id}"
+    Task.objects.create(
+        title=f"Подтвердите заявку на приемку товара №{order_id}",
+        description=description,
+        route=f"/orders/receiving/{order_id}/",
+        assigned_to=manager,
+        created_by=request.user if request.user.is_authenticated else None,
+        due_date=_manager_due_date(submitted_at),
+    )
+
+
+def _order_type_label(order_type: str) -> str:
+    if not order_type:
+        return "-"
+    labels = {"receiving": "ЗП"}
+    return labels.get(order_type, order_type)
+
+
+def _order_title_label(order_type: str, order_id: str) -> str:
+    if order_type == "receiving":
+        return f"Заявка на приемку №{order_id}"
+    if order_type == "packing":
+        return f"Заявка на упаковку №{order_id}"
+    return f"Заявка №{order_id}"
+
+
+def _order_status_label(entry) -> str:
+    payload = entry.payload or {}
+    status_value = payload.get("status") or payload.get("submit_action")
+    if status_value == "draft":
+        return "Черновик"
+    if status_value in {"sent_unconfirmed", "send", "submitted"}:
+        return "На подтверждении"
+    return payload.get("status_label") or payload.get("status") or "-"
+
+
+def _is_status_entry(entry) -> bool:
+    payload = entry.payload or {}
+    if entry.action == "status":
+        return True
+    return bool(
+        payload.get("status")
+        or payload.get("status_label")
+        or payload.get("submit_action")
+    )
+
+
+def _order_bucket(entry) -> str:
+    payload = entry.payload or {}
+    status_value = (payload.get("status") or payload.get("submit_action") or "").lower()
+    status_label = (payload.get("status_label") or "").lower()
+    if status_value == "draft" or "черновик" in status_label:
+        return "client"
+    if status_value in {"done", "completed", "closed", "finished"}:
+        return "done"
+    if any(token in status_label for token in ("склад", "прием", "приём")):
+        return "warehouse"
+    return "manager"
+
+
+_ISO_DATETIME_RE = re.compile(r"\b\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2})?\b")
+
+
+def _format_message_text(text: str) -> str:
+    if not text:
+        return ""
+
+    def _replace(match):
+        raw = match.group(0)
+        try:
+            parsed = timezone.datetime.fromisoformat(raw)
+        except ValueError:
+            return raw
+        return parsed.strftime("%d.%m.%Y, %H:%M")
+
+    return _ISO_DATETIME_RE.sub(_replace, text)
 
 
 def dashboard(request):
     """Простой кабинет клиента с плейсхолдерами ключевых разделов."""
-    client_id = request.GET.get("client")
-    selected_client = None
-    if client_id:
-        selected_client = Agency.objects.filter(pk=client_id).first()
+    if not request.user.is_authenticated:
+        return HttpResponseForbidden("Доступ запрещен")
+    selected_client, client_view, allowed = _get_client_for_request(request)
+    if not allowed:
+        return HttpResponseForbidden("Доступ запрещен")
+    orders_panel_columns = []
+    orders_panel_stats = []
+    orders_panel_total = 0
+    client_messages = []
+    if selected_client:
+        raw_entries = (
+            OrderAuditEntry.objects.filter(agency=selected_client)
+            .order_by("-created_at")
+        )
+        latest_by_order = {}
+        status_by_order = {}
+        for entry in raw_entries:
+            if entry.order_id not in latest_by_order:
+                latest_by_order[entry.order_id] = entry
+            if entry.order_id not in status_by_order and _is_status_entry(entry):
+                status_by_order[entry.order_id] = entry
+        selected_entries = [
+            status_by_order.get(order_id, latest_entry)
+            for order_id, latest_entry in latest_by_order.items()
+        ]
+        selected_entries.sort(key=lambda item: item.created_at, reverse=True)
+        buckets = {
+            "client": {"label": "У клиента", "orders": []},
+            "manager": {"label": "У менеджера", "orders": []},
+            "warehouse": {"label": "На складе", "orders": []},
+            "done": {"label": "Выполнена", "orders": []},
+        }
+        for entry in selected_entries:
+            bucket = _order_bucket(entry)
+            buckets[bucket]["orders"].append(
+                {
+                    "order_id": entry.order_id,
+                    "order_type": entry.order_type,
+                    "type_label": _order_type_label(entry.order_type),
+                    "title": _order_title_label(entry.order_type, entry.order_id),
+                    "status_label": _order_status_label(entry),
+                    "created_at": entry.created_at,
+                    "detail_url": f"/orders/{entry.order_type}/{entry.order_id}/?client={selected_client.id}",
+                }
+            )
+        orders_panel_columns = [
+            {
+                "status": key,
+                "label": value["label"],
+                "orders": value["orders"],
+                "count": len(value["orders"]),
+            }
+            for key, value in buckets.items()
+        ]
+        orders_panel_stats = [
+            {"status": column["status"], "label": column["label"], "count": column["count"]}
+            for column in orders_panel_columns
+        ]
+        orders_panel_total = sum(column["count"] for column in orders_panel_columns)
+        client_messages = [
+            {
+                "created_at": entry.created_at,
+                "text": _format_message_text(entry.description) or "Исправление заявки",
+                "detail_url": f"/orders/{entry.order_type}/{entry.order_id}/?client={selected_client.id}",
+            }
+            for entry in OrderAuditEntry.objects.filter(
+                agency=selected_client,
+                action="update",
+            )
+            .order_by("-created_at")[:10]
+        ]
+    else:
+        orders_panel_columns = [
+            {"status": "client", "label": "У клиента", "orders": [], "count": 0},
+            {"status": "manager", "label": "У менеджера", "orders": [], "count": 0},
+            {"status": "warehouse", "label": "На складе", "orders": [], "count": 0},
+            {"status": "done", "label": "Выполнена", "orders": [], "count": 0},
+        ]
+        orders_panel_stats = [
+            {"status": column["status"], "label": column["label"], "count": column["count"]}
+            for column in orders_panel_columns
+        ]
     return render(
         request,
         "client_cabinet/dashboard.html",
         {
             "selected_client": selected_client,
             "client_filter_param": f"?agency={selected_client.id}" if selected_client else "",
+            "client_view": bool(selected_client),
+            "orders_panel_columns": orders_panel_columns,
+            "orders_panel_stats": orders_panel_stats,
+            "orders_panel_total": orders_panel_total,
+            "client_messages": client_messages,
         },
     )
 
 
 def receiving_redirect(request, pk: int):
-    if not Agency.objects.filter(pk=pk).exists():
+    if not request.user.is_authenticated:
+        return HttpResponseForbidden("Доступ запрещен")
+    agency = Agency.objects.filter(pk=pk).first()
+    if not agency:
         return redirect("/client/")
+    if not _check_agency_access(request, agency):
+        return HttpResponseForbidden("Доступ запрещен")
     return redirect(f"/orders/receiving/?client={pk}")
 
 
@@ -61,6 +282,8 @@ class ClientListView(ListView):
     default_sort = "name"
 
     def get_queryset(self):
+        if not _staff_allowed(self.request):
+            return Agency.objects.none()
         qs = super().get_queryset()
         archived_param = self.request.GET.get("archived")
         if archived_param == "1":
@@ -125,6 +348,11 @@ class ClientListView(ListView):
         ctx["archived_param"] = self.request.GET.get("archived") or ""
         return ctx
 
+    def dispatch(self, request, *args, **kwargs):
+        if not _staff_allowed(request):
+            return HttpResponseForbidden("Доступ запрещен")
+        return super().dispatch(request, *args, **kwargs)
+
 
 class AgencyFormMixin:
     model = Agency
@@ -145,14 +373,26 @@ class ClientCreateView(AgencyFormMixin, CreateView):
     title = "Создание клиента"
     submit_label = "Создать"
 
+    def dispatch(self, request, *args, **kwargs):
+        if not _staff_allowed(request):
+            return HttpResponseForbidden("Доступ запрещен")
+        return super().dispatch(request, *args, **kwargs)
+
 
 class ClientUpdateView(AgencyFormMixin, UpdateView):
     mode = "edit"
     title = "Редактирование клиента"
     submit_label = "Сохранить"
 
+    def dispatch(self, request, *args, **kwargs):
+        if not _staff_allowed(request):
+            return HttpResponseForbidden("Доступ запрещен")
+        return super().dispatch(request, *args, **kwargs)
+
 
 def archive_toggle(request, pk: int):
+    if not _staff_allowed(request):
+        return HttpResponseForbidden("Доступ запрещен")
     agency = get_object_or_404(Agency, pk=pk)
     agency.archived = not agency.archived
     agency.save(update_fields=["archived"])
@@ -161,6 +401,8 @@ def archive_toggle(request, pk: int):
 
 
 def fetch_by_inn(request):
+    if not _staff_allowed(request):
+        return JsonResponse({"ok": False, "error": "Доступ запрещен"}, status=403)
     inn = (request.GET.get("inn") or "").strip()
     if not inn:
         return JsonResponse({"ok": False, "error": "ИНН обязателен"}, status=400)
@@ -184,6 +426,8 @@ class ClientSKUListView(ListView):
         self.agency = Agency.objects.filter(pk=self.kwargs.get("pk")).first()
         if not self.agency:
             return redirect("/client/")
+        if not _check_agency_access(request, self.agency):
+            return HttpResponseForbidden("Доступ запрещен")
         return super().dispatch(request, *args, **kwargs)
 
     def get_queryset(self):
@@ -199,6 +443,45 @@ class ClientSKUListView(ListView):
                 | models.Q(name__icontains=search)
                 | models.Q(barcodes__value__icontains=search)
             ).distinct()
+        filter_sku = (self.request.GET.get("filter_sku") or "").strip()
+        if filter_sku:
+            qs = qs.filter(sku_code__icontains=filter_sku)
+        filter_name = (self.request.GET.get("filter_name") or "").strip()
+        if filter_name:
+            qs = qs.filter(name__icontains=filter_name)
+        filter_brand = (self.request.GET.get("filter_brand") or "").strip()
+        if filter_brand:
+            escaped = re.escape(filter_brand)
+            qs = qs.filter(brand__iregex=rf"^\s*{escaped}\s*$")
+        filter_market = (self.request.GET.get("filter_market") or "").strip()
+        if filter_market:
+            escaped = re.escape(filter_market)
+            qs = qs.filter(market__name__iregex=rf"^\s*{escaped}\s*$")
+        filter_size = (self.request.GET.get("filter_size") or "").strip()
+        if filter_size:
+            match = re.fullmatch(r"\d+(?:[.,]0+)?", filter_size)
+            if match:
+                num = re.match(r"\d+", filter_size).group(0)
+                size_pattern = rf"^\s*{re.escape(num)}(?:[.,]0+)?\s*$"
+            else:
+                size_pattern = rf"^\s*{re.escape(filter_size)}\s*$"
+            qs = qs.filter(
+                models.Q(size__iregex=size_pattern)
+                | models.Q(barcodes__size__iregex=size_pattern)
+            ).distinct()
+        filter_barcode = (self.request.GET.get("filter_barcode") or "").strip()
+        if filter_barcode:
+            qs = qs.filter(barcodes__value__icontains=filter_barcode).distinct()
+        filter_date = (self.request.GET.get("filter_date") or "").strip()
+        if filter_date:
+            parsed_date = None
+            match = re.fullmatch(r"(\d{2})\.(\d{2})\.(\d{4})", filter_date)
+            if match:
+                parsed_date = f"{match.group(3)}-{match.group(2)}-{match.group(1)}"
+            elif re.fullmatch(r"\d{4}-\d{2}-\d{2}", filter_date):
+                parsed_date = filter_date
+            if parsed_date:
+                qs = qs.filter(updated_at__date=parsed_date)
         return qs.order_by("-updated_at")
 
     def get_context_data(self, **kwargs):
@@ -209,6 +492,119 @@ class ClientSKUListView(ListView):
         ctx["agency"] = self.agency
         ctx["search_value"] = self.request.GET.get("q", "")
         ctx["view_mode"] = view
+        ctx["filter_values"] = {
+            "sku": self.request.GET.get("filter_sku", ""),
+            "name": self.request.GET.get("filter_name", ""),
+            "brand": self.request.GET.get("filter_brand", ""),
+            "market": self.request.GET.get("filter_market", ""),
+            "size": self.request.GET.get("filter_size", ""),
+            "barcode": self.request.GET.get("filter_barcode", ""),
+            "date": self.request.GET.get("filter_date", ""),
+        }
+        ctx["client_view"] = True
+        params = self.request.GET.copy()
+        if "page" in params:
+            params.pop("page")
+        if "view" in params:
+            params.pop("view")
+        ctx["filter_query"] = params.urlencode()
+
+        def normalize_option(value):
+            if value is None:
+                return None
+            text = re.sub(r"\s+", " ", str(value).strip())
+            return text or None
+
+        def normalize_size(value):
+            text = normalize_option(value)
+            if not text:
+                return None
+            match = re.fullmatch(r"(\d+)(?:[.,]0+)?", text)
+            if match:
+                return match.group(1)
+            return text
+
+        brand_seen = {}
+        for value in (
+            SKU.objects.filter(agency=self.agency, deleted=False)
+            .exclude(brand__isnull=True)
+            .exclude(brand__exact="")
+            .values_list("brand", flat=True)
+            .distinct()
+        ):
+            normalized = normalize_option(value)
+            if not normalized:
+                continue
+            key = normalized.lower()
+            brand_seen.setdefault(key, normalized)
+        ctx["brand_options"] = sorted(brand_seen.values(), key=lambda value: value.lower())
+
+        market_seen = {}
+        for value in (
+            SKU.objects.filter(agency=self.agency, deleted=False)
+            .exclude(market__name__isnull=True)
+            .exclude(market__name__exact="")
+            .values_list("market__name", flat=True)
+            .distinct()
+        ):
+            normalized = normalize_option(value)
+            if not normalized:
+                continue
+            key = normalized.lower()
+            market_seen.setdefault(key, normalized)
+        ctx["market_options"] = sorted(market_seen.values(), key=lambda value: value.lower())
+
+        size_values = set()
+        for value in (
+            SKU.objects.filter(agency=self.agency, deleted=False)
+            .exclude(size__isnull=True)
+            .exclude(size__exact="")
+            .values_list("size", flat=True)
+        ):
+            normalized = normalize_size(value)
+            if normalized:
+                size_values.add(normalized)
+        for value in (
+            SKUBarcode.objects.filter(sku__agency=self.agency, sku__deleted=False)
+            .exclude(size__isnull=True)
+            .exclude(size__exact="")
+            .values_list("size", flat=True)
+        ):
+            normalized = normalize_size(value)
+            if normalized:
+                size_values.add(normalized)
+        size_order = [
+            "XXXS",
+            "XXS",
+            "XS",
+            "S",
+            "M",
+            "L",
+            "XL",
+            "XXL",
+            "XXXL",
+            "XXXXL",
+        ]
+
+        def size_sort_key(value):
+            text = str(value or "").strip()
+            upper = text.upper()
+            match = re.match(r"^(\d+(?:[.,]\d+)?)", upper)
+            if match:
+                return (0, float(match.group(1).replace(",", ".")), upper)
+            if upper in size_order:
+                return (1, size_order.index(upper), upper)
+            return (2, upper)
+
+        ctx["size_options"] = sorted(size_values, key=size_sort_key)
+        for item in ctx.get("items", []):
+            size_map = {}
+            for barcode in item.barcodes.all():
+                size_value = (barcode.size or "").strip()
+                if not size_value:
+                    continue
+                size_map.setdefault(size_value, []).append(barcode.value)
+            item.size_map_json = json.dumps(size_map, ensure_ascii=True)
         return ctx
 
 
@@ -222,6 +618,7 @@ class ClientSKUFormMixin:
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
         ctx["agency"] = getattr(self, "agency", None)
+        ctx["client_view"] = True
         return ctx
 
 
@@ -230,6 +627,8 @@ class ClientSKUCreateView(ClientSKUFormMixin, SKUCreateView):
         self.agency = Agency.objects.filter(pk=self.kwargs.get("pk")).first()
         if not self.agency:
             return redirect("/client/")
+        if not _check_agency_access(request, self.agency):
+            return HttpResponseForbidden("Доступ запрещен")
         return super().dispatch(request, *args, **kwargs)
 
     def get_initial(self):
@@ -249,6 +648,8 @@ class ClientSKUUpdateView(ClientSKUFormMixin, SKUUpdateView):
         self.agency = Agency.objects.filter(pk=self.kwargs.get("pk")).first()
         if not self.agency:
             return redirect("/client/")
+        if not _check_agency_access(request, self.agency):
+            return HttpResponseForbidden("Доступ запрещен")
         return super().dispatch(request, *args, **kwargs)
 
     def get_queryset(self):
@@ -263,6 +664,8 @@ class ClientSKUDuplicateView(ClientSKUFormMixin, SKUDuplicateView):
         self.agency = Agency.objects.filter(pk=self.kwargs.get("pk")).first()
         if not self.agency:
             return redirect("/client/")
+        if not _check_agency_access(request, self.agency):
+            return HttpResponseForbidden("Доступ запрещен")
         return super().dispatch(request, *args, **kwargs)
 
     def get_initial(self):
@@ -325,6 +728,8 @@ class ClientOrderFormView(TemplateView):
         self.agency = Agency.objects.filter(pk=self.kwargs.get("pk")).first()
         if not self.agency:
             return redirect("/client/")
+        if not _check_agency_access(request, self.agency):
+            return HttpResponseForbidden("Доступ запрещен")
         return super().dispatch(request, *args, **kwargs)
 
     def post(self, request, *args, **kwargs):
@@ -340,6 +745,7 @@ class ClientOrderFormView(TemplateView):
         ctx = super().get_context_data(**kwargs)
         ctx["agency"] = self.agency
         ctx["submitted"] = kwargs.get("submitted", False)
+        ctx["client_view"] = True
         return ctx
 
 
@@ -350,6 +756,8 @@ class ClientPackingCreateView(TemplateView):
         self.agency = Agency.objects.filter(pk=self.kwargs.get("pk")).first()
         if not self.agency:
             return redirect("/client/")
+        if not _check_agency_access(request, self.agency):
+            return HttpResponseForbidden("Доступ запрещен")
         return super().dispatch(request, *args, **kwargs)
 
     def post(self, request, *args, **kwargs):
@@ -398,6 +806,7 @@ class ClientPackingCreateView(TemplateView):
         ctx["agency"] = self.agency
         ctx["submitted"] = kwargs.get("submitted", False)
         ctx["current_time"] = timezone.now()
+        ctx["client_view"] = True
         return ctx
 
 
@@ -408,6 +817,8 @@ class ClientReceivingCreateView(TemplateView):
         self.agency = Agency.objects.filter(pk=self.kwargs.get("pk")).first()
         if not self.agency:
             return redirect("/client/")
+        if not _check_agency_access(request, self.agency):
+            return HttpResponseForbidden("Доступ запрещен")
         return super().dispatch(request, *args, **kwargs)
 
     def post(self, request, *args, **kwargs):
@@ -433,15 +844,20 @@ class ClientReceivingCreateView(TemplateView):
                     "comment": position_comments[idx] if idx < len(position_comments) else "",
                 }
             )
+        submit_action = request.POST.get("submit_action")
+        status_value = "draft" if submit_action == "draft" else "sent_unconfirmed"
+        status_label = "Черновик" if status_value == "draft" else "Новая заявка"
         payload = {
             "eta_at": request.POST.get("eta_at"),
             "expected_boxes": request.POST.get("expected_boxes"),
             "comment": request.POST.get("comment"),
-            "submit_action": request.POST.get("submit_action"),
+            "submit_action": submit_action,
+            "status": status_value,
+            "status_label": status_label,
             "items": items,
             "documents": [f.name for f in request.FILES.getlist("documents")],
         }
-        action_label = "черновик" if request.POST.get("submit_action") == "draft" else "заявка"
+        action_label = "черновик" if submit_action == "draft" else "заявка"
         order_id = f"rcv-{uuid.uuid4().hex[:8]}"
         log_order_action(
             "create",
@@ -452,6 +868,8 @@ class ClientReceivingCreateView(TemplateView):
             description=f"Заявка на приемку ({action_label})",
             payload=payload,
         )
+        if submit_action != "draft":
+            _create_manager_task(order_id, self.agency, request, timezone.localtime())
         return self.get(request, submitted=True)
 
     def get(self, request, *args, **kwargs):
@@ -463,6 +881,7 @@ class ClientReceivingCreateView(TemplateView):
         ctx = super().get_context_data(**kwargs)
         ctx["agency"] = self.agency
         ctx["submitted"] = kwargs.get("submitted", False)
+        ctx["client_view"] = True
         skus = (
             SKU.objects.filter(agency=self.agency, deleted=False)
             .prefetch_related("barcodes")
