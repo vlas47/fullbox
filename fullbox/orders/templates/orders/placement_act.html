@@ -48,7 +48,7 @@
     th { color: var(--muted); font-weight:600; font-size:12px; text-transform:uppercase; letter-spacing:1px; background:rgba(15,23,42,0.04); }
     .split-grid { display:grid; grid-template-columns: minmax(0, 1fr) 280px; gap:16px; }
     .split-col { display:grid; gap:12px; align-content:start; }
-    input[type="number"], input[type="text"] { width:100%; padding:8px 10px; border-radius:10px; border:1px solid var(--stroke); background:#fff; color:var(--text); font-size:14px; }
+    input[type="number"], input[type="text"], select.loc-input { width:100%; padding:8px 10px; border-radius:10px; border:1px solid var(--stroke); background:#fff; color:var(--text); font-size:14px; }
     .action-bar { display:flex; justify-content:space-between; gap:10px; margin-top:6px; flex-wrap:wrap; align-items:center; }
     .action-left { display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
     .section-title { font-weight:600; margin:18px 0 8px; }
@@ -261,11 +261,6 @@
       </main>
     </div>
   </div>
-
-  <datalist id="location-options">
-    <option value="PR">Зона приемки</option>
-    <option value="OS">Основной склад</option>
-  </datalist>
 
   {{ remaining_items|json_script:"remaining-data" }}
   {{ boxes_data|json_script:"boxes-data" }}
@@ -964,6 +959,11 @@
         const boxMap = new Map(state.boxes.map((box) => [box.code, box]));
         state.pallets.forEach((pallet) => {
           const isActive = state.active.type === 'pallet' && state.active.code === pallet.code;
+          const locationValue = pallet.location || DEFAULT_LOCATION;
+          const locationOptions = ['PR', 'OS'];
+          const customLocationOption = locationOptions.includes(locationValue)
+            ? ''
+            : `<option value="${locationValue}">${locationValue}</option>`;
           const row = document.createElement('tr');
           if (isActive) {
             row.classList.add('is-active-row');
@@ -974,7 +974,13 @@
             <td>${pallet.code || '-'}</td>
             <td><span class="status-pill ${pallet.sealed ? 'closed' : 'open'}">${pallet.sealed ? 'Закрыта' : 'Открыта'}</span></td>
             <td>Коробов: ${boxCount} · Товаров: ${itemCount}</td>
-            <td><input type="text" class="loc-input" data-field="location" list="location-options" value="${pallet.location || DEFAULT_LOCATION}" placeholder="${DEFAULT_LOCATION}"></td>
+            <td>
+              <select class="loc-input" data-field="location">
+                ${customLocationOption}
+                <option value="PR">PR · Зона приемки</option>
+                <option value="OS">OS · Основной склад</option>
+              </select>
+            </td>
             <td>
               <div class="table-actions">
                 <button type="button" class="btn small" data-action="qr" data-code="${pallet.code}">QR</button>
@@ -985,6 +991,10 @@
             </td>
           `;
           palletsBody.appendChild(row);
+          const locationSelect = row.querySelector('select[data-field="location"]');
+          if (locationSelect) {
+            locationSelect.value = locationValue;
+          }
 
           if (!pallet.sealed) {
             const detailsRow = document.createElement('tr');
@@ -1135,18 +1145,11 @@
             palletsBody.appendChild(detailsRow);
           }
 
-          row.querySelectorAll('input[data-field]').forEach((input) => {
-            input.disabled = !isEditable;
-            input.addEventListener('input', () => {
-              pallet.location = input.value || '';
+          row.querySelectorAll('[data-field]').forEach((fieldEl) => {
+            fieldEl.disabled = !isEditable;
+            fieldEl.addEventListener('change', () => {
+              pallet.location = fieldEl.value || DEFAULT_LOCATION;
               updateHidden();
-            });
-            input.addEventListener('blur', () => {
-              if (!input.value.trim()) {
-                input.value = DEFAULT_LOCATION;
-                pallet.location = DEFAULT_LOCATION;
-                updateHidden();
-              }
             });
           });
         });
