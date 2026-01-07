@@ -1,3 +1,4 @@
+{% load static %}
 <!doctype html>
 <html lang="ru">
 <head>
@@ -45,6 +46,9 @@
     input, textarea, select { width:100%; padding:9px 10px; border-radius:10px; border:1px solid var(--stroke); background:#fff; color:var(--text); font-size:14px; }
     .static-field { width:100%; padding:9px 10px; border-radius:10px; border:1px solid var(--stroke); background:rgba(15,23,42,0.03); font-size:14px; font-weight:600; }
     textarea { resize:vertical; min-height:64px; }
+    .inline { display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+    .inline label { display:flex; align-items:center; gap:6px; font-weight:500; margin-bottom:0; }
+    input[type="checkbox"], input[type="radio"] { width:auto; margin:0; accent-color: var(--gold); }
     input[readonly] { color:var(--muted); }
     .table-wrap { overflow:auto; border-radius:14px; border:1px solid var(--stroke); background:rgba(15,23,42,0.03); }
     .receiving-table { width:100%; border-collapse:collapse; min-width:980px; margin:0; }
@@ -89,6 +93,16 @@
       .ghost-btn { padding:8px 12px; border-radius:10px; border:1px solid var(--stroke); background:rgba(15,23,42,0.04); color:var(--text); font-weight:600; }
       .ghost-btn:hover { border-color: var(--gold); box-shadow:0 10px 25px rgba(214,163,0,0.18); }
       .order-link { font-weight:600; }
+      .template-modal { position: fixed; inset: 0; background: rgba(15,23,42,0.45); display: none; align-items: center; justify-content: center; padding: 20px; z-index: 50; }
+      .template-modal.active { display: flex; }
+      .template-modal-card { background: var(--card); border:1px solid var(--stroke); border-radius:18px; padding:20px; width: min(520px, 100%); box-shadow:0 20px 40px rgba(15,23,42,0.2); display: grid; gap: 12px; }
+      .template-modal-header { display:flex; justify-content:space-between; align-items:center; gap:12px; }
+      .template-modal-title { margin:0; font-size:18px; }
+      .template-close { border:none; background:rgba(15,23,42,0.08); border-radius:10px; padding:6px 10px; cursor:pointer; font-weight:600; }
+      .template-hint { color:var(--muted); font-size:13px; margin:0; }
+      .template-file { border:1px dashed var(--stroke); background:var(--card-soft); border-radius:12px; padding:12px; display:grid; gap:8px; }
+      .template-file-list { font-size:12px; color:var(--muted); }
+      .template-file-meta { font-size:12px; color:var(--muted); }
   </style>
 </head>
 <body class="{% if active_tab == 'receiving' %}receiving-page{% endif %}">
@@ -96,13 +110,20 @@
     <header>
       <div>
         <div class="muted">FULLBOX · {% include "partials/current_user.html" %}</div>
-        <h1>Заявка на приемку, статус: {{ status_label }}{% if order_number %} · № {{ order_number }}{% endif %}</h1>
+        {% if active_tab == 'receiving' %}
+          <h1>Заявка на приемку, статус: {{ status_label }}{% if order_number %} · № {{ order_number }}{% endif %}</h1>
+        {% elif active_tab == 'packing' %}
+          <h1>Заявка на упаковку{% if order_number %} · № {{ order_number }}{% endif %}</h1>
+        {% else %}
+          <h1>Журнал заявок</h1>
+        {% endif %}
       </div>
       <div class="btn-row">
         {% if client_view %}
-          <a class="tab {% if active_tab == 'journal' %}active{% endif %}" href="/orders/?client={{ agency.id }}">Журнал заявок</a>
         {% else %}
           <a class="tab {% if active_tab == 'journal' %}active{% endif %}" href="/orders/">Журнал заявок</a>
+          <a class="tab {% if active_tab == 'receiving' %}active{% endif %}" href="/orders/receiving/">Новая приемка</a>
+          <a class="tab {% if active_tab == 'packing' %}active{% endif %}" href="/orders/packing/">Упаковка</a>
         {% endif %}
           {% if client_view %}
             <a class="tab" href="/client/dashboard/?client={{ agency.id }}">В кабинет</a>
@@ -125,6 +146,7 @@
               <th>№ заявки</th>
               <th>Действие</th>
               <th>Статус</th>
+              <th>Кол-во (факт)</th>
               <th>Клиент</th>
             </tr>
           </thead>
@@ -136,10 +158,17 @@
                 <td><a class="order-link" href="{{ entry.detail_url }}">{{ entry.order_id }}</a></td>
                 <td>{{ entry.action_label }}</td>
                 <td>{{ entry.status_label }}</td>
+                <td>
+                  {% if entry.order_type == "receiving" %}
+                    {{ entry.actual_qty|default:"-" }}
+                  {% else %}
+                    -
+                  {% endif %}
+                </td>
                 <td>{{ entry.client_label|default:"-" }}</td>
               </tr>
             {% empty %}
-              <tr><td colspan="6" class="muted">Нет данных</td></tr>
+              <tr><td colspan="7" class="muted">Нет данных</td></tr>
             {% endfor %}
           </tbody>
         </table>
@@ -152,7 +181,6 @@
             {% if agency %}
               <a class="ghost-btn" id="download-template" href="#">Скачать шаблон</a>
               <button class="ghost-btn" id="upload-template" type="button">Загрузить шаблон</button>
-              <input id="template-file" type="file" accept=".xlsx,.xls,.csv" hidden>
               <a class="ghost-btn" href="/client/{{ agency.id }}/sku/?return_to={{ request.get_full_path|urlencode }}">Номенклатура клиента</a>
             {% else %}
               <span class="muted small">Клиент не выбран.</span>
@@ -168,12 +196,44 @@
         {% elif submitted %}
           <div class="notice">Заявка на приемку отправлена. Мы свяжемся с вами для уточнения деталей.</div>
         {% endif %}
+        <div class="notice" id="draft-restore" hidden>
+          Найден автосохраненный черновик заявки. Восстановить или начать новую?
+          <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:8px;">
+            <button type="button" class="action-btn" id="draft-restore-btn">Восстановить</button>
+            <button type="button" class="action-btn" id="draft-discard-btn">Начать новую</button>
+          </div>
+        </div>
 
         <form class="receiving-form" method="post" enctype="multipart/form-data">
           {% csrf_token %}
           {% if edit_mode %}
             <input type="hidden" name="edit_order_id" value="{{ edit_order_id }}">
           {% endif %}
+
+          <div class="template-modal" id="template-modal" aria-hidden="true">
+            <div class="template-modal-card" role="dialog" aria-modal="true" aria-labelledby="template-modal-title">
+              <div class="template-modal-header">
+                <h3 class="template-modal-title" id="template-modal-title">Загрузка шаблонов</h3>
+                <button type="button" class="template-close" id="template-modal-close">Закрыть</button>
+              </div>
+              <p class="template-hint">Загрузите один или оба шаблона. Сначала обновляется номенклатура, затем добавляются позиции в заявку. Шаблон приемки принимает только товары, которые есть в номенклатуре клиента.</p>
+              <div class="template-file">
+                <label for="template-sku-file">Шаблон для загрузки номенклатуры</label>
+                <input id="template-sku-file" name="template_sku_file" type="file" accept=".xlsx,.xls">
+                <div class="template-file-list" id="template-sku-file-list">Файл не выбран.</div>
+                <div class="template-file-meta">Добавляет новые SKU в номенклатуру клиента.</div>
+              </div>
+              <div class="template-file">
+                <label for="template-receiving-file">Шаблон приемки</label>
+                <input id="template-receiving-file" name="template_receiving_file" type="file" accept=".xlsx,.xls">
+                <div class="template-file-list" id="template-receiving-file-list">Файл не выбран.</div>
+                <div class="template-file-meta">Добавляет позиции в состав поставки по уже созданной номенклатуре.</div>
+              </div>
+              <div class="action-bar">
+                <button type="button" class="action-btn" id="template-modal-done">Готово</button>
+              </div>
+            </div>
+          </div>
 
           <div class="receiving-layout">
             <div class="receiving-left">
@@ -347,7 +407,12 @@
                 </div>
                 <div class="action-bar">
                   {% if edit_mode %}
-                    <button type="submit" class="action-btn primary" name="submit_action" value="update">Сохранить изменения</button>
+                    {% if client_view and edit_is_draft %}
+                      <button type="submit" class="action-btn primary" name="submit_action" value="send">Отправить менеджеру</button>
+                      <button type="submit" class="action-btn" name="submit_action" value="draft">Сохранить черновик</button>
+                    {% else %}
+                      <button type="submit" class="action-btn primary" name="submit_action" value="update">Сохранить изменения</button>
+                    {% endif %}
                     <button type="button" class="action-btn" id="clear-form">Очистить</button>
                     {% if edit_order_id %}
                       <a class="action-btn" href="/orders/receiving/{{ edit_order_id }}/">Отмена</a>
@@ -683,8 +748,12 @@
 
       const clientId = '{{ agency.id|default:"" }}';
       const submitted = '{{ submitted|yesno:"1,0" }}' === '1';
+      const isEditMode = '{{ edit_mode|yesno:"1,0" }}' === '1';
       const draftKey = clientId ? `receiving_draft_${clientId}` : '';
       const form = tableBody.closest('form');
+      const draftNotice = document.getElementById('draft-restore');
+      const draftRestoreBtn = document.getElementById('draft-restore-btn');
+      const draftDiscardBtn = document.getElementById('draft-discard-btn');
       const saveDraft = () => {
         if (!draftKey) {
           return;
@@ -718,16 +787,18 @@
         localStorage.setItem(draftKey, JSON.stringify(payload));
       };
 
-      const restoreDraft = () => {
-        if (!draftKey || submitted) {
-          return;
+      const loadDraftPayload = () => {
+        if (!draftKey) {
+          return null;
         }
-        let payload = null;
         try {
-          payload = JSON.parse(localStorage.getItem(draftKey) || '');
+          return JSON.parse(localStorage.getItem(draftKey) || '');
         } catch (err) {
-          payload = null;
+          return null;
         }
+      };
+
+      const applyDraft = (payload) => {
         if (!payload || typeof payload !== 'object') {
           return;
         }
@@ -805,8 +876,28 @@
           fillRow(clone, item);
         });
       };
-
-      restoreDraft();
+      const storedDraft = (!submitted && !isEditMode) ? loadDraftPayload() : null;
+      if (storedDraft && draftNotice) {
+        draftNotice.hidden = false;
+      }
+      if (draftRestoreBtn && storedDraft) {
+        draftRestoreBtn.addEventListener('click', () => {
+          applyDraft(storedDraft);
+          if (draftNotice) {
+            draftNotice.hidden = true;
+          }
+        });
+      }
+      if (draftDiscardBtn && storedDraft) {
+        draftDiscardBtn.addEventListener('click', () => {
+          if (draftKey) {
+            localStorage.removeItem(draftKey);
+          }
+          if (draftNotice) {
+            draftNotice.hidden = true;
+          }
+        });
+      }
 
       if (clientId) {
         const cartKey = `order_cart_${clientId}`;
@@ -1165,23 +1256,84 @@
         }
       }
 
+      const templateFiles = [
+        { url: "{% url 'orders-template-receiving' %}", name: "Шаблон приемки.xlsx" },
+        { url: "{% url 'orders-template-sku-upload' %}", name: "Шаблон для загрузки номенклатуры.xlsx" },
+      ];
       const downloadTemplate = document.getElementById('download-template');
       if (downloadTemplate) {
         downloadTemplate.addEventListener('click', (event) => {
           event.preventDefault();
-          alert('Пока без файла-шаблона.');
+          templateFiles.forEach((file, index) => {
+            const link = document.createElement('a');
+            link.href = file.url;
+            link.download = file.name;
+            link.rel = 'noopener';
+            document.body.appendChild(link);
+            setTimeout(() => {
+              link.click();
+              link.remove();
+            }, index * 150);
+          });
         });
       }
       const uploadTemplate = document.getElementById('upload-template');
-      const templateFile = document.getElementById('template-file');
-      if (uploadTemplate && templateFile) {
-        uploadTemplate.addEventListener('click', () => templateFile.click());
-        templateFile.addEventListener('change', () => {
-          if (templateFile.files && templateFile.files.length) {
-            alert(`Файл выбран: ${templateFile.files[0].name}. Загрузка будет добавлена позже.`);
+      const templateModal = document.getElementById('template-modal');
+      const templateClose = document.getElementById('template-modal-close');
+      const templateDone = document.getElementById('template-modal-done');
+      const templateSkuFile = document.getElementById('template-sku-file');
+      const templateReceivingFile = document.getElementById('template-receiving-file');
+      const templateSkuFileList = document.getElementById('template-sku-file-list');
+      const templateReceivingFileList = document.getElementById('template-receiving-file-list');
+      const closeTemplateModal = () => {
+        if (templateModal) {
+          templateModal.classList.remove('active');
+          templateModal.setAttribute('aria-hidden', 'true');
+        }
+      };
+      const openTemplateModal = () => {
+        if (templateModal) {
+          templateModal.classList.add('active');
+          templateModal.setAttribute('aria-hidden', 'false');
+        }
+        if (templateSkuFile) {
+          templateSkuFile.focus();
+        }
+      };
+      const updateTemplateList = (input, output) => {
+        if (!output) {
+          return;
+        }
+        const files = input?.files || [];
+        output.textContent = files.length ? files[0].name : 'Файл не выбран.';
+      };
+      if (uploadTemplate && templateModal) {
+        uploadTemplate.addEventListener('click', openTemplateModal);
+      }
+      if (templateClose) {
+        templateClose.addEventListener('click', closeTemplateModal);
+      }
+      if (templateDone) {
+        templateDone.addEventListener('click', closeTemplateModal);
+      }
+      if (templateModal) {
+        templateModal.addEventListener('click', (event) => {
+          if (event.target === templateModal) {
+            closeTemplateModal();
           }
         });
       }
+      if (templateSkuFile) {
+        templateSkuFile.addEventListener('change', () => updateTemplateList(templateSkuFile, templateSkuFileList));
+      }
+      if (templateReceivingFile) {
+        templateReceivingFile.addEventListener('change', () => updateTemplateList(templateReceivingFile, templateReceivingFileList));
+      }
+      document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape' && templateModal?.classList.contains('active')) {
+          closeTemplateModal();
+        }
+      });
 
     })();
   </script>

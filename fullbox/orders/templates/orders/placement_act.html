@@ -4,20 +4,19 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Акт размещения · заявка № {{ order_id }}</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600&display=swap" rel="stylesheet">
   <style>
     :root { --bg:#f6f4ed; --card:#ffffff; --card-soft:#f8f6f1; --gold:#c79a1c; --gold-soft:#f2d48c; --muted:#6b7280; --stroke: rgba(31,35,40,0.12); --text:#1f2328; --danger:#d14343; --success:#1f9d55; }
     * { box-sizing: border-box; }
     html, body { height: 100%; }
-    body { margin:0; background:var(--bg); color:var(--text); font-family:'Space Grotesk',system-ui,sans-serif; }
+    body { margin:0; background:var(--bg); color:var(--text); font-family:'Space Grotesk',system-ui,sans-serif; cursor: default; }
     a { color: inherit; text-decoration: none; }
     .wrap { max-width: none; margin: 0; padding: 24px 18px 64px; min-height: 100vh; }
     .detail-layout { display:grid; grid-template-columns: 280px minmax(0, 1fr); gap:16px; align-items:start; }
     .detail-side { display:grid; gap:12px; }
     .detail-main { display:grid; gap:12px; }
     .tab { padding:10px 14px; border-radius:10px; border:1px solid var(--stroke); background:rgba(15,23,42,0.04); color:var(--text); font-weight:600; }
+    .tab:hover { background:rgba(15,23,42,0.1); }
+    .tab:focus-visible { outline:2px solid rgba(199,154,32,0.6); outline-offset:2px; }
     .tab.primary { border-color: var(--gold); color:#1f2328; background: linear-gradient(120deg,var(--gold),var(--gold-soft)); box-shadow:0 10px 30px rgba(199,154,32,0.2); }
     .card { background:var(--card); border:1px solid var(--stroke); border-radius:16px; padding:16px; box-shadow:0 20px 40px rgba(15,23,42,0.12); }
     h1 { margin:0 0 6px; letter-spacing:-0.5px; }
@@ -32,45 +31,48 @@
     .info-item { display:grid; gap:4px; }
     .info-label { font-size:11px; text-transform:uppercase; letter-spacing:1px; color:var(--muted); }
     .info-value { font-weight:600; word-break:break-word; }
-    .side-subtitle { font-size:11px; text-transform:uppercase; letter-spacing:1px; color:var(--muted); margin-top:12px; }
-    .mini-list { display:grid; gap:6px; max-height:180px; overflow:auto; padding-right:4px; }
-    .mini-item { border:1px dashed var(--stroke); border-radius:10px; padding:6px 8px; font-size:12px; display:flex; justify-content:space-between; gap:8px; }
-    .table-wrap { overflow:auto; border-radius:12px; border:1px solid var(--stroke); margin-top:12px; }
+    .mini-list { display:grid; gap:6px; max-height:220px; overflow:auto; padding-right:4px; }
+    .mini-item { border:1px dashed var(--stroke); border-radius:10px; padding:6px 8px; font-size:12px; display:flex; justify-content:space-between; gap:8px; align-items:center; }
+    .mini-content { display:flex; flex-direction:column; gap:4px; }
+    .mini-action { padding:4px 10px; border-radius:999px; border:1px solid var(--stroke); background:rgba(15,23,42,0.04); color:var(--text); font-size:11px; font-weight:600; cursor:pointer; }
+    .mini-action[disabled] { opacity:0.5; cursor:not-allowed; }
+    .table-wrap { overflow:auto; border-radius:12px; border:1px solid var(--stroke); margin-top:12px; max-height: calc(100vh - 320px); }
     .table-wrap table { margin-top:0; }
     .table-wrap thead th { position: sticky; top: 0; background: #f3e6b8; z-index: 1; box-shadow: 0 2px 0 rgba(31,35,40,0.08); }
     .table-wrap tbody tr:nth-child(even) { background: #fbf6e3; }
-    table { width:100%; border-collapse:collapse; min-width:860px; }
-    th, td { border-bottom:1px solid var(--stroke); border-right:1px solid var(--stroke); padding:10px; text-align:left; vertical-align:top; }
+    .table-filter th { background: #f7edc6; }
+    .table-filter select { width:100%; padding:6px 8px; border-radius:8px; border:1px solid var(--stroke); background:#fff; font-size:12px; }
+    table { width:100%; border-collapse:collapse; min-width:0; table-layout:fixed; }
+    th, td { border-bottom:1px solid var(--stroke); border-right:1px solid var(--stroke); padding:10px; text-align:left; vertical-align:top; word-break:break-word; }
     th:last-child, td:last-child { border-right:none; }
     th { color: var(--muted); font-weight:600; font-size:12px; text-transform:uppercase; letter-spacing:1px; background:rgba(15,23,42,0.04); }
+    .split-grid { display:grid; grid-template-columns: minmax(0, 1fr) 280px; gap:16px; }
+    .split-col { display:grid; gap:12px; align-content:start; }
     input[type="number"], input[type="text"] { width:100%; padding:8px 10px; border-radius:10px; border:1px solid var(--stroke); background:#fff; color:var(--text); font-size:14px; }
-    .action-bar { display:flex; justify-content:space-between; gap:10px; margin-top:14px; flex-wrap:wrap; align-items:center; }
+    .action-bar { display:flex; justify-content:space-between; gap:10px; margin-top:6px; flex-wrap:wrap; align-items:center; }
     .action-left { display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
     .section-title { font-weight:600; margin:18px 0 8px; }
-    .container-list { display:grid; gap:12px; margin-top:10px; }
-    .container-card { border:1px solid var(--stroke); border-radius:14px; padding:12px; background:var(--card-soft); display:grid; gap:10px; }
-    .container-head { display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap; align-items:center; }
-    .container-title { font-weight:600; }
-    .container-code { font-size:12px; color:var(--muted); }
-    .container-qr { width:96px; height:96px; background:#fff; border-radius:10px; border:1px dashed var(--stroke); display:flex; align-items:center; justify-content:center; }
-    .container-entry { display:grid; grid-template-columns: 1.2fr 2fr 1fr auto; gap:8px; align-items:end; }
-    .container-entry button { white-space:nowrap; }
-    .container-entry.box-entry { grid-template-columns: 2fr auto; }
-    .container-actions { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
-    .mini-table { width:100%; border-collapse:collapse; }
-    .mini-table th, .mini-table td { border-bottom:1px solid var(--stroke); padding:6px 8px; font-size:13px; }
-    .mini-table th { font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:0.6px; }
-    .pill { display:inline-flex; align-items:center; gap:6px; padding:4px 8px; border-radius:999px; border:1px solid var(--stroke); background:rgba(15,23,42,0.04); font-size:12px; font-weight:600; }
-    .sealed-row { border:1px solid var(--stroke); border-radius:12px; background:var(--card-soft); padding:10px 12px; }
-    .sealed-row summary { list-style:none; cursor:pointer; display:flex; align-items:center; justify-content:space-between; gap:12px; }
-    .sealed-row summary::-webkit-details-marker { display:none; }
-    .sealed-summary { display:flex; gap:12px; align-items:center; }
-    .sealed-body { margin-top:10px; display:grid; gap:10px; }
     .btn { padding:10px 14px; border-radius:10px; border:1px solid var(--stroke); background:rgba(15,23,42,0.04); color:var(--text); font-weight:600; cursor:pointer; }
     .btn.primary { background: linear-gradient(120deg,var(--gold),var(--gold-soft)); color:#1f2328; border-color: transparent; }
     .btn[disabled] { opacity:0.6; cursor:not-allowed; }
+    .btn.small { padding:6px 10px; font-size:11px; }
+    .active-target { display:flex; flex-wrap:wrap; gap:10px; align-items:center; padding:8px 12px; border-radius:12px; border:1px dashed var(--stroke); background:var(--card-soft); }
+    .active-target-name { font-weight:600; }
+    .status-pill { display:inline-flex; align-items:center; gap:6px; padding:4px 8px; border-radius:999px; border:1px solid var(--stroke); background:rgba(15,23,42,0.04); font-size:11px; font-weight:600; }
+    .status-pill.open { border-color: rgba(31,157,85,0.4); color:#166534; background:rgba(31,157,85,0.12); }
+    .status-pill.closed { border-color: rgba(209,67,67,0.3); color:#7f1d1d; background:rgba(209,67,67,0.08); }
+    .table-actions { display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end; }
+    .table-actions .btn { white-space:nowrap; }
+    .pallet-details td { background: #fbf6e3; }
+    .pallet-details-grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap:12px; }
+    .pallet-details-card { background:#fff; border:1px dashed var(--stroke); border-radius:10px; padding:10px; }
+    .pallet-details-title { font-size:11px; text-transform:uppercase; letter-spacing:1px; color:var(--muted); margin-bottom:8px; }
+    .is-active-row { outline:2px solid rgba(199,154,32,0.5); outline-offset:-2px; }
+    .loc-input { min-width:90px; }
+    .is-hidden { display: none; }
     @media (max-width: 1100px) {
       .detail-layout { grid-template-columns: 1fr; }
+      .split-grid { grid-template-columns: 1fr; }
     }
   </style>
 </head>
@@ -100,796 +102,1396 @@
               <div class="info-label">Клиент</div>
               <div class="info-value">{{ client_label }}</div>
             </div>
-          </div>
-        </div>
-
-        <div class="side-card">
-          <h4 class="side-title">Короба и палеты</h4>
-          <div class="side-subtitle">Короба</div>
-          <div class="mini-list" id="boxes-info"></div>
-          <div class="side-subtitle">Палеты</div>
-          <div class="mini-list" id="pallets-info"></div>
-          {% if can_submit %}
-            <div class="side-actions" style="margin-top:10px;">
-              <button class="tab" type="button" id="add-box">Добавить короб</button>
-              <button class="tab" type="button" id="add-pallet">Добавить паллету</button>
+            <div class="info-item">
+              <div class="info-label">Итог</div>
+              <div class="info-value" id="info-summary">
+                По заявке № {{ order_id }} принято и размещено 0 товаров, в 0 коробах, на 0 палете
+              </div>
             </div>
-          {% endif %}
+          </div>
         </div>
       </aside>
 
       <main class="detail-main">
         <div class="card">
-          {% if ok %}
-            <div class="notice">Акт размещения создан.</div>
-          {% endif %}
           {% if error %}
-            <div class="error">Не удалось создать акт размещения. Проверьте данные.</div>
+            <div class="error">Не удалось закрыть акт. Проверьте размещение.</div>
           {% endif %}
-
-          <form method="post">
-            {% csrf_token %}
-            <div class="section-title">Список неразмещенных товаров</div>
-            <div class="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Наименование</th>
-                    <th>Размер</th>
-                    <th>Кол-во неразмещенное</th>
-                  </tr>
-                </thead>
-                <tbody id="remaining-items"></tbody>
-              </table>
+          <div class="action-bar">
+            <div class="action-left">
+              {% if can_submit %}
+                {% if act_state == "closed" %}
+                  <form method="post" id="open-act-form">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="open">
+                  </form>
+                  <button class="btn primary" type="submit" form="open-act-form">Открыть акт</button>
+                {% else %}
+                  <button class="btn primary" type="submit" form="placement-form" id="close-act-btn">Закрыть акт размещения</button>
+                {% endif %}
+              {% endif %}
             </div>
-            <div class="container-list" id="boxes-list"></div>
-            <div class="container-list" id="sealed-boxes"></div>
-            <div class="container-list" id="pallets-list"></div>
+          </div>
 
+          <form method="post" id="placement-form">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="close">
             <input type="hidden" name="boxes_json" id="boxes-json">
             <input type="hidden" name="pallets_json" id="pallets-json">
+            <input type="hidden" name="act_state" value="closed">
 
-            <div class="action-bar">
-              <div class="action-left">
-                {% if act_exists %}
-                  <span class="muted">Акт уже создан.</span>
-                {% endif %}
+            <div class="split-grid">
+              <div class="split-col">
+                <div class="section-title">Неразмещенные товары</div>
+                <div class="table-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th style="width:38%;">Наименование</th>
+                        <th style="width:14%;">Артикул</th>
+                        <th style="width:12%;">Размер</th>
+                        <th>Остаток</th>
+                        <th style="width:160px;"><span id="add-target-label">Выберите контейнер</span></th>
+                      </tr>
+                    </thead>
+                    <tbody id="remaining-items">
+                      {% for item in remaining_items %}
+                        <tr>
+                          <td>{{ item.name|default:"-" }}</td>
+                          <td>{{ item.sku_code|default:"-" }}</td>
+                          <td>{{ item.size|default:"-" }}</td>
+                          <td>{{ item.actual_qty|default:0 }}</td>
+                          <td>-</td>
+                        </tr>
+                      {% empty %}
+                        <tr><td colspan="5" class="muted">Нет данных.</td></tr>
+                      {% endfor %}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div class="section-title">Неразмещенные короба</div>
+                <div class="table-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th style="width:24%;">Короб</th>
+                        <th style="width:14%;">Статус</th>
+                        <th style="width:12%;">Товаров</th>
+                        <th style="width:18%;">Палета</th>
+                        <th>Действия</th>
+                      </tr>
+                    </thead>
+                    <tbody id="boxes-table"></tbody>
+                  </table>
+                </div>
+
+                <div class="section-title">Палеты</div>
+                <div class="table-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th style="width:20%;">Палета</th>
+                        <th style="width:12%;">Статус</th>
+                        <th style="width:16%;">Содержимое</th>
+                        <th style="width:14%;">Стеллаж</th>
+                        <th style="width:12%;">Ряд</th>
+                        <th style="width:12%;">Полка</th>
+                        <th>Действия</th>
+                      </tr>
+                    </thead>
+                    <tbody id="pallets-table"></tbody>
+                  </table>
+                </div>
               </div>
-              <div>
-                {% if can_submit %}
-                  <button class="btn primary" type="submit">Сохранить акт размещения</button>
-                {% else %}
-                  <button class="btn primary" type="button" disabled>Сохранить акт размещения</button>
-                {% endif %}
+
+              <div class="split-col">
+                <div class="section-title">Контейнеры в работе</div>
+                <div class="mini-list" id="open-containers"></div>
+
+                <div class="section-title">Действия</div>
+                <div class="side-actions">
+                  <button type="button" class="tab" id="add-box-btn">Добавить короб</button>
+                  <button type="button" class="tab" id="add-pallet-btn">Добавить палету</button>
+                </div>
+
               </div>
             </div>
           </form>
+
+          {% if act_state == "closed" %}
+            <div class="section-title">Размещенный товар</div>
+            <div class="action-left" style="margin-bottom:10px;">
+              <button type="button" class="btn" id="toggle-placed-btn">Посмотреть размещенный товар</button>
+            </div>
+            <div class="table-wrap is-hidden" id="placed-summary">
+              <table>
+                <thead>
+                  <tr>
+                    <th style="width:36%;">Наименование</th>
+                    <th style="width:10%;">Размер</th>
+                    <th style="width:10%;">Кол-во</th>
+                    <th style="width:14%;">Короб</th>
+                    <th style="width:12%;">Палета</th>
+                    <th>Место хранения</th>
+                  </tr>
+                  <tr class="table-filter">
+                    <th><select data-filter-col="0"><option value="">Все</option></select></th>
+                    <th><select data-filter-col="1"><option value="">Все</option></select></th>
+                    <th><select data-filter-col="2"><option value="">Все</option></select></th>
+                    <th><select data-filter-col="3"><option value="">Все</option></select></th>
+                    <th><select data-filter-col="4"><option value="">Все</option></select></th>
+                    <th><select data-filter-col="5"><option value="">Все</option></select></th>
+                  </tr>
+                </thead>
+                <tbody id="placed-summary-body"></tbody>
+              </table>
+            </div>
+          {% endif %}
         </div>
       </main>
     </div>
   </div>
-  {{ catalog_items|json_script:"catalog-items" }}
-  {{ remaining_items|json_script:"remaining-items-data" }}
+
+  {{ remaining_items|json_script:"remaining-data" }}
   {{ boxes_data|json_script:"boxes-data" }}
   {{ pallets_data|json_script:"pallets-data" }}
-  <datalist id="remaining-sku-options"></datalist>
-  <datalist id="remaining-name-options"></datalist>
-  <datalist id="pallet-sku-options"></datalist>
-  <datalist id="pallet-name-options"></datalist>
-  <datalist id="box-options"></datalist>
-  <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+
   <script>
-    (function(){
-      const catalog = JSON.parse(document.getElementById('catalog-items').textContent || '[]');
-      const baseItems = JSON.parse(document.getElementById('remaining-items-data').textContent || '[]');
+    (() => {
+      const remainingData = JSON.parse(document.getElementById('remaining-data').textContent || '[]');
       const boxesData = JSON.parse(document.getElementById('boxes-data').textContent || '[]');
       const palletsData = JSON.parse(document.getElementById('pallets-data').textContent || '[]');
       const canSubmit = {{ can_submit|yesno:"true,false" }};
-      const boxesList = document.getElementById('boxes-list');
-      const palletsList = document.getElementById('pallets-list');
-      const sealedBoxesList = document.getElementById('sealed-boxes');
+      const actState = "{{ act_state|escapejs }}";
+      const actClosed = actState === 'closed';
+      const orderId = "{{ order_id|escapejs }}";
+
       const remainingBody = document.getElementById('remaining-items');
+      const boxesBody = document.getElementById('boxes-table');
+      const palletsBody = document.getElementById('pallets-table');
+      const addTargetLabel = document.getElementById('add-target-label');
+      const activeTargetName = document.getElementById('active-target-name');
+      const activeTargetStatus = document.getElementById('active-target-status');
+      const openContainersEl = document.getElementById('open-containers');
+      const addBoxBtn = document.getElementById('add-box-btn');
+      const addPalletBtn = document.getElementById('add-pallet-btn');
       const boxesInput = document.getElementById('boxes-json');
       const palletsInput = document.getElementById('pallets-json');
-      const boxesInfoEl = document.getElementById('boxes-info');
-      const palletsInfoEl = document.getElementById('pallets-info');
-      const skuOptions = document.getElementById('remaining-sku-options');
-      const nameOptions = document.getElementById('remaining-name-options');
-      const palletSkuOptions = document.getElementById('pallet-sku-options');
-      const palletNameOptions = document.getElementById('pallet-name-options');
-      const boxOptions = document.getElementById('box-options');
-      const addBoxBtn = document.getElementById('add-box');
-      const addPalletBtn = document.getElementById('add-pallet');
-      if (!boxesList || !palletsList || !boxesInput || !palletsInput || !remainingBody || !sealedBoxesList) {
-        return;
+      const closeActBtn = document.getElementById('close-act-btn');
+      const actStateText = document.getElementById('act-state-text');
+      const formEl = document.getElementById('placement-form');
+      const placedSummary = document.getElementById('placed-summary');
+      const placedSummaryBody = document.getElementById('placed-summary-body');
+      const togglePlacedBtn = document.getElementById('toggle-placed-btn');
+      const placedFilterInputs = placedSummary ? placedSummary.querySelectorAll('select[data-filter-col]') : [];
+
+      const isEditable = canSubmit && !actClosed;
+      if (actStateText) {
+        actStateText.textContent = actClosed
+          ? 'Акт закрыт. Для изменений откройте акт.'
+          : 'Акт открыт для редактирования. Пока открыт — товар скрыт со склада.';
       }
 
-      const makeKey = (sku, name, size) => {
-        return `${(sku || '').trim().toLowerCase()}|${(name || '').trim().toLowerCase()}|${(size || '').trim().toLowerCase()}`;
+      const normalizeBox = (box, index) => {
+        const code = (box || {}).code || `BOX-${index + 1}`;
+        return {
+          code,
+          items: Array.isArray(box.items) ? box.items : [],
+          sealed: box.sealed !== undefined ? !!box.sealed : true,
+        };
       };
 
-      const catalogBySku = {};
-      const catalogByName = {};
-      catalog.forEach((item) => {
-        const sku = (item.sku_code || '').trim();
-        const name = (item.name || '').trim();
-        if (sku) {
-          catalogBySku[sku] = item;
-        }
-        if (name) {
-          catalogByName[name.toLowerCase()] = item;
-        }
-      });
-
-      const baseByKey = {};
-      const baseBySku = {};
-      const baseByName = {};
-      baseItems.forEach((item) => {
-        const sku = (item.sku_code || '').trim();
-        const name = (item.name || '').trim();
-        const size = (item.size || '').trim();
-        const key = makeKey(sku, name, size);
-        baseByKey[key] = {
-          sku,
-          name,
-          size,
-          qty: Number(item.actual_qty || 0),
+      const normalizePallet = (pallet, index) => {
+        const code = (pallet || {}).code || `PALLET-${index + 1}`;
+        const location = (pallet || {}).location || {};
+        return {
+          code,
+          items: Array.isArray(pallet.items) ? pallet.items : [],
+          boxes: Array.isArray(pallet.boxes) ? pallet.boxes : [],
+          sealed: pallet.sealed !== undefined ? !!pallet.sealed : true,
+          location: {
+            rack: location.rack || pallet.rack || '',
+            row: location.row || pallet.row || '',
+            shelf: location.shelf || pallet.shelf || '',
+          },
         };
-        if (sku) {
-          baseBySku[sku] = baseByKey[key];
-        }
-        if (name) {
-          baseByName[name.toLowerCase()] = baseByKey[key];
-        }
-      });
+      };
 
       const state = {
-        boxes: Array.isArray(boxesData) ? boxesData.map((box) => ({ sealed: false, items: [], ...box })) : [],
-        pallets: Array.isArray(palletsData) ? palletsData.map((pallet) => ({ boxes: [], items: [], ...pallet })) : [],
+        boxes: boxesData.map(normalizeBox),
+        pallets: palletsData.map(normalizePallet),
+        active: { type: '', code: '' },
       };
 
-      const updateHidden = () => {
-        boxesInput.value = JSON.stringify(state.boxes);
-        palletsInput.value = JSON.stringify(state.pallets);
+      const baseByKey = {};
+      remainingData.forEach((item) => {
+        const sku = item.sku_code || item.sku || '';
+        const name = item.name || '';
+        const size = item.size || '';
+        const qty = Number(item.actual_qty || item.qty || 0);
+        const key = `${sku}|${name}|${size}`.toLowerCase();
+        if (!baseByKey[key]) {
+          baseByKey[key] = { sku, name, size, qty };
+        }
+      });
+
+      const makeKey = (sku, name, size) => {
+        return `${(sku || '').trim()}|${(name || '').trim()}|${(size || '').trim()}`.toLowerCase();
+      };
+
+      const sumItemQty = (items) => {
+        return (items || []).reduce((sum, item) => sum + Number(item.qty || 0), 0);
       };
 
       const containerQty = (container) => {
-        return (container.items || []).reduce((sum, item) => sum + Number(item.qty || 0), 0);
+        return sumItemQty((container || {}).items || []);
       };
 
-      const renderSidePanel = () => {
-        if (boxesInfoEl) {
-          boxesInfoEl.innerHTML = '';
-          if (!state.boxes.length) {
-            const empty = document.createElement('div');
-            empty.className = 'muted';
-            empty.textContent = 'Нет данных.';
-            boxesInfoEl.appendChild(empty);
-          } else {
-            state.boxes.forEach((box) => {
-              const item = document.createElement('div');
-              item.className = 'mini-item';
-              const status = box.sealed ? 'Сформирован' : 'В работе';
-              item.innerHTML = `
-                <span>${box.code || '-'}</span>
-                <span class="muted">${status} · ${containerQty(box)}</span>
-              `;
-              boxesInfoEl.appendChild(item);
-            });
+      const palletTotalQty = (pallet) => {
+        if (!pallet) {
+          return 0;
+        }
+        const boxMap = new Map(state.boxes.map((box) => [box.code, box]));
+        const directQty = containerQty(pallet);
+        const boxQty = (pallet.boxes || []).reduce((sum, code) => {
+          const box = boxMap.get(code);
+          if (!box) {
+            return sum;
+          }
+          return sum + containerQty(box);
+        }, 0);
+        return directQty + boxQty;
+      };
+
+      const getActiveContainer = () => {
+        if (!state.active.type || !state.active.code) {
+          return null;
+        }
+        const list = state.active.type === 'pallet' ? state.pallets : state.boxes;
+        return list.find((item) => item.code === state.active.code) || null;
+      };
+
+      const findOpenPallet = () => {
+        return state.pallets.find((pallet) => !pallet.sealed);
+      };
+
+      const ensureActiveContainer = () => {
+        const active = getActiveContainer();
+        if (active && active.sealed) {
+          state.active = { type: '', code: '' };
+        }
+        if (isEditable && (!state.active.type || !state.active.code)) {
+          const openPallet = findOpenPallet();
+          if (openPallet) {
+            state.active = { type: 'pallet', code: openPallet.code || '' };
           }
         }
-        if (palletsInfoEl) {
-          palletsInfoEl.innerHTML = '';
-          if (!state.pallets.length) {
-            const empty = document.createElement('div');
-            empty.className = 'muted';
-            empty.textContent = 'Нет данных.';
-            palletsInfoEl.appendChild(empty);
-          } else {
-            state.pallets.forEach((pallet) => {
-              const item = document.createElement('div');
-              item.className = 'mini-item';
-              const boxCount = (pallet.boxes || []).length;
-              item.innerHTML = `
-                <span>${pallet.code || '-'}</span>
-                <span class="muted">Коробов: ${boxCount} · ${containerQty(pallet)}</span>
-              `;
-              palletsInfoEl.appendChild(item);
-            });
-          }
+      };
+
+      const setActiveContainer = (container, type) => {
+        if (!container) {
+          state.active = { type: '', code: '' };
+        } else {
+          state.active = { type, code: container.code || '' };
         }
+        renderActiveTarget();
+        renderRemaining();
       };
 
-      const makeCode = (prefix, index) => {
-        const rand = Math.random().toString(36).slice(2, 6).toUpperCase();
-        return `${prefix}-${index}-${Date.now().toString(36).slice(-4)}${rand}`;
-      };
-
-      const updateRemainingOptions = (rows) => {
-        if (!skuOptions || !nameOptions) {
+      const setActiveByCode = (type, code) => {
+        const list = type === 'pallet' ? state.pallets : state.boxes;
+        const target = list.find((item) => item.code === code);
+        if (!target) {
           return;
         }
-        skuOptions.innerHTML = '';
-        nameOptions.innerHTML = '';
-        const seenSku = new Set();
-        const seenName = new Set();
-        rows.forEach((item) => {
-          const sku = (item.sku || '').trim();
-          const name = (item.name || '').trim();
-          const size = (item.size || '').trim();
-          if (sku && !seenSku.has(sku)) {
-            const opt = document.createElement('option');
-            opt.value = sku;
-            opt.label = `${name}${size ? ` · ${size}` : ''}`;
-            skuOptions.appendChild(opt);
-            seenSku.add(sku);
-          }
-          if (name) {
-            const nameKey = `${name.toLowerCase()}|${size.toLowerCase()}`;
-            if (!seenName.has(nameKey)) {
-              const opt = document.createElement('option');
-              opt.value = name;
-              opt.label = `${sku ? `${sku} · ` : ''}${size || '-'}`;
-              nameOptions.appendChild(opt);
-              seenName.add(nameKey);
-            }
-          }
-        });
+        setActiveContainer(target, type);
       };
 
-      const updateBoxOptions = () => {
-        if (!boxOptions) {
-          return;
-        }
-        boxOptions.innerHTML = '';
-        const used = getAssignedBoxCodes(null);
-        state.boxes
-          .filter((box) => box.sealed && !used.has(box.code))
-          .forEach((box) => {
-            const opt = document.createElement('option');
-            opt.value = box.code;
-            opt.label = 'Сформированный короб';
-            boxOptions.appendChild(opt);
-        });
-      };
-
-      const updatePalletOptions = (rows) => {
-        if (!palletSkuOptions || !palletNameOptions) {
-          return;
-        }
-        palletSkuOptions.innerHTML = '';
-        palletNameOptions.innerHTML = '';
-        const seenSku = new Set();
-        const seenName = new Set();
-        rows.forEach((item) => {
-          const sku = (item.sku || '').trim();
-          const name = (item.name || '').trim();
-          const size = (item.size || '').trim();
-          if (sku && !seenSku.has(sku)) {
-            const opt = document.createElement('option');
-            opt.value = sku;
-            opt.label = `${name}${size ? ` · ${size}` : ''}`;
-            palletSkuOptions.appendChild(opt);
-            seenSku.add(sku);
-          }
-          if (name) {
-            const nameKey = `${name.toLowerCase()}|${size.toLowerCase()}`;
-            if (!seenName.has(nameKey)) {
-              const opt = document.createElement('option');
-              opt.value = name;
-              opt.label = `${sku ? `${sku} · ` : ''}${size || '-'}`;
-              palletNameOptions.appendChild(opt);
-              seenName.add(nameKey);
-            }
-          }
-        });
-        const used = getAssignedBoxCodes(null);
-        state.boxes
-          .filter((box) => box.sealed && !used.has(box.code))
-          .forEach((box) => {
-            if (!seenSku.has(box.code)) {
-              const opt = document.createElement('option');
-              opt.value = box.code;
-              opt.label = 'Короб';
-              palletSkuOptions.appendChild(opt);
-              seenSku.add(box.code);
-            }
-            const nameLabel = `Короб ${box.code}`;
-            const nameKey = nameLabel.toLowerCase();
-            if (!seenName.has(nameKey)) {
-              const opt = document.createElement('option');
-              opt.value = nameLabel;
-              opt.label = 'Короб';
-              palletNameOptions.appendChild(opt);
-              seenName.add(nameKey);
+      const getBoxToPallet = () => {
+        const map = new Map();
+        state.pallets.forEach((pallet) => {
+          (pallet.boxes || []).forEach((code) => {
+            if (!map.has(code)) {
+              map.set(code, pallet.code);
             }
           });
+        });
+        return map;
       };
 
-      const renderQr = (canvas, text) => {
-        if (!canvas || !text) {
+      const formatLocation = (pallet) => {
+        if (!pallet || !pallet.location) {
+          return '-';
+        }
+        const rack = (pallet.location.rack || '').trim();
+        const row = (pallet.location.row || '').trim();
+        const shelf = (pallet.location.shelf || '').trim();
+        if (!rack && !row && !shelf) {
+          return '-';
+        }
+        return `Стеллаж ${rack || '-'} · Ряд ${row || '-'} · Полка ${shelf || '-'}`;
+      };
+
+      const buildPlacementSummary = () => {
+        if (!placedSummaryBody) {
           return;
         }
-        const container = canvas.parentNode;
-        const fallback = () => {
-          if (!container) {
-            return;
+        placedSummaryBody.innerHTML = '';
+        const rows = [];
+        const boxToPallet = getBoxToPallet();
+
+        state.boxes.forEach((box) => {
+          (box.items || []).forEach((item) => {
+            const palletCode = boxToPallet.get(box.code) || '-';
+            const pallet = state.pallets.find((entry) => entry.code === palletCode);
+            rows.push({
+              name: item.name || item.sku || '-',
+              size: item.size || '-',
+              qty: Number(item.qty || 0),
+              boxLabel: box.code || '-',
+              palletLabel: palletCode,
+              location: pallet ? formatLocation(pallet) : '-',
+            });
+          });
+        });
+
+        state.pallets.forEach((pallet) => {
+          (pallet.items || []).forEach((item) => {
+            rows.push({
+              name: item.name || item.sku || '-',
+              size: item.size || '-',
+              qty: Number(item.qty || 0),
+              boxLabel: '-',
+              palletLabel: pallet.code || '-',
+              location: formatLocation(pallet),
+            });
+          });
+        });
+
+        if (!rows.length) {
+          const row = document.createElement('tr');
+          row.innerHTML = '<td colspan="6" class="muted">Нет данных.</td>';
+          placedSummaryBody.appendChild(row);
+          return;
+        }
+
+        rows.forEach((rowData) => {
+          const row = document.createElement('tr');
+          row.innerHTML = `
+            <td>${rowData.name}</td>
+            <td>${rowData.size}</td>
+            <td>${rowData.qty}</td>
+            <td>${rowData.boxLabel}</td>
+            <td>${rowData.palletLabel}</td>
+            <td>${rowData.location}</td>
+          `;
+          placedSummaryBody.appendChild(row);
+        });
+        populatePlacedFilters(rows);
+        applyPlacedFilters();
+      };
+
+      const populatePlacedFilters = (rows) => {
+        if (!placedFilterInputs.length) {
+          return;
+        }
+        const selections = {};
+        placedFilterInputs.forEach((select) => {
+          selections[select.dataset.filterCol] = select.value || '';
+        });
+        const valueSets = Array.from({ length: 6 }, () => new Set());
+        rows.forEach((row) => {
+          valueSets[0].add(String(row.name || '-'));
+          valueSets[1].add(String(row.size || '-'));
+          valueSets[2].add(String(row.qty || '0'));
+          valueSets[3].add(String(row.boxLabel || '-'));
+          valueSets[4].add(String(row.palletLabel || '-'));
+          valueSets[5].add(String(row.location || '-'));
+        });
+        const sortValues = (values, index) => {
+          if (index === 2) {
+            return values.sort((a, b) => Number(a) - Number(b));
           }
-          const img = document.createElement('img');
-          img.alt = 'QR';
-          img.width = 90;
-          img.height = 90;
-          img.src = `https://api.qrserver.com/v1/create-qr-code/?size=90x90&data=${encodeURIComponent(text)}`;
-          container.innerHTML = '';
-          container.appendChild(img);
+          return values.sort((a, b) => a.localeCompare(b, 'ru', { numeric: true, sensitivity: 'base' }));
         };
-        if (typeof QRCode === 'undefined') {
-          fallback();
+        placedFilterInputs.forEach((select) => {
+          const index = Number(select.dataset.filterCol || 0);
+          const values = sortValues(Array.from(valueSets[index]), index);
+          select.innerHTML = '<option value="">Все</option>';
+          values.forEach((value) => {
+            const option = document.createElement('option');
+            option.value = value;
+            option.textContent = value;
+            select.appendChild(option);
+          });
+          const selected = selections[select.dataset.filterCol] || '';
+          if (selected) {
+            select.value = selected;
+          }
+        });
+      };
+
+      const applyPlacedFilters = () => {
+        if (!placedSummaryBody || !placedFilterInputs.length) {
           return;
         }
-        try {
-          QRCode.toCanvas(canvas, text, { width: 90 }, (err) => {
-            if (err) {
-              fallback();
+        const filters = [];
+        placedFilterInputs.forEach((input) => {
+          const index = Number(input.dataset.filterCol || 0);
+          filters[index] = (input.value || '').trim().toLowerCase();
+        });
+        const rows = Array.from(placedSummaryBody.querySelectorAll('tr'));
+        rows.forEach((row) => {
+          const cells = Array.from(row.children);
+          let visible = true;
+          filters.forEach((value, index) => {
+            if (!value) {
+              return;
+            }
+            const text = (cells[index]?.textContent || '').toLowerCase();
+            if (text !== value) {
+              visible = false;
             }
           });
-        } catch (err) {
-          fallback();
+          row.style.display = visible ? '' : 'none';
+        });
+      };
+
+      const addTargetLabelText = (container) => {
+        if (!addTargetLabel) {
+          return;
         }
+        if (!container) {
+          addTargetLabel.textContent = 'Выберите контейнер';
+          return;
+        }
+        addTargetLabel.textContent = container.type === 'pallet' ? 'Добавить в палету' : 'Добавить в короб';
+      };
+
+      const renderActiveTarget = () => {
+        const active = getActiveContainer();
+        if (!activeTargetName || !activeTargetStatus) {
+          return;
+        }
+        if (!active) {
+          activeTargetName.textContent = 'не выбран';
+          activeTargetStatus.classList.add('is-hidden');
+          return;
+        }
+        activeTargetName.textContent = `${state.active.type === 'pallet' ? 'Палета' : 'Короб'} ${active.code}`;
+        const isOpen = !active.sealed;
+        activeTargetStatus.textContent = isOpen ? 'Открыт' : 'Закрыт';
+        activeTargetStatus.classList.remove('open', 'closed', 'is-hidden');
+        activeTargetStatus.classList.add(isOpen ? 'open' : 'closed');
+      };
+
+      const makeCode = (prefix, list) => {
+        const rand = Math.random().toString(36).slice(2, 6).toUpperCase();
+        return `${prefix}-${list.length + 1}-${Date.now().toString(36).slice(-4)}${rand}`;
+      };
+
+      const addBox = () => {
+        const code = makeCode('BOX', state.boxes);
+        const box = { code, items: [], sealed: false };
+        state.boxes.push(box);
+        setActiveContainer(box, 'box');
+        renderAll();
+      };
+
+      const addPallet = () => {
+        const code = makeCode('PALLET', state.pallets);
+        const pallet = { code, items: [], boxes: [], sealed: false, location: { rack: '', row: '', shelf: '' } };
+        state.pallets.push(pallet);
+        setActiveContainer(pallet, 'pallet');
+        renderAll();
       };
 
       const allocationTotals = () => {
         const totals = {};
-        const add = (item, qty) => {
+        const add = (item) => {
           const key = makeKey(item.sku, item.name, item.size);
           if (!key) {
             return;
           }
-          totals[key] = (totals[key] || 0) + qty;
+          totals[key] = (totals[key] || 0) + Number(item.qty || 0);
         };
-        state.boxes.forEach((box) => {
-          (box.items || []).forEach((item) => add(item, Number(item.qty || 0)));
-        });
-        state.pallets.forEach((pallet) => {
-          (pallet.items || []).forEach((item) => add(item, Number(item.qty || 0)));
-        });
+        state.boxes.forEach((box) => (box.items || []).forEach(add));
+        state.pallets.forEach((pallet) => (pallet.items || []).forEach(add));
         return totals;
       };
 
       const getRemainingRows = () => {
         const totals = allocationTotals();
-        return Object.values(baseByKey)
-          .map((item) => {
-            const key = makeKey(item.sku, item.name, item.size);
-            const allocated = totals[key] || 0;
-            return { ...item, remaining: Math.max(0, item.qty - allocated) };
-          })
-          .filter((item) => item.remaining > 0);
+        return Object.values(baseByKey).map((item) => {
+          const key = makeKey(item.sku, item.name, item.size);
+          const allocated = totals[key] || 0;
+          return { ...item, key, remaining: Math.max(0, item.qty - allocated) };
+        });
+      };
+
+      const updateRemainingDisplay = (activeContainer) => {
+        const totals = allocationTotals();
+        remainingBody.querySelectorAll('tr[data-key]').forEach((row) => {
+          const key = row.dataset.key;
+          const base = baseByKey[key];
+          if (!base) {
+            return;
+          }
+          const currentEntry = activeContainer
+            ? (activeContainer.items || []).find((entry) => makeKey(entry.sku, entry.name, entry.size) === key)
+            : null;
+          const currentQty = currentEntry ? Number(currentEntry.qty || 0) : 0;
+          const usedElsewhere = Math.max(0, (totals[key] || 0) - currentQty);
+          const remaining = Math.max(0, base.qty - (usedElsewhere + currentQty));
+          const remainingCell = row.querySelector('.remaining-cell');
+          if (remainingCell) {
+            remainingCell.textContent = remaining;
+          }
+          row.style.display = remaining > 0 || currentQty > 0 ? '' : 'none';
+        });
       };
 
       const renderRemaining = () => {
+        if (!remainingBody) {
+          return;
+        }
         remainingBody.innerHTML = '';
+        const activeContainer = getActiveContainer();
+        addTargetLabelText(activeContainer ? { type: state.active.type } : null);
+        const allowInput = isEditable && activeContainer && !activeContainer.sealed;
         const rows = getRemainingRows();
         if (!rows.length) {
           const row = document.createElement('tr');
-          row.innerHTML = '<td colspan="3" class="muted">Все товары размещены.</td>';
+          row.innerHTML = '<td colspan="5" class="muted">Нет данных.</td>';
           remainingBody.appendChild(row);
-          updateRemainingOptions([]);
-          updatePalletOptions([]);
           return;
         }
         rows.forEach((item) => {
           const row = document.createElement('tr');
+          row.dataset.key = item.key;
           row.innerHTML = `
             <td>${item.name || '-'}</td>
-            <td>${item.size || '-'}</td>
-            <td>${item.remaining}</td>
-          `;
-          remainingBody.appendChild(row);
-        });
-        updateRemainingOptions(rows);
-        updatePalletOptions(rows);
-      };
-
-      const renderItems = (tableBody, items, container, allowRemove) => {
-        tableBody.innerHTML = '';
-        if (!items.length) {
-          const row = document.createElement('tr');
-          const span = canSubmit && allowRemove ? 5 : 4;
-          row.innerHTML = `<td colspan="${span}" class="muted">Товаров пока нет.</td>`;
-          tableBody.appendChild(row);
-          return;
-        }
-        items.forEach((item, idx) => {
-          const row = document.createElement('tr');
-          row.innerHTML = `
             <td>${item.sku || '-'}</td>
-            <td>${item.name || '-'}</td>
             <td>${item.size || '-'}</td>
-            <td>${item.qty || 0}</td>
-            ${canSubmit && allowRemove ? '<td><button type="button" class="btn">Удалить</button></td>' : ''}
+            <td class="remaining-cell">${item.remaining}</td>
           `;
-          if (canSubmit && allowRemove) {
-            row.querySelector('button').addEventListener('click', () => {
-              container.items.splice(idx, 1);
-              renderItems(tableBody, container.items, container, allowRemove);
-              updateHidden();
-              renderRemaining();
-            });
+          const inputCell = document.createElement('td');
+          const input = document.createElement('input');
+          input.type = 'number';
+          input.min = '0';
+          input.step = '1';
+          input.value = '';
+          if (activeContainer) {
+            const currentEntry = (activeContainer.items || []).find((entry) => makeKey(entry.sku, entry.name, entry.size) === item.key);
+            const currentQty = currentEntry ? Number(currentEntry.qty || 0) : 0;
+            input.value = currentQty > 0 ? currentQty : '';
           }
-          tableBody.appendChild(row);
-        });
-      };
-
-      const buildSealedRow = (container, index) => {
-        const details = document.createElement('details');
-        details.className = 'sealed-row';
-        details.innerHTML = `
-          <summary>
-            <div class="sealed-summary">
-              <span class="container-title">Короб ${index}</span>
-              <span class="container-code">${container.code}</span>
-            </div>
-            <span class="pill">Открыть</span>
-          </summary>
-          <div class="sealed-body">
-            <div class="container-qr"><canvas></canvas></div>
-            <table class="mini-table">
-              <thead>
-                <tr>
-                  <th>SKU</th>
-                  <th>Наименование</th>
-                  <th>Размер</th>
-                  <th>Кол-во</th>
-                </tr>
-              </thead>
-              <tbody></tbody>
-            </table>
-          </div>
-        `;
-        const canvas = details.querySelector('canvas');
-        renderQr(canvas, container.code);
-        const tbody = details.querySelector('tbody');
-        renderItems(tbody, container.items, container, false);
-        return details;
-      };
-
-      const getAssignedBoxCodes = (exclude) => {
-        const used = new Set();
-        state.pallets.forEach((pallet) => {
-          if (pallet === exclude) {
-            return;
-          }
-          (pallet.boxes || []).forEach((code) => used.add(code));
-        });
-        return used;
-      };
-
-      const resolveBoxCode = (skuValue, nameValue) => {
-        const sku = (skuValue || '').trim();
-        const name = (nameValue || '').trim();
-        if (sku && !name) {
-          const match = state.boxes.find((box) => box.sealed && box.code === sku);
-          if (match) {
-            return sku;
-          }
-        }
-        if (name) {
-          const normalized = name.toLowerCase();
-          const prefix = 'короб ';
-          if (normalized.startsWith(prefix)) {
-            const candidate = name.slice(prefix.length).trim();
-            const match = state.boxes.find((box) => box.sealed && box.code === candidate);
-            if (match) {
-              return candidate;
-            }
-          }
-          if (!sku) {
-            const match = state.boxes.find((box) => box.sealed && box.code === name);
-            if (match) {
-              return name;
-            }
-          }
-        }
-        return '';
-      };
-
-      const addBoxToPallet = (pallet, code) => {
-        const used = getAssignedBoxCodes(pallet);
-        if (used.has(code)) {
-          alert('Короб уже добавлен в другую палету.');
-          return false;
-        }
-        pallet.boxes = Array.isArray(pallet.boxes) ? pallet.boxes : [];
-        if (pallet.boxes.includes(code)) {
-          alert('Короб уже добавлен.');
-          return false;
-        }
-        pallet.boxes.push(code);
-        return true;
-      };
-
-      const buildContainerCard = (container, kind, index) => {
-        const card = document.createElement('div');
-        card.className = 'container-card';
-        card.dataset.kind = kind;
-        const skuListId = kind === 'pallet' ? 'pallet-sku-options' : 'remaining-sku-options';
-        const nameListId = kind === 'pallet' ? 'pallet-name-options' : 'remaining-name-options';
-        const boxSection = kind === 'pallet'
-          ? `
-            <div class="container-entry box-entry">
-              <input type="text" class="entry-box" placeholder="Короб" list="box-options" ${canSubmit ? '' : 'disabled'}>
-              ${canSubmit ? '<button type="button" class="btn add-box-btn">Добавить короб</button>' : ''}
-            </div>
-            <table class="mini-table box-table">
-              <thead>
-                <tr>
-                  <th>Короб</th>
-                  <th>Кол-во</th>
-                  ${canSubmit ? '<th></th>' : ''}
-                </tr>
-              </thead>
-              <tbody></tbody>
-            </table>
-          `
-          : '';
-        const actionsHtml = canSubmit
-          ? `<div class="container-actions">
-              ${kind === 'box' ? '<button type="button" class="btn finalize-btn">Завершить формирование короба</button>' : ''}
-              <button type="button" class="btn remove-btn">Удалить</button>
-            </div>`
-          : '';
-        card.innerHTML = `
-          <div class="container-head">
-            <div>
-              <div class="container-title">${kind === 'box' ? 'Короб' : 'Палета'} ${index}</div>
-              <div class="container-code">${container.code}</div>
-            </div>
-            <div class="container-qr"><canvas></canvas></div>
-            ${actionsHtml}
-          </div>
-          ${boxSection}
-          <div class="container-entry">
-            <input type="text" class="entry-sku" placeholder="SKU/штрихкод" list="${skuListId}" ${canSubmit ? '' : 'disabled'}>
-            <input type="text" class="entry-name" placeholder="Наименование" list="${nameListId}" ${canSubmit ? '' : 'disabled'}>
-            <input type="number" class="entry-qty" min="1" value="1" ${canSubmit ? '' : 'disabled'}>
-            ${canSubmit ? '<button type="button" class="btn">Добавить товар</button>' : ''}
-          </div>
-          <table class="mini-table">
-            <thead>
-              <tr>
-                <th>SKU</th>
-                <th>Наименование</th>
-                <th>Размер</th>
-                <th>Кол-во</th>
-                ${canSubmit ? '<th></th>' : ''}
-              </tr>
-            </thead>
-            <tbody></tbody>
-          </table>
-        `;
-        const qrCanvas = card.querySelector('canvas');
-        renderQr(qrCanvas, container.code);
-        const tbody = card.querySelector('tbody');
-        renderItems(tbody, container.items, container, true);
-        if (canSubmit) {
-          const removeBtn = card.querySelector('.remove-btn');
-          if (removeBtn) {
-            removeBtn.addEventListener('click', () => {
-              const list = kind === 'box' ? state.boxes : state.pallets;
-              const idx = list.indexOf(container);
-              if (idx >= 0) {
-                list.splice(idx, 1);
-                renderAll();
-                updateHidden();
-                renderRemaining();
-              }
-            });
-          }
-          const finalizeBtn = card.querySelector('.finalize-btn');
-          if (finalizeBtn) {
-            finalizeBtn.addEventListener('click', () => {
-              if (!container.items || !container.items.length) {
-                alert('Добавьте товары в короб перед завершением.');
-                return;
-              }
-              container.sealed = true;
-              renderAll();
-              updateHidden();
-              renderRemaining();
-            });
-          }
-          const addBtn = card.querySelector('.container-entry .btn');
-          const skuInput = card.querySelector('.entry-sku');
-          const nameInput = card.querySelector('.entry-name');
-          const qtyInput = card.querySelector('.entry-qty');
-          const addItem = () => {
-            const sku = (skuInput.value || '').trim();
-            let name = (nameInput.value || '').trim();
-            let size = '';
-            const qty = parseInt(qtyInput.value || '0', 10);
-            if (kind === 'pallet' && !sku && !name) {
+          input.disabled = !allowInput;
+          input.addEventListener('input', () => {
+            if (!activeContainer) {
               return;
             }
-            if (kind === 'pallet') {
-              const boxCode = resolveBoxCode(sku, name);
-              if (boxCode) {
-                const added = addBoxToPallet(container, boxCode);
-                if (added) {
-                  skuInput.value = '';
-                  nameInput.value = '';
-                  qtyInput.value = '1';
-                  renderAll();
-                  updateHidden();
-                }
-                return;
-              }
-            }
-            if (sku && catalogBySku[sku]) {
-              const item = catalogBySku[sku];
-              name = name || item.name || '';
-              size = item.size || '';
-            } else if (name && catalogByName[name.toLowerCase()]) {
-              const item = catalogByName[name.toLowerCase()];
-              size = item.size || '';
-            }
-            const baseKey = makeKey(sku, name, size);
-            const baseItem = baseByKey[baseKey]
-              || (sku ? baseBySku[sku] : null)
-              || (name ? baseByName[name.toLowerCase()] : null);
-            if (!name) {
-              alert('Введите наименование товара.');
-              return;
-            }
-            if (!qty || qty < 1) {
-              alert('Введите количество товара.');
-              return;
-            }
-            if (!baseItem) {
-              alert('Товар не найден в акте приемки.');
-              return;
+            let nextValue = parseInt(input.value || '0', 10);
+            if (Number.isNaN(nextValue) || nextValue < 0) {
+              nextValue = 0;
             }
             const totals = allocationTotals();
-            const remaining = Math.max(
-              0,
-              (baseItem.qty || 0) - (totals[makeKey(baseItem.sku, baseItem.name, baseItem.size)] || 0)
-            );
-            if (qty > remaining) {
-              alert(`Недостаточно товара. Доступно: ${remaining}.`);
+            const currentEntry = (activeContainer.items || []).find((entry) => makeKey(entry.sku, entry.name, entry.size) === item.key);
+            const currentQty = currentEntry ? Number(currentEntry.qty || 0) : 0;
+            const usedElsewhere = Math.max(0, (totals[item.key] || 0) - currentQty);
+            const baseQty = Number(item.qty || 0);
+            const maxQty = Math.max(0, baseQty - usedElsewhere);
+            if (nextValue > maxQty) {
+              nextValue = maxQty;
+            }
+            input.value = nextValue > 0 ? nextValue : '';
+            if (!activeContainer.items) {
+              activeContainer.items = [];
+            }
+            const idx = activeContainer.items.findIndex((entry) => makeKey(entry.sku, entry.name, entry.size) === item.key);
+            if (nextValue === 0) {
+              if (idx >= 0) {
+                activeContainer.items.splice(idx, 1);
+              }
+            } else if (idx >= 0) {
+              activeContainer.items[idx].qty = nextValue;
+            } else {
+              activeContainer.items.push({
+                sku: item.sku || '',
+                name: item.name || '',
+                size: item.size || '',
+                qty: nextValue,
+              });
+            }
+            updateRemainingDisplay(activeContainer);
+            renderBoxesTable();
+            renderPalletsTable();
+            renderOpenContainers();
+            updateHidden();
+          });
+          inputCell.appendChild(input);
+          row.appendChild(inputCell);
+          remainingBody.appendChild(row);
+        });
+        updateRemainingDisplay(activeContainer);
+      };
+
+      const openContainer = (container) => {
+        if (!container) {
+          return;
+        }
+        container.sealed = false;
+      };
+
+      const closeBox = (box) => {
+        if (!box) {
+          return;
+        }
+        if (!box.items || !box.items.length) {
+          const idx = state.boxes.indexOf(box);
+          if (idx >= 0) {
+            state.boxes.splice(idx, 1);
+          }
+        } else {
+          box.sealed = true;
+        }
+      };
+
+      const closePallet = (pallet) => {
+        if (!pallet) {
+          return;
+        }
+        const boxMap = new Map(state.boxes.map((box) => [box.code, box]));
+        const openBoxes = (pallet.boxes || []).filter((code) => {
+          const box = boxMap.get(code);
+          return box && !box.sealed;
+        });
+        if (openBoxes.length) {
+          alert('В палете есть открытые короба. Закройте их перед закрытием палеты.');
+          return;
+        }
+        if ((!pallet.items || !pallet.items.length) && (!pallet.boxes || !pallet.boxes.length)) {
+          const idx = state.pallets.indexOf(pallet);
+          if (idx >= 0) {
+            state.pallets.splice(idx, 1);
+          }
+        } else {
+          pallet.sealed = true;
+        }
+      };
+
+      const addBoxToPallet = (pallet, box) => {
+        if (!pallet || !box) {
+          return;
+        }
+        const used = getBoxToPallet();
+        const existing = used.get(box.code);
+        if (existing && existing !== pallet.code) {
+          alert('Короб уже добавлен в другую палету.');
+          return;
+        }
+        pallet.boxes = Array.isArray(pallet.boxes) ? pallet.boxes : [];
+        if (!pallet.boxes.includes(box.code)) {
+          pallet.boxes.push(box.code);
+        }
+      };
+
+      const removeBoxFromPallet = (pallet, code) => {
+        if (!pallet || !code) {
+          return;
+        }
+        pallet.boxes = (pallet.boxes || []).filter((item) => item !== code);
+      };
+
+      const renderBoxesTable = () => {
+        if (!boxesBody) {
+          return;
+        }
+        boxesBody.innerHTML = '';
+        const boxToPallet = getBoxToPallet();
+        const activePallet = getActiveContainer() && state.active.type === 'pallet' ? getActiveContainer() : null;
+        const displayedBoxes = state.boxes.filter((box) => !boxToPallet.has(box.code));
+
+        if (!displayedBoxes.length) {
+          const row = document.createElement('tr');
+          row.innerHTML = '<td colspan="5" class="muted">Неразмещенных коробов нет.</td>';
+          boxesBody.appendChild(row);
+          return;
+        }
+
+        displayedBoxes.forEach((box) => {
+          const palletCode = boxToPallet.get(box.code) || '-';
+          const pallet = state.pallets.find((item) => item.code === palletCode);
+          const isBoxInClosedPallet = pallet && pallet.sealed;
+          const isActive = state.active.type === 'box' && state.active.code === box.code;
+          const row = document.createElement('tr');
+          if (isActive) {
+            row.classList.add('is-active-row');
+          }
+          row.innerHTML = `
+            <td>${box.code || '-'}</td>
+            <td><span class="status-pill ${box.sealed ? 'closed' : 'open'}">${box.sealed ? 'Закрыт' : 'Открыт'}</span></td>
+            <td>${containerQty(box)}</td>
+            <td>${palletCode}</td>
+            <td>
+              <div class="table-actions">
+                <button type="button" class="btn small" data-action="qr" data-code="${box.code}">QR</button>
+                <button type="button" class="btn small" data-action="edit" data-code="${box.code}" ${(!isEditable || isBoxInClosedPallet) ? 'disabled' : ''}>${box.sealed ? 'Открыть' : 'Редактировать'}</button>
+                <button type="button" class="btn small" data-action="close" data-code="${box.code}" ${(!isEditable || box.sealed) ? 'disabled' : ''}>Закрыть</button>
+                <button type="button" class="btn small" data-action="add" data-code="${box.code}" ${(!isEditable || !activePallet || activePallet.sealed || boxToPallet.has(box.code)) ? 'disabled' : ''}>В палету</button>
+                <button type="button" class="btn small" data-action="remove" data-code="${box.code}" ${(!isEditable || !pallet || pallet.sealed) ? 'disabled' : ''}>Убрать</button>
+                <button type="button" class="btn small" data-action="delete" data-code="${box.code}" ${(!isEditable || isBoxInClosedPallet) ? 'disabled' : ''}>Удалить</button>
+              </div>
+            </td>
+          `;
+          boxesBody.appendChild(row);
+        });
+
+        boxesBody.querySelectorAll('button[data-action]')?.forEach((btn) => {
+          btn.addEventListener('click', () => {
+            const action = btn.dataset.action;
+            const code = btn.dataset.code;
+            const box = state.boxes.find((item) => item.code === code);
+            if (!box) {
               return;
             }
-            const existing = container.items.find((it) => it.sku === baseItem.sku && it.name === baseItem.name && it.size === baseItem.size);
-            if (existing) {
-              existing.qty += qty;
-            } else {
-              container.items.push({ sku: baseItem.sku, name: baseItem.name, size: baseItem.size, qty });
+            if (action === 'qr') {
+              printQr(box.code || '');
+              return;
             }
-            skuInput.value = '';
-            nameInput.value = '';
-            qtyInput.value = '1';
-            renderItems(tbody, container.items, container, true);
-            updateHidden();
-            renderRemaining();
-          };
-          addBtn.addEventListener('click', addItem);
-          skuInput.addEventListener('keydown', (event) => {
-            if (event.key === 'Enter') {
-              event.preventDefault();
-              addItem();
+            if (!isEditable) {
+              return;
             }
-          });
-          if (kind === 'pallet') {
-            const boxSelect = card.querySelector('.entry-box');
-            const boxTableBody = card.querySelector('.box-table tbody');
-            const addBoxButton = card.querySelector('.add-box-btn');
-            const refreshBoxes = () => {
-              boxTableBody.innerHTML = '';
-              const list = Array.isArray(container.boxes) ? container.boxes : [];
-              if (!list.length) {
-                const row = document.createElement('tr');
-                const span = canSubmit ? 3 : 2;
-                row.innerHTML = `<td colspan="${span}" class="muted">Короба не добавлены.</td>`;
-                boxTableBody.appendChild(row);
+            if (action === 'edit') {
+              openContainer(box);
+              setActiveContainer(box, 'box');
+              renderAll();
+              return;
+            }
+            if (action === 'close') {
+              closeBox(box);
+              if (state.active.code === box.code) {
+                setActiveContainer(null, '');
+              }
+              renderAll();
+              return;
+            }
+            if (action === 'add') {
+              const active = getActiveContainer();
+              if (!active || state.active.type !== 'pallet') {
                 return;
               }
-              list.forEach((code, idx) => {
-                const box = state.boxes.find((b) => b.code === code);
-                const count = box ? (box.items || []).reduce((sum, it) => sum + Number(it.qty || 0), 0) : 0;
-                const row = document.createElement('tr');
-                row.innerHTML = `
-                  <td>${code}</td>
-                  <td>${count}</td>
-                  ${canSubmit ? '<td><button type="button" class="btn">Удалить</button></td>' : ''}
-                `;
-                if (canSubmit) {
-                  row.querySelector('button').addEventListener('click', () => {
-                    container.boxes.splice(idx, 1);
-                    renderAll();
-                    updateHidden();
-                  });
-                }
-                boxTableBody.appendChild(row);
+              addBoxToPallet(active, box);
+              renderAll();
+              return;
+            }
+            if (action === 'remove') {
+              const palletCode = getBoxToPallet().get(box.code);
+              const pallet = state.pallets.find((item) => item.code === palletCode);
+              if (!pallet || pallet.sealed) {
+                return;
+              }
+              removeBoxFromPallet(pallet, box.code);
+              renderAll();
+              return;
+            }
+            if (action === 'delete') {
+              if (!confirm('Удалить короб? Товар вернется в неразмещенные.')) {
+                return;
+              }
+              state.boxes = state.boxes.filter((item) => item.code !== box.code);
+              state.pallets.forEach((pallet) => {
+                pallet.boxes = (pallet.boxes || []).filter((item) => item !== box.code);
               });
+              if (state.active.code === box.code) {
+                setActiveContainer(null, '');
+              }
+              renderAll();
+            }
+          });
+        });
+      };
+
+      const renderPalletsTable = () => {
+        if (!palletsBody) {
+          return;
+        }
+        palletsBody.innerHTML = '';
+        if (!state.pallets.length) {
+          const row = document.createElement('tr');
+          row.innerHTML = '<td colspan="7" class="muted">Нет палет.</td>';
+          palletsBody.appendChild(row);
+          return;
+        }
+        const boxMap = new Map(state.boxes.map((box) => [box.code, box]));
+        state.pallets.forEach((pallet) => {
+          const isActive = state.active.type === 'pallet' && state.active.code === pallet.code;
+          const row = document.createElement('tr');
+          if (isActive) {
+            row.classList.add('is-active-row');
+          }
+          const boxCount = (pallet.boxes || []).length;
+          const itemCount = palletTotalQty(pallet);
+          row.innerHTML = `
+            <td>${pallet.code || '-'}</td>
+            <td><span class="status-pill ${pallet.sealed ? 'closed' : 'open'}">${pallet.sealed ? 'Закрыта' : 'Открыта'}</span></td>
+            <td>Коробов: ${boxCount} · Товаров: ${itemCount}</td>
+            <td><input type="text" class="loc-input" data-field="rack" value="${pallet.location.rack || ''}"></td>
+            <td><input type="text" class="loc-input" data-field="row" value="${pallet.location.row || ''}"></td>
+            <td><input type="text" class="loc-input" data-field="shelf" value="${pallet.location.shelf || ''}"></td>
+            <td>
+              <div class="table-actions">
+                <button type="button" class="btn small" data-action="qr" data-code="${pallet.code}">QR</button>
+                <button type="button" class="btn small" data-action="edit" data-code="${pallet.code}" ${!isEditable ? 'disabled' : ''}>${pallet.sealed ? 'Открыть' : 'Редактировать'}</button>
+                <button type="button" class="btn small" data-action="close" data-code="${pallet.code}" ${(!isEditable || pallet.sealed) ? 'disabled' : ''}>Закрыть</button>
+                <button type="button" class="btn small" data-action="delete" data-code="${pallet.code}" ${!isEditable ? 'disabled' : ''}>Удалить</button>
+              </div>
+            </td>
+          `;
+          palletsBody.appendChild(row);
+
+          if (!pallet.sealed) {
+            const detailsRow = document.createElement('tr');
+            detailsRow.className = 'pallet-details';
+            const cell = document.createElement('td');
+            cell.colSpan = 7;
+            const grid = document.createElement('div');
+            grid.className = 'pallet-details-grid';
+
+            const addCard = (title, listEl) => {
+              const card = document.createElement('div');
+              card.className = 'pallet-details-card';
+              const titleEl = document.createElement('div');
+              titleEl.className = 'pallet-details-title';
+              titleEl.textContent = title;
+              card.appendChild(titleEl);
+              card.appendChild(listEl);
+              grid.appendChild(card);
             };
-            refreshBoxes();
-            if (addBoxButton) {
-              addBoxButton.addEventListener('click', () => {
-                const code = (boxSelect.value || '').trim();
-                if (!code) {
-                  alert('Выберите короб.');
-                  return;
-                }
-                const box = state.boxes.find((item) => item.code === code && item.sealed);
-                if (!box) {
-                  alert('Короб не найден среди сформированных.');
-                  return;
-                }
-                const used = getAssignedBoxCodes(container);
-                if (used.has(code)) {
-                  alert('Короб уже добавлен в другую палету.');
-                  return;
-                }
-                if (addBoxToPallet(container, code)) {
+
+            const boxList = document.createElement('div');
+            boxList.className = 'mini-list';
+            if (!(pallet.boxes || []).length) {
+              const empty = document.createElement('div');
+              empty.className = 'muted';
+              empty.textContent = 'Короба не добавлены.';
+              boxList.appendChild(empty);
+            } else {
+              pallet.boxes.forEach((code) => {
+                const box = boxMap.get(code);
+                const item = document.createElement('div');
+                item.className = 'mini-item';
+                const qty = box ? containerQty(box) : 0;
+                item.innerHTML = `
+                  <div class="mini-content">
+                    <span>${code}</span>
+                    <span class="muted">${qty} товаров</span>
+                  </div>
+                `;
+                const actions = document.createElement('div');
+                const removeBtn = document.createElement('button');
+                removeBtn.type = 'button';
+                removeBtn.className = 'mini-action';
+                removeBtn.textContent = 'Извлечь';
+                removeBtn.disabled = !isEditable;
+                removeBtn.addEventListener('click', () => {
+                  removeBoxFromPallet(pallet, code);
                   renderAll();
-                  updateHidden();
-                  boxSelect.value = '';
-                }
+                });
+                actions.appendChild(removeBtn);
+                item.appendChild(actions);
+                boxList.appendChild(item);
               });
             }
+            addCard('Короба в палете', boxList);
+
+            const directItems = Array.isArray(pallet.items) ? pallet.items : [];
+            const directList = document.createElement('div');
+            directList.className = 'mini-list';
+            if (!directItems.length) {
+              const empty = document.createElement('div');
+              empty.className = 'muted';
+              empty.textContent = 'Товаров на палете нет.';
+              directList.appendChild(empty);
+            } else {
+              directItems.forEach((item) => {
+                const sku = item.sku || item.sku_code || '';
+                const nameRaw = item.name || '';
+                const sizeRaw = item.size || '';
+                const name = nameRaw || sku || '-';
+                const size = sizeRaw || '-';
+                const qty = Number(item.qty || 0);
+                const rowItem = document.createElement('div');
+                rowItem.className = 'mini-item';
+                rowItem.innerHTML = `
+                  <div class="mini-content">
+                    <span>${name}</span>
+                    <span class="muted">Размер: ${size} · ${qty} шт.</span>
+                  </div>
+                `;
+                const editBtn = document.createElement('button');
+                editBtn.type = 'button';
+                editBtn.className = 'mini-action';
+                editBtn.textContent = 'Редактировать';
+                editBtn.disabled = !isEditable;
+                editBtn.addEventListener('click', () => {
+                  setActiveContainer(pallet, 'pallet');
+                  focusRemainingItem(key);
+                });
+                rowItem.appendChild(editBtn);
+                directList.appendChild(rowItem);
+              });
+            }
+            addCard('Товары на палете', directList);
+
+            const boxItems = [];
+            (pallet.boxes || []).forEach((code) => {
+              const box = boxMap.get(code);
+              if (!box) {
+                return;
+              }
+              (box.items || []).forEach((item) => {
+                boxItems.push({ box, code, item });
+              });
+            });
+            const boxItemsList = document.createElement('div');
+            boxItemsList.className = 'mini-list';
+            if (!boxItems.length) {
+              const empty = document.createElement('div');
+              empty.className = 'muted';
+              empty.textContent = 'Товаров в коробах нет.';
+              boxItemsList.appendChild(empty);
+            } else {
+              boxItems.forEach((entry) => {
+                const item = entry.item || {};
+                const sku = item.sku || item.sku_code || '';
+                const nameRaw = item.name || '';
+                const sizeRaw = item.size || '';
+                const key = makeKey(sku, nameRaw, sizeRaw);
+                const name = nameRaw || sku || '-';
+                const size = sizeRaw || '-';
+                const qty = Number(item.qty || 0);
+                const rowItem = document.createElement('div');
+                rowItem.className = 'mini-item';
+                rowItem.innerHTML = `
+                  <div class="mini-content">
+                    <span>${name}</span>
+                    <span class="muted">Размер: ${size} · ${qty} шт. · ${entry.code}</span>
+                  </div>
+                `;
+                const extractBtn = document.createElement('button');
+                extractBtn.type = 'button';
+                extractBtn.className = 'mini-action';
+                extractBtn.textContent = 'Извлечь короб';
+                extractBtn.disabled = !isEditable;
+                extractBtn.addEventListener('click', () => {
+                  removeBoxFromPallet(pallet, entry.code);
+                  renderAll();
+                });
+                rowItem.appendChild(extractBtn);
+                boxItemsList.appendChild(rowItem);
+              });
+            }
+            addCard('Товары в коробах', boxItemsList);
+
+            cell.appendChild(grid);
+            detailsRow.appendChild(cell);
+            palletsBody.appendChild(detailsRow);
           }
+
+          row.querySelectorAll('input[data-field]').forEach((input) => {
+            const field = input.dataset.field;
+            input.disabled = !isEditable;
+            input.addEventListener('input', () => {
+              pallet.location = pallet.location || { rack: '', row: '', shelf: '' };
+              pallet.location[field] = input.value || '';
+              updateHidden();
+            });
+          });
+        });
+
+        palletsBody.querySelectorAll('button[data-action]')?.forEach((btn) => {
+          btn.addEventListener('click', () => {
+            const action = btn.dataset.action;
+            const code = btn.dataset.code;
+            const pallet = state.pallets.find((item) => item.code === code);
+            if (!pallet) {
+              return;
+            }
+            if (action === 'qr') {
+              printQr(pallet.code || '');
+              return;
+            }
+            if (!isEditable) {
+              return;
+            }
+            if (action === 'edit') {
+              openContainer(pallet);
+              setActiveContainer(pallet, 'pallet');
+              renderAll();
+              return;
+            }
+            if (action === 'close') {
+              closePallet(pallet);
+              if (state.active.code === pallet.code) {
+                setActiveContainer(null, '');
+              }
+              renderAll();
+              return;
+            }
+            if (action === 'delete') {
+              if (!confirm('Удалить палету? Короба останутся без палеты.')) {
+                return;
+              }
+              state.pallets = state.pallets.filter((item) => item.code !== pallet.code);
+              if (state.active.code === pallet.code) {
+                setActiveContainer(null, '');
+              }
+              renderAll();
+            }
+          });
+        });
+      };
+
+      const renderOpenContainers = () => {
+        if (!openContainersEl) {
+          return;
         }
-        return card;
+        openContainersEl.innerHTML = '';
+        const boxToPallet = getBoxToPallet();
+        const openBoxes = state.boxes.filter((box) => !box.sealed && !boxToPallet.has(box.code));
+        const openPallets = state.pallets.filter((pallet) => !pallet.sealed);
+        if (!openBoxes.length && !openPallets.length) {
+          const empty = document.createElement('div');
+          empty.className = 'muted';
+          empty.textContent = 'Нет открытых контейнеров.';
+          openContainersEl.appendChild(empty);
+          return;
+        }
+        openBoxes.forEach((box) => {
+          const item = document.createElement('div');
+          item.className = 'mini-item';
+          item.innerHTML = `
+            <div class="mini-content">
+              <span>${box.code || '-'}</span>
+              <span class="muted">Короб · ${containerQty(box)} товаров</span>
+            </div>
+          `;
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = 'mini-action';
+          btn.textContent = 'Закрыть';
+          btn.disabled = !isEditable;
+          btn.addEventListener('click', () => {
+            closeBox(box);
+            if (state.active.code === box.code) {
+              setActiveContainer(null, '');
+            }
+            renderAll();
+          });
+          item.appendChild(btn);
+          item.addEventListener('click', () => {
+            if (!isEditable) {
+              return;
+            }
+            setActiveContainer(box, 'box');
+          });
+          openContainersEl.appendChild(item);
+        });
+        openPallets.forEach((pallet) => {
+          const item = document.createElement('div');
+          item.className = 'mini-item';
+          item.innerHTML = `
+            <div class="mini-content">
+              <span>${pallet.code || '-'}</span>
+              <span class="muted">Палета · ${palletTotalQty(pallet)} товаров</span>
+            </div>
+          `;
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = 'mini-action';
+          btn.textContent = 'Закрыть';
+          btn.disabled = !isEditable;
+          btn.addEventListener('click', () => {
+            closePallet(pallet);
+            if (state.active.code === pallet.code) {
+              setActiveContainer(null, '');
+            }
+            renderAll();
+          });
+          item.appendChild(btn);
+          item.addEventListener('click', () => {
+            if (!isEditable) {
+              return;
+            }
+            setActiveContainer(pallet, 'pallet');
+          });
+          openContainersEl.appendChild(item);
+        });
+      };
+
+      const focusRemainingItem = (key) => {
+        if (!remainingBody || !key) {
+          return;
+        }
+        const rows = remainingBody.querySelectorAll('tr[data-key]');
+        for (const row of rows) {
+          if (row.dataset.key !== key) {
+            continue;
+          }
+          row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          const input = row.querySelector('input');
+          if (input) {
+            input.focus();
+            input.select();
+          }
+          break;
+        }
+      };
+
+
+      const cleanupEmptyContainers = () => {
+        const removedBoxes = new Set();
+        state.boxes = state.boxes.filter((box) => {
+          const hasItems = (box.items || []).length > 0;
+          if (!hasItems) {
+            removedBoxes.add(box.code);
+          }
+          return hasItems;
+        });
+        state.pallets.forEach((pallet) => {
+          pallet.boxes = (pallet.boxes || []).filter((code) => !removedBoxes.has(code));
+        });
+        state.pallets = state.pallets.filter((pallet) => {
+          return (pallet.items || []).length > 0 || (pallet.boxes || []).length > 0;
+        });
+      };
+
+      const validateClose = () => {
+        const errors = [];
+        const remaining = getRemainingRows();
+        if (remaining.some((item) => item.remaining > 0)) {
+          errors.push('Не весь товар размещен.');
+        }
+        const boxToPallet = getBoxToPallet();
+        const unassignedBoxes = state.boxes.filter((box) => !boxToPallet.has(box.code));
+        if (unassignedBoxes.length) {
+          errors.push('Разместите все короба на палетах.');
+        }
+        const openBoxes = state.boxes.filter((box) => !box.sealed && containerQty(box) > 0);
+        const openPallets = state.pallets.filter((pallet) => !pallet.sealed && (containerQty(pallet) > 0 || (pallet.boxes || []).length > 0));
+        if (openBoxes.length || openPallets.length) {
+          errors.push('Закройте все короба и палеты.');
+        }
+        state.pallets.forEach((pallet) => {
+          const hasItems = (pallet.items || []).length > 0 || (pallet.boxes || []).length > 0;
+          if (!hasItems) {
+            return;
+          }
+          const location = pallet.location || {};
+          if (!location.rack || !location.row || !location.shelf) {
+            errors.push(`Укажите место хранения для палеты ${pallet.code}.`);
+          }
+        });
+        return errors;
+      };
+
+      const updateHidden = () => {
+        if (boxesInput) {
+          boxesInput.value = JSON.stringify(state.boxes);
+        }
+        if (palletsInput) {
+          palletsInput.value = JSON.stringify(state.pallets);
+        }
+        if (isEditable) {
+          saveDraft();
+        }
+      };
+
+      const updateInfoTotals = () => {
+        const summaryEl = document.getElementById('info-summary');
+        if (!summaryEl) {
+          return;
+        }
+        const totalItems = Object.values(baseByKey).reduce(
+          (sum, item) => sum + Number(item.qty || 0),
+          0
+        );
+        const totalBoxes = state.boxes.filter((box) => (box.items || []).length > 0).length;
+        const totalPallets = state.pallets.filter((pallet) => {
+          return (pallet.items || []).length > 0 || (pallet.boxes || []).length > 0;
+        }).length;
+        const pluralize = (count, one, few, many) => {
+          const value = Math.abs(Number(count)) % 100;
+          const remainder = value % 10;
+          if (value > 10 && value < 20) {
+            return many;
+          }
+          if (remainder > 1 && remainder < 5) {
+            return few;
+          }
+          if (remainder === 1) {
+            return one;
+          }
+          return many;
+        };
+        const itemsLabel = pluralize(totalItems, 'товар', 'товара', 'товаров');
+        const boxesLabel = pluralize(totalBoxes, 'коробе', 'коробах', 'коробах');
+        const palletsLabel = pluralize(totalPallets, 'палете', 'палетах', 'палетах');
+        summaryEl.textContent = `По заявке № ${orderId} принято и размещено ${totalItems} ${itemsLabel}, в ${totalBoxes} ${boxesLabel}, на ${totalPallets} ${palletsLabel}`;
       };
 
       const renderAll = () => {
-        boxesList.innerHTML = '';
-        sealedBoxesList.innerHTML = '';
-        palletsList.innerHTML = '';
-        state.boxes.forEach((box, idx) => {
-          if (box.sealed) {
-            sealedBoxesList.appendChild(buildSealedRow(box, idx + 1));
-          } else {
-            boxesList.appendChild(buildContainerCard(box, 'box', idx + 1));
-          }
-        });
-        state.pallets.forEach((pallet, idx) => {
-          palletsList.appendChild(buildContainerCard(pallet, 'pallet', idx + 1));
-        });
-        if (!sealedBoxesList.children.length) {
-          const empty = document.createElement('div');
-          empty.className = 'muted';
-          empty.textContent = 'Пока нет сформированных коробов.';
-          sealedBoxesList.appendChild(empty);
-        }
-        updateBoxOptions();
-        updatePalletOptions(getRemainingRows());
-        renderSidePanel();
-      };
-
-      const addContainer = (kind) => {
-        const list = kind === 'box' ? state.boxes : state.pallets;
-        const code = makeCode(kind === 'box' ? 'BOX' : 'PALLET', list.length + 1);
-        if (kind === 'box') {
-          list.push({ code, items: [], sealed: false });
-        } else {
-          list.push({ code, items: [], boxes: [] });
-        }
-        renderAll();
+        ensureActiveContainer();
+        renderActiveTarget();
+        renderRemaining();
+        renderBoxesTable();
+        renderPalletsTable();
+        renderOpenContainers();
+        updateInfoTotals();
         updateHidden();
       };
 
-      if (canSubmit) {
-        if (addBoxBtn) {
-          addBoxBtn.addEventListener('click', () => addContainer('box'));
+      const printQr = (code) => {
+        if (!code) {
+          return;
         }
-        if (addPalletBtn) {
-          addPalletBtn.addEventListener('click', () => addContainer('pallet'));
+        const widthMm = 58 * 0.95;
+        const heightMm = 60 * 0.95;
+        const url = `https://api.qrserver.com/v1/create-qr-code/?size=360x360&data=${encodeURIComponent(code)}`;
+        const win = window.open('', '_blank', 'width=520,height=640');
+        if (!win) {
+          return;
         }
+        win.document.write(`
+          <html>
+            <head>
+              <title>QR ${code}</title>
+              <style>
+                body { margin:0; display:flex; align-items:center; justify-content:center; height:100vh; }
+                img { width:${widthMm}mm; height:${heightMm}mm; }
+              </style>
+            </head>
+            <body>
+              <img src="${url}" alt="QR" />
+            </body>
+          </html>
+        `);
+        win.document.close();
+      };
+
+      const draftKey = orderId ? `placement-act-${orderId}` : null;
+      const saveDraft = () => {
+        if (!draftKey || actClosed) {
+          return;
+        }
+        const payload = {
+          boxes: state.boxes,
+          pallets: state.pallets,
+          active: state.active,
+        };
+        try {
+          localStorage.setItem(draftKey, JSON.stringify(payload));
+        } catch (err) {
+          // ignore
+        }
+      };
+
+      const loadDraft = () => {
+        if (!draftKey || actClosed) {
+          return;
+        }
+        try {
+          const raw = localStorage.getItem(draftKey);
+          if (!raw) {
+            return;
+          }
+          if (!confirm('Найден черновик размещения. Восстановить?')) {
+            return;
+          }
+          const parsed = JSON.parse(raw);
+          if (parsed && typeof parsed === 'object') {
+            if (Array.isArray(parsed.boxes)) {
+              state.boxes = parsed.boxes.map(normalizeBox);
+            }
+            if (Array.isArray(parsed.pallets)) {
+              state.pallets = parsed.pallets.map(normalizePallet);
+            }
+            if (parsed.active) {
+              state.active = parsed.active;
+            }
+          }
+        } catch (err) {
+          // ignore
+        }
+      };
+
+      if (actClosed && draftKey) {
+        localStorage.removeItem(draftKey);
       }
 
+      if (addBoxBtn) {
+        addBoxBtn.disabled = !isEditable;
+        addBoxBtn.addEventListener('click', () => {
+          if (!isEditable) {
+            return;
+          }
+          addBox();
+        });
+      }
+      if (addPalletBtn) {
+        addPalletBtn.disabled = !isEditable;
+        addPalletBtn.addEventListener('click', () => {
+          if (!isEditable) {
+            return;
+          }
+          addPallet();
+        });
+      }
+
+      if (formEl) {
+        formEl.addEventListener('submit', (event) => {
+          if (!isEditable) {
+            event.preventDefault();
+            return;
+          }
+          cleanupEmptyContainers();
+          const errors = validateClose();
+          if (errors.length) {
+            event.preventDefault();
+            alert(errors.join('\n'));
+            return;
+          }
+          updateHidden();
+          if (draftKey) {
+            localStorage.removeItem(draftKey);
+          }
+        });
+      }
+
+      loadDraft();
       renderAll();
-      updateHidden();
-      renderRemaining();
+
+      if (togglePlacedBtn && placedSummary) {
+        togglePlacedBtn.addEventListener('click', () => {
+          const isHidden = placedSummary.classList.contains('is-hidden');
+          if (isHidden) {
+            buildPlacementSummary();
+            placedSummary.classList.remove('is-hidden');
+            togglePlacedBtn.textContent = 'Скрыть размещенный товар';
+          } else {
+            placedSummary.classList.add('is-hidden');
+            togglePlacedBtn.textContent = 'Посмотреть размещенный товар';
+          }
+        });
+      }
+
+      if (placedFilterInputs && placedFilterInputs.length) {
+        placedFilterInputs.forEach((input) => {
+          input.addEventListener('input', applyPlacedFilters);
+        });
+      }
     })();
   </script>
 </body>

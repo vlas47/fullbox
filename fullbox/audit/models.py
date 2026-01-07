@@ -49,6 +49,9 @@ class AuditEntry(models.Model):
     )
     action = models.CharField("Действие", max_length=32, choices=ACTION_CHOICES)
     sku = models.ForeignKey("sku.SKU", on_delete=models.SET_NULL, null=True, blank=True, related_name="audit_entries")
+    agency = models.ForeignKey(
+        "sku.Agency", on_delete=models.SET_NULL, null=True, blank=True, related_name="audit_entries"
+    )
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Пользователь"
     )
@@ -62,7 +65,8 @@ class AuditEntry(models.Model):
         ordering = ["-created_at"]
 
     def __str__(self):
-        return f"{self.get_action_display()} {self.sku} ({self.created_at:%Y-%m-%d %H:%M})"
+        subject = self.sku or self.agency or "-"
+        return f"{self.get_action_display()} {subject} ({self.created_at:%Y-%m-%d %H:%M})"
 
 
 def get_sku_journal():
@@ -83,6 +87,54 @@ def log_sku_change(action: str, sku, user=None, description: str = "", snapshot:
         journal=journal,
         action=action,
         sku=sku,
+        agency=None,
+        user=user,
+        description=description,
+        snapshot=snap,
+    )
+
+
+def agency_snapshot(agency):
+    if not agency:
+        return {}
+    return {
+        "id": agency.id,
+        "agn_name": agency.agn_name,
+        "pref": agency.pref,
+        "inn": agency.inn,
+        "kpp": agency.kpp,
+        "ogrn": agency.ogrn,
+        "phone": agency.phone,
+        "email": agency.email,
+        "adres": agency.adres,
+        "fakt_adres": agency.fakt_adres,
+        "fio_agn": agency.fio_agn,
+        "sign_oferta": agency.sign_oferta,
+        "use_nds": agency.use_nds,
+        "contract_numb": agency.contract_numb,
+        "contract_link": agency.contract_link,
+        "archived": agency.archived,
+        "portal_user_id": agency.portal_user_id,
+    }
+
+
+def get_agency_journal():
+    return AuditJournal.objects.get_or_create(
+        code="agency",
+        defaults={
+            "name": "Изменения клиентов",
+            "description": "Фиксация операций с клиентами (создание, изменение, архивирование).",
+        },
+    )[0]
+
+
+def log_agency_change(action: str, agency, user=None, description: str = "", snapshot: dict | None = None):
+    snap = snapshot if snapshot is not None else agency_snapshot(agency)
+    journal = get_agency_journal()
+    AuditEntry.objects.create(
+        journal=journal,
+        action=action,
+        agency=agency,
         user=user,
         description=description,
         snapshot=snap,

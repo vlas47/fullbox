@@ -12,9 +12,17 @@ class AuditJournalAdmin(admin.ModelAdmin):
 
 @admin.register(AuditEntry)
 class AuditEntryAdmin(admin.ModelAdmin):
-    list_display = ("created_at", "journal", "action", "sku", "user", "description")
+    list_display = ("created_at", "journal", "action", "sku", "agency", "user", "description")
     list_filter = ("action", "user", "journal")
-    search_fields = ("sku__sku_code", "sku__name", "description", "journal__name", "journal__code")
+    search_fields = (
+        "sku__sku_code",
+        "sku__name",
+        "agency__agn_name",
+        "agency__inn",
+        "description",
+        "journal__name",
+        "journal__code",
+    )
     ordering = ("-created_at",)
 
 

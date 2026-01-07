@@ -43,10 +43,14 @@ def _send_receiving_to_warehouse(task, request) -> bool:
     payload = dict(latest.payload or {})
     status_value = (payload.get("status") or payload.get("submit_action") or "").lower()
     status_label = (payload.get("status_label") or "").lower()
-    if status_value in {"warehouse", "on_warehouse"} or "склад" in status_label:
+    if (
+        status_value in {"warehouse", "on_warehouse"}
+        or "склад" in status_label
+        or "ожидании поставки" in status_label
+    ):
         return True
     payload["status"] = "warehouse"
-    payload["status_label"] = "На складе"
+    payload["status_label"] = "В ожидании поставки товара"
     log_order_action(
         "status",
         order_id=order_id,
@@ -116,7 +120,11 @@ def _can_create_receiving_act(task) -> tuple[bool, str | None, list]:
     payload = status_entry.payload or {} if status_entry else {}
     status_value = (payload.get("status") or payload.get("submit_action") or "").lower()
     status_label = (payload.get("status_label") or "").lower()
-    if status_value in {"warehouse", "on_warehouse"} or "склад" in status_label:
+    if (
+        status_value in {"warehouse", "on_warehouse"}
+        or "склад" in status_label
+        or "ожидании поставки" in status_label
+    ):
         return True, order_id, entries
     return False, order_id, entries
 
@@ -411,6 +419,8 @@ def task_detail(request, pk):
                     if entry.action != "comment"
                 ],
             }
+            if order_context["status_label"] in ("-", "", None):
+                order_context["status_label"] = "В ожидании поставки товара"
     context = {
         "task": task,
         "comments": comments,

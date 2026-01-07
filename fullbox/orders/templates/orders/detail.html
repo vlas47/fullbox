@@ -83,50 +83,56 @@
             {% else %}
               <a class="tab" href="/orders/">Журнал заявок</a>
             {% endif %}
-            {% if can_edit_order %}
-              <a class="tab" href="/orders/receiving/?edit={{ order_id }}{% if agency %}&agency={{ agency.id }}{% endif %}">Исправить заявку</a>
-            {% endif %}
-            {% if can_send_to_warehouse %}
-              <form method="post">
-                {% csrf_token %}
-                <input type="hidden" name="action" value="send_to_warehouse">
-                <button class="tab" type="submit">Подтвердить и отправить на склад</button>
-              </form>
-            {% endif %}
-            {% if can_send_act_to_client %}
-              <form method="post">
-                {% csrf_token %}
-                <input type="hidden" name="action" value="send_act_to_client">
-                <button class="tab primary" type="submit">Отправить акт клиенту</button>
-              </form>
-            {% endif %}
-            {% if not client_view %}
-              {% if can_create_receiving_act and not has_receiving_act %}
-                <a class="tab" href="/orders/receiving/{{ order_id }}/act/">Создать акт приемки</a>
+            {% if order_type == 'receiving' %}
+              {% if can_edit_order %}
+                <a class="tab" href="/orders/receiving/?edit={{ order_id }}{% if agency %}&agency={{ agency.id }}{% endif %}">Исправить заявку</a>
               {% endif %}
-              {% if has_receiving_act %}
-                <a class="tab" href="/orders/receiving/{{ order_id }}/act/">
-                  {{ act_label|default:"Открыть акт приемки" }}
+              {% if can_send_to_warehouse %}
+                <form method="post">
+                  {% csrf_token %}
+                  <input type="hidden" name="action" value="send_to_warehouse">
+                  <button class="tab" type="submit">Подтвердить и отправить на склад</button>
+                </form>
+              {% endif %}
+              {% if can_send_act_to_client %}
+                <form method="post">
+                  {% csrf_token %}
+                  <input type="hidden" name="action" value="send_act_to_client">
+                  <button class="tab primary" type="submit">Отправить акт клиенту</button>
+                </form>
+              {% endif %}
+              {% if not client_view %}
+                {% if can_create_receiving_act and not has_receiving_act %}
+                  <a class="tab" href="/orders/receiving/{{ order_id }}/act/">Взять в работу</a>
+                {% endif %}
+                {% if has_receiving_act %}
+                  <a class="tab" href="/orders/receiving/{{ order_id }}/act/">
+                    {{ act_label|default:"Открыть акт приемки" }}
+                  </a>
+                {% endif %}
+                {% if has_placement_act %}
+                  <a class="tab" href="/orders/receiving/{{ order_id }}/placement/">
+                    {{ placement_act_label|default:"Открыть акт размещения" }}
+                  </a>
+                {% elif can_create_placement_act %}
+                  <a class="tab" href="/orders/receiving/{{ order_id }}/placement/">
+                    Создать акт размещения
+                  </a>
+                {% endif %}
+              {% endif %}
+              {% if client_view and has_receiving_act %}
+                <a class="tab" href="/orders/receiving/{{ order_id }}/act/?client={{ agency.id }}">
+                  {{ act_label|default:"Акт приемки" }}
                 </a>
               {% endif %}
-              {% if has_placement_act %}
-                <a class="tab" href="/orders/receiving/{{ order_id }}/placement/">
-                  {{ placement_act_label|default:"Открыть акт размещения" }}
-                </a>
-              {% elif can_create_placement_act %}
-                <a class="tab" href="/orders/receiving/{{ order_id }}/placement/">
-                  Создать акт размещения
-                </a>
-              {% endif %}
-            {% endif %}
-            {% if client_view and has_receiving_act %}
-              <a class="tab" href="/orders/receiving/{{ order_id }}/act/?client={{ agency.id }}">
-                {{ act_label|default:"Акт приемки" }}
-              </a>
             {% endif %}
             {% if client_view %}
               <a class="tab" href="/client/dashboard/?client={{ agency.id }}">В кабинет</a>
-              <a class="tab" href="/orders/receiving/?client={{ agency.id }}">Новая приемка</a>
+              {% if order_type == 'receiving' %}
+                <a class="tab" href="/orders/receiving/?client={{ agency.id }}">Новая приемка</a>
+              {% elif order_type == 'packing' %}
+                <a class="tab" href="/orders/packing/?client={{ agency.id }}">Новая упаковка</a>
+              {% endif %}
             {% else %}
               <a class="tab" href="{{ cabinet_url }}">В кабинет</a>
             {% endif %}
@@ -148,33 +154,59 @@
 
       <main class="detail-main">
         <div class="card table-card">
-          <h3>Состав поставки</h3>
-          <div class="table-scroll">
-            <table>
-              <thead>
-                <tr>
-                  <th>SKU</th>
-                  <th>Наименование</th>
-                  <th>Размер</th>
-                  <th>Количество</th>
-                  <th>Комментарий</th>
-                </tr>
-              </thead>
-              <tbody>
-                {% for item in items %}
+          {% if order_type == 'receiving' %}
+            <h3>Состав поставки</h3>
+            <div class="table-scroll">
+              <table>
+                <thead>
                   <tr>
-                    <td>{{ item.sku_code|default:"-" }}</td>
-                    <td>{{ item.name|default:"-" }}</td>
-                    <td>{{ item.size|default:"-" }}</td>
-                    <td>{{ item.qty|default:"-" }}</td>
-                    <td>{{ item.comment|default:"-" }}</td>
+                    <th>SKU</th>
+                    <th>Наименование</th>
+                    <th>Размер</th>
+                    <th>Кол-во (план)</th>
+                    <th>Кол-во (факт)</th>
+                    <th>Комментарий</th>
                   </tr>
-                {% empty %}
-                  <tr><td colspan="5" class="muted">Товарные позиции не указаны.</td></tr>
-                {% endfor %}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {% for item in items %}
+                    <tr>
+                      <td>{{ item.sku_code|default:"-" }}</td>
+                      <td>{{ item.name|default:"-" }}</td>
+                      <td>{{ item.size|default:"-" }}</td>
+                      <td>{{ item.qty|default_if_none:"-" }}</td>
+                      <td>{{ item.actual_qty|default_if_none:"-" }}</td>
+                      <td>{{ item.comment|default:"-" }}</td>
+                    </tr>
+                  {% empty %}
+                    <tr><td colspan="6" class="muted">Товарные позиции не указаны.</td></tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          {% elif order_type == 'packing' %}
+            <h3>Детали заявки</h3>
+            <div class="table-scroll">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Поле</th>
+                    <th>Значение</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for row in packing_fields %}
+                    <tr>
+                      <td>{{ row.label }}</td>
+                      <td>{{ row.value }}</td>
+                    </tr>
+                  {% empty %}
+                    <tr><td colspan="2" class="muted">Данные не указаны.</td></tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          {% endif %}
 
           <h3 style="margin-top:18px;">История</h3>
           <div class="history-wrap">
@@ -204,6 +236,7 @@
             </table>
           </div>
         </div>
+
       </main>
 
       <aside class="detail-chat">
@@ -214,30 +247,65 @@
               <div class="info-label">Клиент</div>
               <div class="info-value">{{ client_label|default:"-" }}</div>
             </div>
-            <div class="info-item">
-              <div class="info-label">Дата/время прибытия</div>
-              <div class="info-value">{{ meta.eta_at|default:"-" }}</div>
-            </div>
-            <div class="info-item">
-              <div class="info-label">Количество мест</div>
-              <div class="info-value">{{ meta.expected_boxes|default:"-" }}</div>
-            </div>
-            <div class="info-item">
-              <div class="info-label">Тип мест</div>
-              <div class="info-value">{{ meta.place_type|default:"-" }}</div>
-            </div>
-            <div class="info-item">
-              <div class="info-label">Номер авто</div>
-              <div class="info-value">{{ meta.vehicle_number|default:"-" }}</div>
-            </div>
-            <div class="info-item">
-              <div class="info-label">Телефон водителя</div>
-              <div class="info-value">{{ meta.driver_phone|default:"-" }}</div>
-            </div>
-            <div class="info-item">
-              <div class="info-label">Комментарий</div>
-              <div class="info-value">{{ meta.comment|default:"-" }}</div>
-            </div>
+            {% if order_type == 'receiving' %}
+              <div class="info-item">
+                <div class="info-label">Дата/время прибытия</div>
+                <div class="info-value">{{ meta.eta_at|default:"-" }}</div>
+              </div>
+              <div class="info-item">
+                <div class="info-label">Количество мест</div>
+                <div class="info-value">{{ meta.expected_boxes|default:"-" }}</div>
+              </div>
+              <div class="info-item">
+                <div class="info-label">Тип мест</div>
+                <div class="info-value">{{ meta.place_type|default:"-" }}</div>
+              </div>
+              <div class="info-item">
+                <div class="info-label">Номер авто</div>
+                <div class="info-value">{{ meta.vehicle_number|default:"-" }}</div>
+              </div>
+              <div class="info-item">
+                <div class="info-label">Телефон водителя</div>
+                <div class="info-value">{{ meta.driver_phone|default:"-" }}</div>
+              </div>
+              <div class="info-item">
+                <div class="info-label">Комментарий</div>
+                <div class="info-value">{{ meta.comment|default:"-" }}</div>
+              </div>
+            {% elif order_type == 'packing' %}
+              <div class="info-item">
+                <div class="info-label">Плановая дата</div>
+                <div class="info-value">{{ packing_meta.plan_date|default:"-" }}</div>
+              </div>
+              <div class="info-item">
+                <div class="info-label">Общее количество</div>
+                <div class="info-value">{{ packing_meta.total_qty|default:"-" }}</div>
+              </div>
+              <div class="info-item">
+                <div class="info-label">Маркетплейсы</div>
+                <div class="info-value">{{ packing_meta.marketplaces|default:"-" }}</div>
+              </div>
+              <div class="info-item">
+                <div class="info-label">Кратность коробов</div>
+                <div class="info-value">{{ packing_meta.box_mode|default:"-" }}</div>
+              </div>
+              <div class="info-item">
+                <div class="info-label">Маркировка</div>
+                <div class="info-value">{{ packing_meta.marking|default:"-" }}</div>
+              </div>
+              <div class="info-item">
+                <div class="info-label">Отгрузка</div>
+                <div class="info-value">{{ packing_meta.ship_as|default:"-" }}</div>
+              </div>
+              <div class="info-item">
+                <div class="info-label">Распределение</div>
+                <div class="info-value">{{ packing_meta.has_distribution|default:"-" }}</div>
+              </div>
+              <div class="info-item">
+                <div class="info-label">Комментарий</div>
+                <div class="info-value">{{ packing_meta.comment|default:"-" }}</div>
+              </div>
+            {% endif %}
           </div>
         </div>
 

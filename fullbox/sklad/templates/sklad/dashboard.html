@@ -253,6 +253,12 @@
       min-height: 0;
       overflow: auto;
       padding-right: 4px;
+      align-content: start;
+      align-items: start;
+      grid-auto-rows: min-content;
+    }
+    .task-shell .task-card {
+      align-self: start;
     }
     .task-shell .card > div > .muted {
       display: none;
@@ -341,6 +347,10 @@
           <a class="nav-link" href="/sklad/journal/">
             <span class="nav-title">Складские остатки</span>
             <span class="nav-sub">Актуальные стоки</span>
+          </a>
+          <a class="nav-link" href="/scanner-settings/">
+            <span class="nav-title">Настройка сканеров</span>
+            <span class="nav-sub">Тест оборудования</span>
           </a>
           <a class="nav-link" href="/client/">
             <span class="nav-title">Клиенты</span>

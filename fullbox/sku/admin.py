@@ -11,7 +11,7 @@ from .models import (
     SKUPhoto,
     Store,
 )
-from audit.models import log_sku_change, sku_snapshot
+from audit.models import agency_snapshot, log_agency_change, log_sku_change, sku_snapshot
 
 
 class SKUBarcodeInline(admin.TabularInline):
@@ -97,6 +97,28 @@ class AgencyAdmin(admin.ModelAdmin):
     list_display = ("id", "agn_name", "inn", "email", "phone", "use_nds")
     search_fields = ("agn_name", "inn", "pref", "email")
     list_filter = ("use_nds",)
+
+    def save_model(self, request, obj, form, change):
+        action = "update" if change else "create"
+        super().save_model(request, obj, form, change)
+        log_agency_change(
+            action,
+            obj,
+            user=request.user,
+            description="Сохранение клиента через админку",
+            snapshot=agency_snapshot(obj),
+        )
+
+    def delete_model(self, request, obj):
+        snapshot = agency_snapshot(obj)
+        log_agency_change(
+            "delete",
+            obj,
+            user=request.user,
+            description="Удаление клиента через админку",
+            snapshot=snapshot,
+        )
+        super().delete_model(request, obj)
 
 
 @admin.register(Store)

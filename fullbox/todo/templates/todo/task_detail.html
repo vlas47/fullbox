@@ -95,7 +95,7 @@
               {% if receiving_act_exists %}
                 <a class="tab" href="{{ receiving_act_open_url }}">{{ receiving_act_label|default:"Акт приемки" }}</a>
               {% elif can_create_receiving_act and receiving_act_open_url %}
-                <a class="tab" href="{{ receiving_act_open_url }}">Создать акт приемки</a>
+                <a class="tab" href="{{ receiving_act_open_url }}">Взять в работу</a>
               {% endif %}
               {% if placement_act_exists %}
                 <a class="tab" href="{{ placement_act_open_url }}">{{ placement_act_label|default:"Акт размещения" }}</a>
@@ -122,7 +122,7 @@
                 {% if receiving_act_exists %}
                   <a class="tab primary" href="{{ receiving_act_open_url }}">{{ receiving_act_label|default:"Акт приемки" }}</a>
                 {% elif can_create_receiving_act and receiving_act_url %}
-                  <a class="tab primary" href="{{ receiving_act_url }}">Создать акт приемки</a>
+                  <a class="tab primary" href="{{ receiving_act_url }}">Взять в работу</a>
                 {% endif %}
                 {% if placement_act_exists %}
                   <a class="tab" href="{{ placement_act_open_url }}">{{ placement_act_label|default:"Акт размещения" }}</a>

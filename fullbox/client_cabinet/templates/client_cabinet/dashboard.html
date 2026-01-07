@@ -154,11 +154,12 @@
       display: grid;
       gap: 18px;
       align-self: start;
-      max-height: calc(100vh - 96px);
+      height: calc(100vh - 96px);
       overflow: hidden;
     }
     .rail .panel {
       height: 100%;
+      min-height: 0;
       display: grid;
       grid-template-rows: auto 1fr;
     }
@@ -336,6 +337,11 @@
       gap: 6px;
       transition: transform 0.2s ease, box-shadow 0.2s ease;
     }
+    .order-card.attention {
+      border-color: var(--sun);
+      background: linear-gradient(135deg, rgba(242,183,71,0.2), rgba(14,107,91,0.08));
+      box-shadow: 0 14px 26px rgba(242,183,71,0.24);
+    }
     .order-card:hover {
       transform: translateY(-2px);
       box-shadow: 0 12px 22px rgba(15,23,42,0.12);
@@ -361,7 +367,7 @@
       gap: 10px;
       align-content: start;
       min-height: 0;
-      overflow: auto;
+      overflow-y: auto;
       padding-right: 4px;
     }
     .message-card {
@@ -399,6 +405,7 @@
       .side,
       .content,
       .rail {
+        height: auto;
         max-height: none;
         overflow: visible;
         padding-right: 0;
@@ -449,7 +456,7 @@
               <span class="nav-title">Заявка на приемку</span>
               <span class="nav-sub">Отправить поставку</span>
             </a>
-            <a class="nav-link" href="/client/{{ selected_client.id }}/packing/new/">
+            <a class="nav-link" href="/orders/packing/?client={{ selected_client.id }}">
               <span class="nav-title">Заявка на упаковку</span>
               <span class="nav-sub">Подготовка товара</span>
             </a>
@@ -506,7 +513,7 @@
                 <div class="orders-list">
                   {% if column.orders %}
                     {% for order in column.orders %}
-                      <article class="order-card">
+                      <article class="order-card{% if order.attention %} attention{% endif %}">
                         <div class="order-title">
                           <a href="{{ order.detail_url }}">{{ order.title }}</a>
                         </div>
@@ -538,7 +545,7 @@
                 {% for message in client_messages %}
                   <article class="message-card reveal" style="--i:{{ forloop.counter }}">
                     <div class="message-title">
-                      <a href="{{ message.detail_url }}">Изменения по заявке</a>
+                      <a href="{{ message.detail_url }}">{{ message.title }}</a>
                     </div>
                     <div class="message-time">{{ message.created_at|date:"d.m.Y, H:i" }}</div>
                     <div>{{ message.text }}</div>
