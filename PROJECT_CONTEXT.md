@@ -252,6 +252,9 @@
 - 2026-01-07 11:51: increased facsimile preview darkness (contrast 1.7, brightness 0.65) to improve visibility; deployed and restarted `fullbox`.
 - 2026-01-07 18:55: added new `stockmap` app with storekeeper access and "Карта склада" button, plus stockmap table template; deployed and restarted `fullbox`.
 - 2026-01-07 19:03: expanded stockmap table with free/occupied columns and full-width layout; deployed and restarted `fullbox`.
+- 2026-01-07 19:07: updated stockmap capacity to compute total cells per row as sections * tiers * cells per tier; deployed and restarted `fullbox`.
+- 2026-01-07 19:18: added OS row detail page with rack view (sections/tiers/cells) and linked row numbers in stockmap table; deployed and restarted `fullbox`.
+- 2026-01-07 19:21: removed "Ярус" label and tightened rack layout to fit more sections on screen; deployed and restarted `fullbox`.
 - 2026-01-07 11:39: reviewed `README.md`, `description.md`, and `PROJECT_CONTEXT.md` to refresh project overview.
 - 2026-01-07 11:41: reviewed `fullbox/sku/models.py` to list client (Agency) fields.
 - 2026-01-07 11:48: checked local SQLite `fullbox/db.sqlite3` for Agency pref заполненность (counts and sample rows).
@@ -277,3 +280,5 @@
 - 2026-01-07 18:55: deployed updated todo panel code to server and restarted `fullbox`.
 - 2026-01-07 19:06: made task cards compact (no stretch) and limited attention highlight to act sign tasks (`fullbox/todo/templates/todo/_task_panel.html`).
 - 2026-01-07 19:06: deployed updated task panel template and restarted `fullbox`.
+- 2026-01-07 19:24: styled main stock row links as buttons in stockmap overview (`fullbox/stockmap/templates/stockmap/stockmap.html`).
+- 2026-01-07 19:24: deployed updated stockmap template to server; `fullbox` service active after restart.
