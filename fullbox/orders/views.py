@@ -19,6 +19,7 @@ from employees.models import Employee
 from employees.access import RoleRequiredMixin, get_request_role, resolve_cabinet_url
 from sku.models import Agency, SKU, SKUBarcode
 from todo.models import Task
+from stockmap.views import _OS_CELLS_PER_TIER, _OS_ROW_SECTIONS, _OS_TIERS
 
 
 _IP_PREFIX_RE = re.compile(r"\bиндивидуальный предприниматель\b", re.IGNORECASE)
@@ -337,6 +338,69 @@ def _parse_qty_value(raw: str | None) -> int | None:
         return int(text)
     except (TypeError, ValueError):
         return None
+
+
+def _parse_int_value(raw) -> int:
+    try:
+        return int(str(raw).strip())
+    except (TypeError, ValueError):
+        return 0
+
+
+def _normalize_zone_code(raw: str) -> str:
+    text = (raw or "").strip()
+    if not text:
+        return ""
+    if re.search(r"^pr$", text, re.IGNORECASE) or re.search(
+        r"зона приемки|поле приемки", text, re.IGNORECASE
+    ):
+        return "PR"
+    if re.search(r"^otg?$", text, re.IGNORECASE) or re.search(
+        r"зона отгрузки|отгрузк", text, re.IGNORECASE
+    ):
+        return "OTG"
+    if re.search(r"^mr$", text, re.IGNORECASE) or re.search(
+        r"между ряд", text, re.IGNORECASE
+    ):
+        return "MR"
+    if re.search(r"^os$", text, re.IGNORECASE) or re.search(
+        r"основн|стеллаж|ряд|полк|секци|ярус|ячейк", text, re.IGNORECASE
+    ):
+        return "OS"
+    return text.upper()
+
+
+def _location_parts(location_value, pallet=None):
+    pallet = pallet or {}
+    zone = ""
+    row = 0
+    section = 0
+    tier = 0
+    cell = 0
+    if isinstance(location_value, dict):
+        zone = _normalize_zone_code(location_value.get("zone") or "")
+        row = _parse_int_value(location_value.get("row") or pallet.get("row"))
+        section = _parse_int_value(location_value.get("section"))
+        tier = _parse_int_value(location_value.get("tier"))
+        cell = _parse_int_value(location_value.get("cell"))
+    elif isinstance(location_value, str):
+        zone = _normalize_zone_code(location_value)
+    if not zone:
+        zone = _normalize_zone_code(pallet.get("zone") or "")
+    if zone == "OS" and not (row and section and tier and cell):
+        row = row or _parse_int_value(pallet.get("row"))
+        section = section or _parse_int_value(pallet.get("section"))
+        tier = tier or _parse_int_value(pallet.get("tier"))
+        cell = cell or _parse_int_value(pallet.get("cell"))
+    if zone == "MR" and not row:
+        row = _parse_int_value(pallet.get("row"))
+    return {
+        "zone": zone,
+        "row": row,
+        "section": section,
+        "tier": tier,
+        "cell": cell,
+    }
 
 
 def _item_key(sku: str | None, name: str | None, size: str | None) -> str:
@@ -3259,70 +3323,66 @@ class PlacementActView(RoleRequiredMixin, TemplateView):
         ]
         if unassigned_boxes:
             return redirect(f"/orders/receiving/{order_id}/placement/?error=1")
-        default_location = "PR"
+        default_zone = "PR"
+        allowed_zones = {"PR", "OTG", "MR", "OS"}
+        occupied_cells = set()
+        seen_orders = set()
+        for entry in (
+            OrderAuditEntry.objects.filter(order_type=self.order_type)
+            .exclude(order_id=order_id)
+            .order_by("-created_at")
+        ):
+            if entry.order_id in seen_orders:
+                continue
+            payload = entry.payload or {}
+            if payload.get("act") != "placement":
+                continue
+            state = (payload.get("act_state") or "closed").lower()
+            if state != "closed":
+                continue
+            seen_orders.add(entry.order_id)
+            for pallet in payload.get("act_pallets") or []:
+                parts = _location_parts((pallet or {}).get("location"), pallet)
+                if parts.get("zone") != "OS":
+                    continue
+                if all(parts.get(key) for key in ("row", "section", "tier", "cell")):
+                    occupied_cells.add(
+                        (parts["row"], parts["section"], parts["tier"], parts["cell"])
+                    )
+
+        used_cells = set()
         for pallet in pallets_data:
             if not isinstance(pallet, dict):
                 continue
             if not pallet.get("sealed"):
                 return redirect(f"/orders/receiving/{order_id}/placement/?error=1")
-            location_value = pallet.get("location")
-            location_text = ""
-            if isinstance(location_value, dict):
-                zone = (location_value.get("zone") or "").strip()
-                if zone:
-                    if re.search(r"^pr$", zone, re.IGNORECASE) or re.search(
-                        r"зона приемки|поле приемки", zone, re.IGNORECASE
-                    ):
-                        location_text = "PR"
-                    elif re.search(r"^ot$", zone, re.IGNORECASE) or re.search(
-                        r"зона отгрузки|отгрузк", zone, re.IGNORECASE
-                    ):
-                        location_text = "OT"
-                    elif re.search(r"^mr$", zone, re.IGNORECASE) or re.search(
-                        r"между ряд", zone, re.IGNORECASE
-                    ):
-                        location_text = "MR"
-                    elif re.search(r"^os$", zone, re.IGNORECASE) or re.search(
-                        r"основн|стеллаж|ряд|полк|секци|ярус|ячейк",
-                        zone,
-                        re.IGNORECASE,
-                    ):
-                        location_text = "OS"
-                    else:
-                        location_text = zone.upper()
-                else:
-                    rack = (location_value.get("rack") or pallet.get("rack") or "").strip()
-                    row = (location_value.get("row") or pallet.get("row") or "").strip()
-                    section = (location_value.get("section") or "").strip()
-                    tier = (location_value.get("tier") or "").strip()
-                    shelf = (location_value.get("shelf") or pallet.get("shelf") or "").strip()
-                    cell = (location_value.get("cell") or "").strip()
-                    if rack or row or section or tier or shelf or cell:
-                        location_text = "OS"
-            elif isinstance(location_value, str):
-                location_text = location_value.strip()
-                if location_text:
-                    if re.search(r"^pr$", location_text, re.IGNORECASE) or re.search(
-                        r"зона приемки|поле приемки", location_text, re.IGNORECASE
-                    ):
-                        location_text = "PR"
-                    elif re.search(r"^ot$", location_text, re.IGNORECASE) or re.search(
-                        r"зона отгрузки|отгрузк", location_text, re.IGNORECASE
-                    ):
-                        location_text = "OT"
-                    elif re.search(r"^mr$", location_text, re.IGNORECASE) or re.search(
-                        r"между ряд", location_text, re.IGNORECASE
-                    ):
-                        location_text = "MR"
-                    elif re.search(r"^os$", location_text, re.IGNORECASE) or re.search(
-                        r"основн|стеллаж|ряд|полк|секци|ярус|ячейк",
-                        location_text,
-                        re.IGNORECASE,
-                    ):
-                        location_text = "OS"
-            if not location_text:
-                location_text = default_location
-            pallet["location"] = location_text
+            parts = _location_parts(pallet.get("location"), pallet)
+            zone = parts.get("zone") or default_zone
+            if zone not in allowed_zones:
+                zone = default_zone
+            row = parts.get("row") or 0
+            section = parts.get("section") or 0
+            tier = parts.get("tier") or 0
+            cell = parts.get("cell") or 0
+            if zone == "MR":
+                if not row:
+                    return redirect(f"/orders/receiving/{order_id}/placement/?error=1")
+            elif zone == "OS":
+                if not (row and section and tier and cell):
+                    return redirect(f"/orders/receiving/{order_id}/placement/?error=1")
+                key = (row, section, tier, cell)
+                if key in occupied_cells:
+                    return redirect(f"/orders/receiving/{order_id}/placement/?error=1")
+                if key in used_cells:
+                    return redirect(f"/orders/receiving/{order_id}/placement/?error=1")
+                used_cells.add(key)
+            pallet["location"] = {
+                "zone": zone,
+                "row": row if zone in {"MR", "OS"} else "",
+                "section": section if zone == "OS" else "",
+                "tier": tier if zone == "OS" else "",
+                "cell": cell if zone == "OS" else "",
+            }
         status_entry = _current_status_entry(entries)
         latest = entries[-1]
         act_payload = dict((status_entry.payload or {}) if status_entry else {})
@@ -3418,6 +3478,47 @@ class PlacementActView(RoleRequiredMixin, TemplateView):
         can_open_act = can_submit and act_state == "closed" and not signed_by_storekeeper
         boxes_data = (placement_act.payload or {}).get("act_boxes") if placement_act else []
         pallets_data = (placement_act.payload or {}).get("act_pallets") if placement_act else []
+        occupied_cells = []
+        occupied_keys = set()
+        seen_orders = set()
+        for entry in (
+            OrderAuditEntry.objects.filter(order_type=self.order_type)
+            .exclude(order_id=order_id)
+            .order_by("-created_at")
+        ):
+            if entry.order_id in seen_orders:
+                continue
+            payload = entry.payload or {}
+            if payload.get("act") != "placement":
+                continue
+            state = (payload.get("act_state") or "closed").lower()
+            if state != "closed":
+                continue
+            seen_orders.add(entry.order_id)
+            for pallet in payload.get("act_pallets") or []:
+                parts = _location_parts((pallet or {}).get("location"), pallet)
+                if parts.get("zone") != "OS":
+                    continue
+                if not all(parts.get(key) for key in ("row", "section", "tier", "cell")):
+                    continue
+                key = (parts["row"], parts["section"], parts["tier"], parts["cell"])
+                if key in occupied_keys:
+                    continue
+                occupied_keys.add(key)
+                occupied_cells.append(
+                    {
+                        "row": parts["row"],
+                        "section": parts["section"],
+                        "tier": parts["tier"],
+                        "cell": parts["cell"],
+                    }
+                )
+        os_config = {
+            "row_sections": _OS_ROW_SECTIONS,
+            "tiers": _OS_TIERS,
+            "cells_per_tier": _OS_CELLS_PER_TIER,
+            "mr_rows": [1, 2, 3, 4],
+        }
         ctx.update(
             {
                 "order_id": order_id,
@@ -3434,6 +3535,8 @@ class PlacementActView(RoleRequiredMixin, TemplateView):
                 "remaining_items": remaining_items,
                 "boxes_data": boxes_data,
                 "pallets_data": pallets_data,
+                "os_config": os_config,
+                "occupied_cells": occupied_cells,
                 "ok": kwargs.get("ok", False),
                 "error": kwargs.get("error"),
             }
