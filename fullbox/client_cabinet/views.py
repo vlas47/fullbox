@@ -9,6 +9,7 @@ from django.urls import reverse
 from django.utils import timezone
 from django.views.generic import ListView, CreateView, UpdateView, TemplateView, FormView
 import uuid
+from urllib.parse import urlencode
 
 from employees.models import Employee
 from employees.access import get_request_role, is_staff_role
@@ -241,6 +242,7 @@ def dashboard(request):
     orders_panel_total = 0
     client_messages = []
     if selected_client:
+        dashboard_return_url = f"/client/dashboard/?client={selected_client.id}"
         base_entries = (
             OrderAuditEntry.objects.filter(agency=selected_client)
             .order_by("-created_at")
@@ -302,6 +304,7 @@ def dashboard(request):
             act_label = payload.get("act_sent")
             if not act_label:
                 continue
+            return_param = urlencode({"return": dashboard_return_url})
             act_cards.append(
                 {
                     "bucket": "client",
@@ -311,7 +314,7 @@ def dashboard(request):
                     "title": f"{act_label} по заявке №{order_id}",
                     "status_label": "Акт отправлен клиенту",
                     "created_at": act_entry.created_at,
-                    "detail_url": f"/orders/receiving/{order_id}/act/?client={selected_client.id}",
+                    "detail_url": f"/orders/receiving/{order_id}/act/?client={selected_client.id}&{return_param}",
                     "attention": True,
                 }
             )

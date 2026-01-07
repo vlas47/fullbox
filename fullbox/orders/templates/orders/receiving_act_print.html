@@ -246,10 +246,16 @@
           <div class="client-actions">
             <form method="post" action="/orders/receiving/{{ order_id }}/act/client/confirm/{% if client_param %}?client={{ client_param }}{% endif %}">
               {% csrf_token %}
+              {% if return_url %}
+                <input type="hidden" name="return" value="{{ return_url }}">
+              {% endif %}
               <button class="btn" type="submit">Подтвердить акт приемки</button>
             </form>
             <form method="post" action="/orders/receiving/{{ order_id }}/act/client/dispute/{% if client_param %}?client={{ client_param }}{% endif %}">
               {% csrf_token %}
+              {% if return_url %}
+                <input type="hidden" name="return" value="{{ return_url }}">
+              {% endif %}
               <button class="btn" type="submit">Заявить разногласия</button>
             </form>
           </div>

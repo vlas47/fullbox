@@ -160,6 +160,7 @@
 - 2026-01-05 07:02: updated `journal.md` with summary of 2026-01-05 changes (packing request, client edit, audit journal, validations).
 - 2026-01-07 20:00: updated receiving act flow for clients (redirect to print form, client confirmation/dispute handling, task panel status label) and refreshed `receiving_act_print.html` with client-facing confirmation text and actions.
 - 2026-01-07 20:06: adjusted client dashboard to show receiving act card until client responds, even after viewing.
+- 2026-01-07 20:24: fixed back navigation for receiving act print (return URL propagation + safe handling) and added dashboard return param to act card links.
 - 2026-01-05 07:02: uploaded updated `journal.md` to server.
 - 2026-01-05 07:06: added 2026-01-04 summary to `journal.md` and uploaded to server.
 - 2026-01-05 07:11: reordered packing request form to start with item description and deadline, moved materials/comment sections; deployed and restarted `fullbox`.
