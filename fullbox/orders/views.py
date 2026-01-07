@@ -2,12 +2,14 @@ import json
 import re
 from datetime import datetime, time, timedelta
 from pathlib import Path
+from urllib.parse import urlencode
 
 from django.conf import settings
 from django.db import transaction
 from django.http import FileResponse, Http404, HttpResponseForbidden
 from django.shortcuts import redirect, render
 from django.utils import timezone
+from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.generic import TemplateView
 from openpyxl import load_workbook
 from openpyxl.cell.cell import MergedCell
@@ -1517,9 +1519,11 @@ def print_receiving_act(request, order_id: str):
 
     client_agency = _client_agency_from_request(request)
     client_view = bool(client_agency)
-    return_url = f"/orders/receiving/{order_id}/act/"
+    default_return_url = f"/orders/receiving/{order_id}/act/"
     if client_agency:
-        return_url = f"/orders/receiving/{order_id}/act/?client={client_agency.id}"
+        default_return_url = f"/client/dashboard/?client={client_agency.id}"
+    raw_return_url = request.GET.get("return") or request.META.get("HTTP_REFERER")
+    return_url = _safe_return_url(request, raw_return_url, request.path) or default_return_url
     status_entry = _current_status_entry(entries)
     status_payload = status_entry.payload or {} if status_entry else {}
     client_response = (
@@ -1676,14 +1680,37 @@ def sign_receiving_act_manager(request, order_id: str):
     return redirect(f"/orders/receiving/{order_id}/act/print/?signed=manager")
 
 
-def _client_print_url(order_id: str, client_agency, response: str | None = None) -> str:
-    params = []
+def _client_print_url(
+    order_id: str,
+    client_agency,
+    response: str | None = None,
+    return_url: str | None = None,
+) -> str:
+    params = {}
     if client_agency:
-        params.append(f"client={client_agency.id}")
+        params["client"] = client_agency.id
     if response:
-        params.append(f"response={response}")
-    suffix = f"?{'&'.join(params)}" if params else ""
+        params["response"] = response
+    if return_url:
+        params["return"] = return_url
+    suffix = f"?{urlencode(params)}" if params else ""
     return f"/orders/receiving/{order_id}/act/print/{suffix}"
+
+
+def _safe_return_url(request, raw_url: str | None, current_path: str | None = None) -> str:
+    if not raw_url:
+        return ""
+    if current_path:
+        current_abs = request.build_absolute_uri(current_path)
+        if raw_url.startswith(current_abs) or raw_url.startswith(current_path):
+            return ""
+    if url_has_allowed_host_and_scheme(
+        raw_url,
+        allowed_hosts={request.get_host()},
+        require_https=request.is_secure(),
+    ):
+        return raw_url
+    return ""
 
 
 def _client_act_access_allowed(request, entries):
@@ -1705,11 +1732,13 @@ def confirm_receiving_act_client(request, order_id: str):
     if not _client_act_access_allowed(request, entries):
         return HttpResponseForbidden("Доступ запрещен")
     client_agency = _client_agency_from_request(request)
+    raw_return_url = request.POST.get("return") or request.GET.get("return")
+    return_url = _safe_return_url(request, raw_return_url, request.path)
     status_entry = _current_status_entry(entries)
     payload = dict(status_entry.payload or {}) if status_entry else {}
     existing_response = (payload.get("act_client_response") or "").lower()
     if existing_response in {"confirmed", "dispute"}:
-        return redirect(_client_print_url(order_id, client_agency, existing_response))
+        return redirect(_client_print_url(order_id, client_agency, existing_response, return_url))
     payload["act_client_response"] = "confirmed"
     payload["act_client_response_at"] = timezone.localtime().isoformat()
     log_order_action(
@@ -1721,7 +1750,7 @@ def confirm_receiving_act_client(request, order_id: str):
         description="Акт приемки подтвержден клиентом",
         payload=payload,
     )
-    return redirect(_client_print_url(order_id, client_agency, "confirmed"))
+    return redirect(_client_print_url(order_id, client_agency, "confirmed", return_url))
 
 
 def dispute_receiving_act_client(request, order_id: str):
@@ -1733,11 +1762,13 @@ def dispute_receiving_act_client(request, order_id: str):
     if not _client_act_access_allowed(request, entries):
         return HttpResponseForbidden("Доступ запрещен")
     client_agency = _client_agency_from_request(request)
+    raw_return_url = request.POST.get("return") or request.GET.get("return")
+    return_url = _safe_return_url(request, raw_return_url, request.path)
     status_entry = _current_status_entry(entries)
     payload = dict(status_entry.payload or {}) if status_entry else {}
     existing_response = (payload.get("act_client_response") or "").lower()
     if existing_response in {"confirmed", "dispute"}:
-        return redirect(_client_print_url(order_id, client_agency, existing_response))
+        return redirect(_client_print_url(order_id, client_agency, existing_response, return_url))
     payload["act_client_response"] = "dispute"
     payload["act_client_response_at"] = timezone.localtime().isoformat()
     log_order_action(
@@ -1749,7 +1780,7 @@ def dispute_receiving_act_client(request, order_id: str):
         description="Клиент заявил разногласия по акту приемки",
         payload=payload,
     )
-    return redirect(_client_print_url(order_id, client_agency, "dispute"))
+    return redirect(_client_print_url(order_id, client_agency, "dispute", return_url))
 
 
 def print_receiving_act_mx1(request, order_id: str):
@@ -2726,7 +2757,9 @@ class ReceivingActView(RoleRequiredMixin, TemplateView):
                         payload=payload,
                     )
             response = request.GET.get("response")
-            return redirect(_client_print_url(order_id, client_agency, response))
+            raw_return_url = request.GET.get("return") or request.META.get("HTTP_REFERER")
+            return_url = _safe_return_url(request, raw_return_url, request.path)
+            return redirect(_client_print_url(order_id, client_agency, response, return_url))
         return super().dispatch(request, *args, **kwargs)
 
     def _load_entries(self, order_id):
