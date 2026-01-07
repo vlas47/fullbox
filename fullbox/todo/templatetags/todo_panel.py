@@ -96,6 +96,11 @@ def _is_status_entry(entry) -> bool:
 
 def _status_label_from_entry(entry) -> str:
     payload = entry.payload or {}
+    client_response = (payload.get("act_client_response") or "").lower()
+    if client_response == "confirmed":
+        return "Акт приемки подтвержден клиентом"
+    if client_response == "dispute":
+        return "Клиент заявил разногласия по акту приемки"
     if payload.get("act_sent"):
         return "Акт отправлен клиенту" if not payload.get("act_viewed") else "Выполнена"
     if payload.get("act_storekeeper_signed") and not payload.get("act_manager_signed"):

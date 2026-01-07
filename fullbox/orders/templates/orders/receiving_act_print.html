@@ -67,6 +67,42 @@
       color: #b91c1c;
       font-weight: 600;
     }
+    .client-panel {
+      border: 1px solid var(--border);
+      background: #faf7f0;
+      padding: 12px 14px;
+      margin-bottom: 16px;
+    }
+    .client-title {
+      font-weight: 700;
+      margin-bottom: 6px;
+    }
+    .client-text {
+      margin: 0 0 8px;
+      line-height: 1.4;
+    }
+    .client-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+    }
+    .client-actions form {
+      margin: 0;
+    }
+    .client-actions .btn {
+      padding: 8px 14px;
+      border: 1px solid var(--border);
+      background: #f7f7f7;
+      cursor: pointer;
+      font-size: 13px;
+      text-decoration: none;
+      color: inherit;
+    }
+    .client-status {
+      color: var(--muted);
+      font-size: 13px;
+    }
     .sign-form {
       display: inline-flex;
     }
@@ -138,6 +174,7 @@
         padding: 0;
       }
       .toolbar { display: none; }
+      .client-panel { display: none; }
     }
   </style>
 </head>
@@ -184,6 +221,41 @@
         {% endif %}
       </div>
     </div>
+
+    {% if client_view %}
+      <div class="client-panel screen-only">
+        <div class="client-title">Подтверждение акта приемки</div>
+        {% if client_response == "confirmed" %}
+          <p class="client-text">Спасибо, акт приемки подтвержден.</p>
+          <div class="client-status">Товар будет размещен в соответствии с условиями договора.</div>
+        {% elif client_response == "dispute" %}
+          <p class="client-text">Мы получили уведомление о разногласиях по акту приемки.</p>
+          <div class="client-status">Просим прибыть на склад для урегулирования спорных вопросов и оформления двустороннего акта.</div>
+        {% else %}
+          <p class="client-text">
+            Вы получили акт приемки, подписанный складом и менеджером. Просим подтвердить получение и согласие с данными акта.
+          </p>
+          <p class="client-text">
+            Если вы не согласны с данными акта, нажмите «Заявить разногласия» и прибудьте на склад для урегулирования спорных вопросов и составления двустороннего акта.
+          </p>
+          <p class="client-text">
+            Если в течение 24 часов с момента получения акта{% if client_deadline %} (до {{ client_deadline }}){% endif %}
+            мы не получим подтверждение или заявление о разногласиях и ваш представитель не прибудет на склад, акт считается согласованным,
+            а товар размещается в соответствии с условиями договора.
+          </p>
+          <div class="client-actions">
+            <form method="post" action="/orders/receiving/{{ order_id }}/act/client/confirm/{% if client_param %}?client={{ client_param }}{% endif %}">
+              {% csrf_token %}
+              <button class="btn" type="submit">Подтвердить акт приемки</button>
+            </form>
+            <form method="post" action="/orders/receiving/{{ order_id }}/act/client/dispute/{% if client_param %}?client={{ client_param }}{% endif %}">
+              {% csrf_token %}
+              <button class="btn" type="submit">Заявить разногласия</button>
+            </form>
+          </div>
+        {% endif %}
+      </div>
+    {% endif %}
 
     <div class="title">Акт приемки № {{ order_id }} от {{ doc_date }}</div>
     <div class="doc-lines">
