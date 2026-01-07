@@ -254,3 +254,5 @@
 - 2026-01-07 11:41: reviewed `fullbox/sku/models.py` to list client (Agency) fields.
 - 2026-01-07 11:48: checked local SQLite `fullbox/db.sqlite3` for Agency pref заполненность (counts and sample rows).
 - 2026-01-07 11:58: queried production Postgres on server for Agency pref заполненность (counts).
+- 2026-01-07 12:07: updated receiving order detail items mapping to include extra act positions in `fullbox/orders/views.py`.
+- 2026-01-07 12:07: deployed updated `fullbox/orders/views.py` to server and restarted `fullbox` service.
