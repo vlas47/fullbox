@@ -3,7 +3,7 @@
   .task-board { display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap:12px; margin-top:14px; }
   .task-col { display:flex; flex-direction:column; border:1px solid var(--stroke); border-radius:14px; background:var(--card-soft, rgba(255,255,255,0.04)); min-height:240px; }
   .task-col-header { display:flex; justify-content:space-between; align-items:center; padding:10px 12px; border-bottom:1px dashed var(--stroke); font-weight:600; }
-  .task-col-body { display:grid; gap:8px; padding:10px; }
+  .task-col-body { display:grid; gap:8px; padding:10px; align-content:start; align-items:start; }
   .task-card { padding:10px; border:1px solid var(--stroke); border-radius:12px; background:var(--card, rgba(255,255,255,0.02)); }
   .task-card.attention {
     border-color: #f59e0b;
@@ -79,7 +79,7 @@
         <div class="task-col-body">
           {% if column.tasks %}
             {% for task in column.tasks %}
-              <div class="task-card{% if task_panel_attention_employee_id and task.assigned_to_id == task_panel_attention_employee_id %}{% if task_panel_role == "manager" and task.status == "done" %}{% else %} attention{% endif %}{% endif %}">
+              <div class="task-card{% if task_panel_attention_employee_id and task.assigned_to_id == task_panel_attention_employee_id %}{% if task_panel_role == "manager" and task.status == "done" %}{% elif task.route and "/orders/receiving/" in task.route and "/act/print/" not in task.route %}{% else %} attention{% endif %}{% endif %}">
                 <div class="task-title">
                   {% if task.route and "/orders/receiving/" in task.route %}
                     {% if "/act/print/" in task.route %}
