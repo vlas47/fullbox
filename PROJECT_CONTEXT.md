@@ -266,3 +266,5 @@
 - 2026-01-07 13:22: deployed updated orders views to server and restarted `fullbox`.
 - 2026-01-07 13:32: added manager sign task creation on storekeeper signature and updated order status label; close sign task on manager signature (`fullbox/orders/views.py`).
 - 2026-01-07 13:32: deployed updated orders views to server and restarted `fullbox`.
+- 2026-01-07 18:27: added status label override for signed receiving acts and auto-create manager sign task on print view (`fullbox/orders/views.py`).
+- 2026-01-07 18:27: deployed updated orders views to server and restarted `fullbox`.

@@ -220,6 +220,8 @@ def _status_label_from_entry(entry):
     payload = entry.payload or {}
     if payload.get("act_sent"):
         return "Акт отправлен клиенту" if not payload.get("act_viewed") else "Выполнена"
+    if payload.get("act_storekeeper_signed") and not payload.get("act_manager_signed"):
+        return "Принято складом, акт приемки отправлен менеджеру"
     if payload.get("act") == "placement":
         state = (payload.get("act_state") or "closed").lower()
         return "Размещение на складе" if state == "open" else "Товар принят и размещен на складе"
@@ -1498,6 +1500,8 @@ def print_receiving_act(request, order_id: str):
     role = get_request_role(request)
     client_agency = _client_agency_from_request(request)
     client_view = bool(client_agency)
+    if storekeeper_signed and not manager_signed:
+        _create_manager_sign_task(order_id, agency, request, observer=storekeeper_employee)
     can_storekeeper_sign = role == "storekeeper" and not storekeeper_signed and not client_view
     can_manager_sign = (
         role in {"manager", "head_manager", "director", "admin"}
