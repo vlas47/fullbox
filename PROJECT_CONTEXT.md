@@ -290,3 +290,4 @@
 - 2026-01-07 21:05: replaced zone input with a dropdown to show PR/OS choices immediately; deployed and restarted `fullbox`.
 - 2026-01-07 21:12: expanded placement zone options to PR/OT/MR/OS and normalized new zone names in orders/sklad views; deployed and restarted `fullbox`.
 - 2026-01-07 21:48: added MR/OS dependent fields in placement act (row/section/tier/cell) with occupied-cell blocking, and normalized OTG zone labels; deployed and restarted `fullbox`.
+- 2026-01-07 21:56: wired stockmap occupancy to placement acts (OS row view + counts), including MR row occupancy totals; deployed and restarted `fullbox`.
