@@ -106,14 +106,40 @@ def inventory_journal(request):
                 r"зона приемки|поле приемки", text, re.IGNORECASE
             ):
                 return "PR"
+            if re.search(r"^ot$", text, re.IGNORECASE) or re.search(
+                r"зона отгрузки|отгрузк", text, re.IGNORECASE
+            ):
+                return "OT"
+            if re.search(r"^mr$", text, re.IGNORECASE) or re.search(
+                r"между ряд", text, re.IGNORECASE
+            ):
+                return "MR"
             if re.search(r"^os$", text, re.IGNORECASE) or re.search(
-                r"стеллаж|ряд|полк|секци|ярус|ячейк", text, re.IGNORECASE
+                r"основн|стеллаж|ряд|полк|секци|ярус|ячейк", text, re.IGNORECASE
             ):
                 return "OS"
             return text
         if isinstance(location_value, dict):
             zone = (location_value.get("zone") or "").strip()
             if zone:
+                if re.search(r"^pr$", zone, re.IGNORECASE) or re.search(
+                    r"зона приемки|поле приемки", zone, re.IGNORECASE
+                ):
+                    return "PR"
+                if re.search(r"^ot$", zone, re.IGNORECASE) or re.search(
+                    r"зона отгрузки|отгрузк", zone, re.IGNORECASE
+                ):
+                    return "OT"
+                if re.search(r"^mr$", zone, re.IGNORECASE) or re.search(
+                    r"между ряд", zone, re.IGNORECASE
+                ):
+                    return "MR"
+                if re.search(r"^os$", zone, re.IGNORECASE) or re.search(
+                    r"основн|стеллаж|ряд|полк|секци|ярус|ячейк",
+                    zone,
+                    re.IGNORECASE,
+                ):
+                    return "OS"
                 return zone.upper()
             rack = (location_value.get("rack") or pallet.get("rack") or "").strip()
             row = (location_value.get("row") or pallet.get("row") or "").strip()

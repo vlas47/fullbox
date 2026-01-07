@@ -326,6 +326,12 @@
           if (/^pr$/i.test(text) || /зона приемки|поле приемки/i.test(text)) {
             return 'PR';
           }
+          if (/^ot$/i.test(text) || /зона отгрузки|отгрузк/i.test(text)) {
+            return 'OT';
+          }
+          if (/^mr$/i.test(text) || /между ряд/i.test(text)) {
+            return 'MR';
+          }
           if (/^os$/i.test(text) || /стеллаж|ряд|полк|секци|ярус|ячейк/i.test(text)) {
             return 'OS';
           }
@@ -334,6 +340,18 @@
         const obj = raw && typeof raw === 'object' ? raw : {};
         const zone = (obj.zone || '').trim();
         if (zone) {
+          if (/^pr$/i.test(zone) || /зона приемки|поле приемки/i.test(zone)) {
+            return 'PR';
+          }
+          if (/^ot$/i.test(zone) || /зона отгрузки|отгрузк/i.test(zone)) {
+            return 'OT';
+          }
+          if (/^mr$/i.test(zone) || /между ряд/i.test(zone)) {
+            return 'MR';
+          }
+          if (/^os$/i.test(zone) || /основн|стеллаж|ряд|полк|секци|ярус|ячейк/i.test(zone)) {
+            return 'OS';
+          }
           return zone.toUpperCase();
         }
         const rack = (obj.rack || pallet.rack || '').trim();
@@ -960,7 +978,7 @@
         state.pallets.forEach((pallet) => {
           const isActive = state.active.type === 'pallet' && state.active.code === pallet.code;
           const locationValue = pallet.location || DEFAULT_LOCATION;
-          const locationOptions = ['PR', 'OS'];
+          const locationOptions = ['PR', 'OT', 'MR', 'OS'];
           const customLocationOption = locationOptions.includes(locationValue)
             ? ''
             : `<option value="${locationValue}">${locationValue}</option>`;
@@ -978,6 +996,8 @@
               <select class="loc-input" data-field="location">
                 ${customLocationOption}
                 <option value="PR">PR · Зона приемки</option>
+                <option value="OT">OT · Зона отгрузки</option>
+                <option value="MR">MR · Между рядами</option>
                 <option value="OS">OS · Основной склад</option>
               </select>
             </td>
