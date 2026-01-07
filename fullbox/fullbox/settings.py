@@ -57,6 +57,7 @@ INSTALLED_APPS = [
     "market_sync",
     "teammanager",
     "sklad",
+    "stockmap",
 ]
 
 MIDDLEWARE = [
