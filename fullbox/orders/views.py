@@ -3259,7 +3259,7 @@ class PlacementActView(RoleRequiredMixin, TemplateView):
         ]
         if unassigned_boxes:
             return redirect(f"/orders/receiving/{order_id}/placement/?error=1")
-        default_location = "Поле приемки"
+        default_location = "PR"
         for pallet in pallets_data:
             if not isinstance(pallet, dict):
                 continue
@@ -3269,30 +3269,28 @@ class PlacementActView(RoleRequiredMixin, TemplateView):
             location_text = ""
             if isinstance(location_value, dict):
                 zone = (location_value.get("zone") or "").strip()
-                rack = (location_value.get("rack") or pallet.get("rack") or "").strip()
-                row = (location_value.get("row") or pallet.get("row") or "").strip()
-                section = (location_value.get("section") or "").strip()
-                tier = (location_value.get("tier") or "").strip()
-                shelf = (location_value.get("shelf") or pallet.get("shelf") or "").strip()
-                cell = (location_value.get("cell") or "").strip()
-                parts = []
                 if zone:
-                    parts.append(f"Зона {zone}")
-                if rack:
-                    parts.append(f"Стеллаж {rack}")
-                if row:
-                    parts.append(f"Ряд {row}")
-                if section:
-                    parts.append(f"Секция {section}")
-                if tier:
-                    parts.append(f"Ярус {tier}")
-                if shelf:
-                    parts.append(f"Полка {shelf}")
-                if cell:
-                    parts.append(f"Ячейка {cell}")
-                location_text = " · ".join(parts)
+                    location_text = zone.upper()
+                else:
+                    rack = (location_value.get("rack") or pallet.get("rack") or "").strip()
+                    row = (location_value.get("row") or pallet.get("row") or "").strip()
+                    section = (location_value.get("section") or "").strip()
+                    tier = (location_value.get("tier") or "").strip()
+                    shelf = (location_value.get("shelf") or pallet.get("shelf") or "").strip()
+                    cell = (location_value.get("cell") or "").strip()
+                    if rack or row or section or tier or shelf or cell:
+                        location_text = "OS"
             elif isinstance(location_value, str):
                 location_text = location_value.strip()
+                if location_text:
+                    if re.search(r"^pr$", location_text, re.IGNORECASE) or re.search(
+                        r"зона приемки|поле приемки", location_text, re.IGNORECASE
+                    ):
+                        location_text = "PR"
+                    elif re.search(r"^os$", location_text, re.IGNORECASE) or re.search(
+                        r"стеллаж|ряд|полк|секци|ярус|ячейк", location_text, re.IGNORECASE
+                    ):
+                        location_text = "OS"
             if not location_text:
                 location_text = default_location
             pallet["location"] = location_text

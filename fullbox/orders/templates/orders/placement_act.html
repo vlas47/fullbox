@@ -205,7 +205,7 @@
                         <th style="width:20%;">Палета</th>
                         <th style="width:12%;">Статус</th>
                         <th style="width:16%;">Содержимое</th>
-                        <th style="width:32%;">Место хранения</th>
+                        <th style="width:32%;">Зона</th>
                         <th>Действия</th>
                       </tr>
                     </thead>
@@ -242,7 +242,7 @@
                     <th style="width:10%;">Кол-во</th>
                     <th style="width:14%;">Короб</th>
                     <th style="width:12%;">Палета</th>
-                    <th>Место хранения</th>
+                    <th>Зона</th>
                   </tr>
                   <tr class="table-filter">
                     <th><select data-filter-col="0"><option value="">Все</option></select></th>
@@ -261,6 +261,11 @@
       </main>
     </div>
   </div>
+
+  <datalist id="location-options">
+    <option value="PR">Зона приемки</option>
+    <option value="OS">Основной склад</option>
+  </datalist>
 
   {{ remaining_items|json_script:"remaining-data" }}
   {{ boxes_data|json_script:"boxes-data" }}
@@ -302,7 +307,7 @@
           : 'Акт открыт для редактирования. Пока открыт - товар скрыт со склада.';
       }
 
-      const DEFAULT_LOCATION = 'Поле приемки';
+      const DEFAULT_LOCATION = 'PR';
 
       const normalizeBox = (box, index) => {
         const code = (box || {}).code || `BOX-${index + 1}`;
@@ -319,25 +324,31 @@
         }
         const raw = pallet.location;
         if (typeof raw === 'string') {
-          return raw.trim();
+          const text = raw.trim();
+          if (!text) {
+            return '';
+          }
+          if (/^pr$/i.test(text) || /зона приемки|поле приемки/i.test(text)) {
+            return 'PR';
+          }
+          if (/^os$/i.test(text) || /стеллаж|ряд|полк|секци|ярус|ячейк/i.test(text)) {
+            return 'OS';
+          }
+          return text;
         }
         const obj = raw && typeof raw === 'object' ? raw : {};
         const zone = (obj.zone || '').trim();
+        if (zone) {
+          return zone.toUpperCase();
+        }
         const rack = (obj.rack || pallet.rack || '').trim();
         const row = (obj.row || pallet.row || '').trim();
         const section = (obj.section || '').trim();
         const tier = (obj.tier || '').trim();
         const shelf = (obj.shelf || pallet.shelf || '').trim();
         const cell = (obj.cell || '').trim();
-        const parts = [];
-        if (zone) parts.push(`Зона ${zone}`);
-        if (rack) parts.push(`Стеллаж ${rack}`);
-        if (row) parts.push(`Ряд ${row}`);
-        if (section) parts.push(`Секция ${section}`);
-        if (tier) parts.push(`Ярус ${tier}`);
-        if (shelf) parts.push(`Полка ${shelf}`);
-        if (cell) parts.push(`Ячейка ${cell}`);
-        return parts.join(' · ');
+        const hasLegacy = rack || row || section || tier || shelf || cell;
+        return hasLegacy ? 'OS' : '';
       };
 
       const normalizePallet = (pallet, index) => {
@@ -963,7 +974,7 @@
             <td>${pallet.code || '-'}</td>
             <td><span class="status-pill ${pallet.sealed ? 'closed' : 'open'}">${pallet.sealed ? 'Закрыта' : 'Открыта'}</span></td>
             <td>Коробов: ${boxCount} · Товаров: ${itemCount}</td>
-            <td><input type="text" class="loc-input" data-field="location" value="${pallet.location || DEFAULT_LOCATION}" placeholder="${DEFAULT_LOCATION}"></td>
+            <td><input type="text" class="loc-input" data-field="location" list="location-options" value="${pallet.location || DEFAULT_LOCATION}" placeholder="${DEFAULT_LOCATION}"></td>
             <td>
               <div class="table-actions">
                 <button type="button" class="btn small" data-action="qr" data-code="${pallet.code}">QR</button>
@@ -1324,7 +1335,7 @@
             pallet.location = DEFAULT_LOCATION;
           }
           if (!location) {
-            errors.push(`Укажите место хранения для палеты ${pallet.code}.`);
+            errors.push(`Укажите зону для палеты ${pallet.code}.`);
           }
         });
         return errors;

@@ -92,48 +92,43 @@ def inventory_journal(request):
         latest_by_order[entry.order_id] = entry
 
     rows = []
-    default_location = "Поле приемки"
+    default_location = "PR"
 
     def normalize_location(pallet):
         if not pallet:
             return default_location
         location_value = (pallet or {}).get("location")
         if isinstance(location_value, str):
-            return location_value.strip() or default_location
-        parts = []
+            text = location_value.strip()
+            if not text:
+                return default_location
+            if re.search(r"^pr$", text, re.IGNORECASE) or re.search(
+                r"зона приемки|поле приемки", text, re.IGNORECASE
+            ):
+                return "PR"
+            if re.search(r"^os$", text, re.IGNORECASE) or re.search(
+                r"стеллаж|ряд|полк|секци|ярус|ячейк", text, re.IGNORECASE
+            ):
+                return "OS"
+            return text
         if isinstance(location_value, dict):
             zone = (location_value.get("zone") or "").strip()
-            rack = (location_value.get("rack") or "").strip()
-            row = (location_value.get("row") or "").strip()
+            if zone:
+                return zone.upper()
+            rack = (location_value.get("rack") or pallet.get("rack") or "").strip()
+            row = (location_value.get("row") or pallet.get("row") or "").strip()
             section = (location_value.get("section") or "").strip()
             tier = (location_value.get("tier") or "").strip()
-            shelf = (location_value.get("shelf") or "").strip()
+            shelf = (location_value.get("shelf") or pallet.get("shelf") or "").strip()
             cell = (location_value.get("cell") or "").strip()
-            if zone:
-                parts.append(f"Зона {zone}")
-            if rack:
-                parts.append(f"Стеллаж {rack}")
-            if row:
-                parts.append(f"Ряд {row}")
-            if section:
-                parts.append(f"Секция {section}")
-            if tier:
-                parts.append(f"Ярус {tier}")
-            if shelf:
-                parts.append(f"Полка {shelf}")
-            if cell:
-                parts.append(f"Ячейка {cell}")
-        if not parts:
-            rack = (pallet.get("rack") or "").strip()
-            row = (pallet.get("row") or "").strip()
-            shelf = (pallet.get("shelf") or "").strip()
-            if rack:
-                parts.append(f"Стеллаж {rack}")
-            if row:
-                parts.append(f"Ряд {row}")
-            if shelf:
-                parts.append(f"Полка {shelf}")
-        return " · ".join(parts) if parts else default_location
+            if rack or row or section or tier or shelf or cell:
+                return "OS"
+        rack = (pallet.get("rack") or "").strip()
+        row = (pallet.get("row") or "").strip()
+        shelf = (pallet.get("shelf") or "").strip()
+        if rack or row or shelf:
+            return "OS"
+        return default_location
 
     for entry in latest_by_order.values():
         payload = entry.payload or {}
