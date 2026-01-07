@@ -115,7 +115,11 @@
       <main class="detail-main">
         <div class="card">
           {% if error %}
-            <div class="error">Не удалось закрыть акт. Проверьте размещение.</div>
+            {% if error == "signed" %}
+              <div class="error">Акт приемки подписан. Открывать акт размещения запрещено.</div>
+            {% else %}
+              <div class="error">Не удалось закрыть акт. Проверьте размещение.</div>
+            {% endif %}
           {% endif %}
           <div class="action-bar">
             <div class="action-left">
@@ -125,7 +129,14 @@
                     {% csrf_token %}
                     <input type="hidden" name="action" value="open">
                   </form>
-                  <button class="btn primary" type="submit" form="open-act-form">Открыть акт</button>
+                  {% if can_open_act %}
+                    <button class="btn primary" type="submit" form="open-act-form">Открыть акт</button>
+                  {% else %}
+                    <button class="btn primary" type="button" disabled>Открыть акт</button>
+                    {% if signed_by_storekeeper %}
+                      <span class="muted">Акт приемки подписан, повторное открытие запрещено.</span>
+                    {% endif %}
+                  {% endif %}
                 {% else %}
                   <button class="btn primary" type="submit" form="placement-form" id="close-act-btn">Закрыть акт размещения</button>
                 {% endif %}

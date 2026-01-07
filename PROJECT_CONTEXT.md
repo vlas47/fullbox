@@ -260,3 +260,5 @@
 - 2026-01-07 12:22: deployed updated orders views/urls/receiving act print template to server and restarted `fullbox`.
 - 2026-01-07 12:34: added back button to receiving act print, gated print/signing on closed placement, and hid print buttons until placement closed (`fullbox/orders/views.py`, `fullbox/orders/urls.py`, `fullbox/orders/templates/orders/receiving_act_print.html`, `fullbox/orders/templates/orders/receiving_act.html`).
 - 2026-01-07 12:34: deployed updated orders views/urls/templates to server and restarted `fullbox`.
+- 2026-01-07 12:44: blocked reopening placement act after storekeeper signature, gated act downloads on closed placement, and updated placement act UI message (`fullbox/orders/views.py`, `fullbox/orders/templates/orders/placement_act.html`).
+- 2026-01-07 12:44: deployed updated placement act view/template to server and restarted `fullbox`.
