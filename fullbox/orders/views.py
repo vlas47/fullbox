@@ -375,12 +375,50 @@ def _is_done_status(entry) -> bool:
     return "выполн" in status_label
 
 
+def _act_storekeeper_signed_from_payload(payload: dict) -> bool:
+    return bool((payload or {}).get("act_storekeeper_signed"))
+
+
+def _act_manager_signed_from_payload(payload: dict) -> bool:
+    return bool((payload or {}).get("act_manager_signed"))
+
+
+def _act_storekeeper_signed(entries) -> bool:
+    act_entry = _find_act_entry(entries, "receiving", "акт приемки")
+    if not act_entry:
+        return False
+    return _act_storekeeper_signed_from_payload(act_entry.payload or {})
+
+
+def _act_manager_signed(entries) -> bool:
+    act_entry = _find_act_entry(entries, "receiving", "акт приемки")
+    if not act_entry:
+        return False
+    return _act_manager_signed_from_payload(act_entry.payload or {})
+
+
+def _signed_employee_from_payload(payload: dict, employee_key: str) -> Employee | None:
+    raw_id = (payload or {}).get(employee_key)
+    if raw_id in (None, ""):
+        return None
+    try:
+        employee_id = int(raw_id)
+    except (TypeError, ValueError):
+        return None
+    return Employee.objects.filter(id=employee_id, is_active=True).first()
+
+
 def _send_act_to_client(order_id, entries, user) -> bool:
     if not entries:
         return False
     receiving_entry = _find_act_entry(entries, "receiving", "акт приемки")
     placement_entry = _find_act_entry(entries, "placement", "акт размещения")
     if not receiving_entry or not placement_entry:
+        return False
+    receiving_payload = receiving_entry.payload or {}
+    if not _act_storekeeper_signed_from_payload(receiving_payload):
+        return False
+    if not _act_manager_signed_from_payload(receiving_payload):
         return False
     status_entry = _current_status_entry(entries)
     if _is_done_status(status_entry):
@@ -1397,8 +1435,28 @@ def print_receiving_act(request, order_id: str):
     total_pallets_label = total_pallets if total_pallets else "-"
     total_mismatch = total_actual - total_planned
 
-    manager_employee = _first_active_employee_by_roles("manager", "head_manager")
-    storekeeper_employee = _first_active_employee_by_roles("storekeeper")
+    storekeeper_signed = _act_storekeeper_signed_from_payload(act_payload)
+    manager_signed = _act_manager_signed_from_payload(act_payload)
+    storekeeper_employee = (
+        _signed_employee_from_payload(act_payload, "act_storekeeper_employee_id")
+        if storekeeper_signed
+        else None
+    )
+    manager_employee = (
+        _signed_employee_from_payload(act_payload, "act_manager_employee_id")
+        if manager_signed
+        else None
+    )
+    role = get_request_role(request)
+    client_agency = _client_agency_from_request(request)
+    client_view = bool(client_agency)
+    can_storekeeper_sign = role == "storekeeper" and not storekeeper_signed and not client_view
+    can_manager_sign = (
+        role in {"manager", "head_manager", "director", "admin"}
+        and storekeeper_signed
+        and not manager_signed
+        and not client_view
+    )
 
     ctx = {
         "order_id": order_id,
@@ -1422,8 +1480,98 @@ def print_receiving_act(request, order_id: str):
         "executor_label": _EXECUTOR_LABEL,
         "manager_facsimile_url": _facsimile_url(manager_employee),
         "storekeeper_facsimile_url": _facsimile_url(storekeeper_employee),
+        "storekeeper_signed": storekeeper_signed,
+        "manager_signed": manager_signed,
+        "can_storekeeper_sign": can_storekeeper_sign,
+        "can_manager_sign": can_manager_sign,
+        "sign_status": request.GET.get("signed"),
+        "sign_error": request.GET.get("error"),
     }
     return render(request, "orders/receiving_act_print.html", ctx)
+
+
+def sign_receiving_act_storekeeper(request, order_id: str):
+    if request.method != "POST":
+        return HttpResponseForbidden("Доступ запрещен")
+    entries = _load_order_entries(order_id)
+    if not entries:
+        raise Http404("Заявка не найдена")
+    if not _act_access_allowed(request, entries):
+        return HttpResponseForbidden("Доступ запрещен")
+    role = get_request_role(request)
+    if role != "storekeeper":
+        return HttpResponseForbidden("Доступ запрещен")
+    act_entry = _find_act_entry(entries, "receiving", "акт приемки")
+    if not act_entry:
+        raise Http404("Акт приемки не найден")
+    act_payload = dict(act_entry.payload or {})
+    if _act_storekeeper_signed_from_payload(act_payload):
+        return redirect(f"/orders/receiving/{order_id}/act/print/")
+    employee = Employee.objects.filter(user=request.user, role="storekeeper", is_active=True).first()
+    if not employee:
+        employee = _first_active_employee_by_roles("storekeeper")
+    if not employee or not getattr(employee, "facsimile", None):
+        return redirect(f"/orders/receiving/{order_id}/act/print/?error=storekeeper_facsimile")
+    act_payload["act_storekeeper_signed"] = True
+    act_payload["act_storekeeper_signed_at"] = timezone.localtime().isoformat()
+    act_payload["act_storekeeper_employee_id"] = employee.id
+    if request.user.is_authenticated:
+        act_payload["act_storekeeper_user_id"] = request.user.id
+    log_order_action(
+        "status",
+        order_id=order_id,
+        order_type="receiving",
+        user=request.user if request.user.is_authenticated else None,
+        agency=act_entry.agency or (entries[-1].agency if entries else None),
+        description="Акт приемки подписан кладовщиком и отправлен менеджеру",
+        payload=act_payload,
+    )
+    return redirect(f"/orders/receiving/{order_id}/act/print/?signed=storekeeper")
+
+
+def sign_receiving_act_manager(request, order_id: str):
+    if request.method != "POST":
+        return HttpResponseForbidden("Доступ запрещен")
+    entries = _load_order_entries(order_id)
+    if not entries:
+        raise Http404("Заявка не найдена")
+    if not _act_access_allowed(request, entries):
+        return HttpResponseForbidden("Доступ запрещен")
+    role = get_request_role(request)
+    if role not in {"manager", "head_manager", "director", "admin"}:
+        return HttpResponseForbidden("Доступ запрещен")
+    act_entry = _find_act_entry(entries, "receiving", "акт приемки")
+    if not act_entry:
+        raise Http404("Акт приемки не найден")
+    act_payload = dict(act_entry.payload or {})
+    if not _act_storekeeper_signed_from_payload(act_payload):
+        return redirect(f"/orders/receiving/{order_id}/act/print/?error=storekeeper_required")
+    if _act_manager_signed_from_payload(act_payload):
+        return redirect(f"/orders/receiving/{order_id}/act/print/?signed=manager")
+    employee = Employee.objects.filter(user=request.user, is_active=True).first()
+    if not employee:
+        employee = _first_active_employee_by_roles("manager", "head_manager")
+    if not employee or not getattr(employee, "facsimile", None):
+        return redirect(f"/orders/receiving/{order_id}/act/print/?error=manager_facsimile")
+    act_payload["act_manager_signed"] = True
+    act_payload["act_manager_signed_at"] = timezone.localtime().isoformat()
+    act_payload["act_manager_employee_id"] = employee.id
+    if request.user.is_authenticated:
+        act_payload["act_manager_user_id"] = request.user.id
+    log_order_action(
+        "status",
+        order_id=order_id,
+        order_type="receiving",
+        user=request.user if request.user.is_authenticated else None,
+        agency=act_entry.agency or (entries[-1].agency if entries else None),
+        description="Акт приемки подписан менеджером",
+        payload=act_payload,
+    )
+    entries = _load_order_entries(order_id)
+    sent = _send_act_to_client(order_id, entries, request.user)
+    if not sent:
+        return redirect(f"/orders/receiving/{order_id}/act/print/?signed=manager&error=send")
+    return redirect(f"/orders/receiving/{order_id}/act/print/?signed=manager")
 
 
 def print_receiving_act_mx1(request, order_id: str):
@@ -1926,7 +2074,9 @@ class OrdersHomeView(RoleRequiredMixin, TemplateView):
                     .order_by("created_at")
                 )
                 can_client_edit = client_view and _can_client_edit_draft(entries, client_agency)
-                if role != "manager" and not can_client_edit:
+                if _act_storekeeper_signed(entries):
+                    ctx["error"] = "Заявка подписана кладовщиком, редактирование запрещено"
+                elif role != "manager" and not can_client_edit:
                     ctx["error"] = "Недостаточно прав для исправления заявки"
                 elif entries:
                     edit_payload = _latest_payload_from_entries(entries)
@@ -2116,8 +2266,12 @@ class OrdersDetailView(RoleRequiredMixin, TemplateView):
         ctx["cabinet_url"] = resolve_cabinet_url(get_request_role(self.request))
         can_send_to_warehouse = False
         role = get_request_role(self.request)
+        signed_by_storekeeper = _act_storekeeper_signed(entries_list)
+        signed_by_manager = _act_manager_signed(entries_list)
         can_edit_order = bool(role == "manager" and not client_view)
         if "товар принят" in (status_text or "").lower():
+            can_edit_order = False
+        if signed_by_storekeeper or signed_by_manager:
             can_edit_order = False
         ctx["can_edit_order"] = can_edit_order
         can_create_receiving_act = False
@@ -2283,6 +2437,7 @@ class OrdersDetailView(RoleRequiredMixin, TemplateView):
             and act_entry
             and placement_entry
             and not _is_done_status(status_entry)
+            and _act_manager_signed_from_payload(act_entry.payload or {})
             and not client_view
         )
         return ctx

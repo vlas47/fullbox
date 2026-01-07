@@ -35,6 +35,13 @@
       gap: 16px;
       margin-bottom: 18px;
     }
+    .toolbar-actions {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 8px;
+      text-align: right;
+    }
     .toolbar button {
       padding: 8px 14px;
       border: 1px solid var(--border);
@@ -45,6 +52,13 @@
     .toolbar .hint {
       color: var(--muted);
       font-size: 13px;
+    }
+    .toolbar .hint.error {
+      color: #b91c1c;
+      font-weight: 600;
+    }
+    .sign-form {
+      display: inline-flex;
     }
     .title {
       font-size: 16px;
@@ -121,7 +135,39 @@
   <div class="page">
     <div class="toolbar screen-only">
       <button type="button" onclick="window.print()">Распечатать</button>
-      <div class="hint">Распечатайте, подпишите и передайте менеджеру.</div>
+      <div class="toolbar-actions">
+        {% if sign_error == "storekeeper_facsimile" %}
+          <div class="hint error">У кладовщика не загружено факсимиле.</div>
+        {% elif sign_error == "manager_facsimile" %}
+          <div class="hint error">У менеджера не загружено факсимиле.</div>
+        {% elif sign_error == "storekeeper_required" %}
+          <div class="hint error">Сначала подпишите акт кладовщиком.</div>
+        {% elif sign_error == "send" %}
+          <div class="hint error">Не удалось отправить акт клиенту: проверьте размещение.</div>
+        {% endif %}
+
+        {% if can_storekeeper_sign %}
+          <form class="sign-form" method="post" action="/orders/receiving/{{ order_id }}/act/sign/storekeeper/">
+            {% csrf_token %}
+            <button type="submit" onclick="return confirm('После подписания редактирование заявки будет запрещено. Продолжить?')">
+              Подписать и отправить менеджеру
+            </button>
+          </form>
+          <div class="hint">После подписания редактирование заявки будет запрещено.</div>
+        {% elif can_manager_sign %}
+          <form class="sign-form" method="post" action="/orders/receiving/{{ order_id }}/act/sign/manager/">
+            {% csrf_token %}
+            <button type="submit">Подписать и отправить клиенту</button>
+          </form>
+          <div class="hint">Акт будет отправлен клиенту после подписи.</div>
+        {% elif storekeeper_signed and manager_signed %}
+          <div class="hint">Акт подписан кладовщиком и менеджером и отправлен клиенту.</div>
+        {% elif storekeeper_signed %}
+          <div class="hint">Акт подписан кладовщиком и отправлен менеджеру.</div>
+        {% else %}
+          <div class="hint">Подписи пока не поставлены.</div>
+        {% endif %}
+      </div>
     </div>
 
     <div class="title">Акт приемки № {{ order_id }} от {{ doc_date }}</div>

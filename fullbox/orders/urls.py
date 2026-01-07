@@ -13,6 +13,8 @@ from .views import (
     download_receiving_act_mx1,
     print_receiving_act,
     print_receiving_act_mx1,
+    sign_receiving_act_manager,
+    sign_receiving_act_storekeeper,
 )
 
 urlpatterns = [
@@ -23,6 +25,8 @@ urlpatterns = [
     path('receiving/<str:order_id>/placement/', PlacementActView.as_view(), name='orders-receiving-placement'),
     path('receiving/<str:order_id>/act/document/', download_receiving_act_doc, name='orders-receiving-act-doc'),
     path('receiving/<str:order_id>/act/print/', print_receiving_act, name='orders-receiving-act-print'),
+    path('receiving/<str:order_id>/act/sign/storekeeper/', sign_receiving_act_storekeeper, name='orders-receiving-act-sign-storekeeper'),
+    path('receiving/<str:order_id>/act/sign/manager/', sign_receiving_act_manager, name='orders-receiving-act-sign-manager'),
     path('receiving/<str:order_id>/act/mx1/', download_receiving_act_mx1, name='orders-receiving-act-mx1'),
     path('receiving/<str:order_id>/act/mx1/print/', print_receiving_act_mx1, name='orders-receiving-act-mx1-print'),
     path('packing/', OrdersPackingView.as_view(), {'tab': 'packing'}, name='orders-packing'),
