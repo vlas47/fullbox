@@ -250,6 +250,7 @@
 - 2026-01-07 11:47: boosted facsimile preview visibility with CSS contrast/brightness filters; deployed and restarted `fullbox`.
 - 2026-01-07 11:49: adjusted facsimile preview to darker tone for better visibility on white background; deployed and restarted `fullbox`.
 - 2026-01-07 11:51: increased facsimile preview darkness (contrast 1.7, brightness 0.65) to improve visibility; deployed and restarted `fullbox`.
+- 2026-01-07 18:55: added new `stockmap` app with storekeeper access and "Карта склада" button, plus stockmap table template; deployed and restarted `fullbox`.
 - 2026-01-07 11:39: reviewed `README.md`, `description.md`, and `PROJECT_CONTEXT.md` to refresh project overview.
 - 2026-01-07 11:41: reviewed `fullbox/sku/models.py` to list client (Agency) fields.
 - 2026-01-07 11:48: checked local SQLite `fullbox/db.sqlite3` for Agency pref заполненность (counts and sample rows).
@@ -271,3 +272,5 @@
 - 2026-01-07 18:47: backfilled manager sign task for order 5 in production DB.
 - 2026-01-07 18:49: remove manager sign task after successful manager signature to hide it from dashboard (`fullbox/orders/views.py`).
 - 2026-01-07 18:49: deployed updated orders views to server and restarted `fullbox`.
+- 2026-01-07 18:55: show storekeeper-signed status in task board and keep sign tasks separate with explicit title (`fullbox/todo/templatetags/todo_panel.py`, `fullbox/todo/templates/todo/_task_panel.html`).
+- 2026-01-07 18:55: deployed updated todo panel code to server and restarted `fullbox`.

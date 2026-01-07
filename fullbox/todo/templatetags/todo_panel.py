@@ -83,6 +83,10 @@ def _extract_receiving_order_id(route: str | None) -> str | None:
     return match.group(1)
 
 
+def _is_receiving_sign_task(route: str | None) -> bool:
+    return bool(route and "/orders/receiving/" in route and "/act/print" in route)
+
+
 def _is_status_entry(entry) -> bool:
     if entry.action == "status":
         return True
@@ -94,6 +98,8 @@ def _status_label_from_entry(entry) -> str:
     payload = entry.payload or {}
     if payload.get("act_sent"):
         return "Акт отправлен клиенту" if not payload.get("act_viewed") else "Выполнена"
+    if payload.get("act_storekeeper_signed") and not payload.get("act_manager_signed"):
+        return "Принято складом, акт приемки отправлен менеджеру"
     if payload.get("act") == "placement":
         state = (payload.get("act_state") or "closed").lower()
         return "Размещение на складе" if state == "open" else "Товар принят и размещен на складе"
@@ -127,7 +133,7 @@ def task_panel(context, role=None, limit=6, show_meta=True, include_created_by=T
     other_tasks = []
     for task in tasks:
         order_id = _extract_receiving_order_id(task.route)
-        if not order_id:
+        if not order_id or _is_receiving_sign_task(task.route):
             other_tasks.append(task)
             continue
         existing = receiving_by_order.get(order_id)
