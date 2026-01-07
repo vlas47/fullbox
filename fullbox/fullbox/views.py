@@ -32,6 +32,12 @@ DEV_USERS = [
 
 ROLE_TITLES = dict(DEV_USERS)
 _REMOTE_JOURNAL_CACHE = {"ts": 0.0, "data": None}
+_FAVICON_SVG = (
+    "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'>"
+    "<rect width='64' height='64' rx='12' fill='#c79a1c'/>"
+    "<path d='M20 46V18h24v8H30v4h12v8H30v8h-10z' fill='#1f2328'/>"
+    "</svg>"
+)
 
 
 def login_menu(request):
@@ -158,6 +164,12 @@ def sign_out(request):
     logout(request)
     request.session.flush()
     return redirect("/login/")
+
+
+def favicon(request):
+    response = HttpResponse(_FAVICON_SVG, content_type="image/svg+xml")
+    response["Cache-Control"] = "public, max-age=86400"
+    return response
 
 
 def project_description(request):

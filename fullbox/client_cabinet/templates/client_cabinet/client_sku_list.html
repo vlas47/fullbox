@@ -25,6 +25,12 @@
     .card { background:var(--card); border:1px solid var(--stroke); border-radius:16px; padding:16px; box-shadow:0 18px 45px rgba(15,23,42,0.08); display:grid; gap:10px; width:100%; }
     .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
     .tag { display:inline-flex; align-items:center; gap:6px; padding:6px 10px; border-radius:10px; border:1px solid var(--stroke); background:rgba(15,23,42,0.04); }
+    .barcode-tag { display:grid; gap:6px; align-items:start; }
+    .barcode-label { font-size:11px; text-transform:uppercase; letter-spacing:1px; color:var(--muted); }
+    .barcode-wrap { background:#fff; border:1px solid var(--stroke); border-radius:8px; padding:6px; }
+    .barcode-svg { width:170px; height:40px; display:block; }
+    .barcode-text { font-size:11px; color:var(--muted); text-align:center; letter-spacing:1px; }
+    .card .barcode-value { display:none; }
     .pill { display:inline-flex; align-items:center; gap:6px; padding:6px 10px; border-radius:999px; border:1px solid var(--stroke); background:rgba(199,154,32,0.18); color:var(--gold); font-weight:600; }
     .meta { color:var(--muted); font-size:13px; }
     .thumb {
@@ -230,15 +236,27 @@
               <div>{{ item.name }}</div>
               <div class="row">
                 {% if item.market %}<span class="tag">Маркет: {{ item.market }}</span>{% endif %}
-              <span class="tag barcode-tag">
-                ШК:
-                <span
-                  class="barcode-value"
-                  data-fallback="{% if item.barcodes.all %}{% for bc in item.barcodes.all|slice:":1" %}{{ bc.value }}{% endfor %}{% else %}-{% endif %}"
-                >
-                  {% if item.barcodes.all %}{% for bc in item.barcodes.all|slice:":1" %}{{ bc.value }}{% endfor %}{% else %}-{% endif %}
+                <span class="tag barcode-tag">
+                  <span class="barcode-label">ШК</span>
+                  <span class="barcode-wrap">
+                    <svg
+                      class="barcode-svg"
+                      data-barcode-svg
+                      data-barcode-value="{% if item.barcodes.all %}{% for bc in item.barcodes.all|slice:":1" %}{{ bc.value }}{% endfor %}{% else %}-{% endif %}"
+                      aria-hidden="true"
+                    ></svg>
+                    <span class="barcode-text" data-barcode-text>
+                      {% if item.barcodes.all %}{% for bc in item.barcodes.all|slice:":1" %}{{ bc.value }}{% endfor %}{% else %}-{% endif %}
+                    </span>
+                    <span
+                      class="barcode-value"
+                      data-fallback="{% if item.barcodes.all %}{% for bc in item.barcodes.all|slice:":1" %}{{ bc.value }}{% endfor %}{% else %}-{% endif %}"
+                      hidden
+                    >
+                      {% if item.barcodes.all %}{% for bc in item.barcodes.all|slice:":1" %}{{ bc.value }}{% endfor %}{% else %}-{% endif %}
+                    </span>
+                  </span>
                 </span>
-              </span>
                 {% if item.color %}<span class="tag">Цвет: {{ item.color }}</span>{% endif %}
                 <div
                   class="size-picker"
@@ -272,6 +290,7 @@
     </div>
   </div>
 </body>
+<script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
 <script>
   (function(){
     const deleteBtns = document.querySelectorAll('.delete-btn');
@@ -382,6 +401,61 @@
       return left.upper.localeCompare(right.upper, 'ru', { numeric: true, sensitivity: 'base' });
     };
 
+    const renderBarcode = (svg, value, textEl) => {
+      if (!svg) {
+        return;
+      }
+      const raw = (value || '').toString().trim();
+      if (!raw || raw === '-') {
+        svg.innerHTML = '';
+        if (textEl) {
+          textEl.textContent = raw || '-';
+          textEl.hidden = false;
+        }
+        return;
+      }
+      if (!window.JsBarcode) {
+        if (textEl) {
+          textEl.textContent = raw;
+          textEl.hidden = false;
+        }
+        return;
+      }
+      const digits = raw.replace(/\D/g, '');
+      const useEan = digits.length >= 12;
+      const valueToRender = useEan ? digits : raw;
+      try {
+        JsBarcode(svg, valueToRender, {
+          format: useEan ? 'ean13' : 'CODE128',
+          displayValue: false,
+          margin: 0,
+          height: 36,
+          lineColor: '#1f2328',
+        });
+        if (textEl) {
+          textEl.hidden = true;
+        }
+      } catch (err) {
+        if (textEl) {
+          textEl.textContent = raw;
+          textEl.hidden = false;
+        }
+      }
+    };
+
+    const renderBarcodeForWrapper = (wrapper, value) => {
+      if (!wrapper) {
+        return;
+      }
+      const svg = wrapper.querySelector('[data-barcode-svg]');
+      const textEl = wrapper.querySelector('[data-barcode-text]');
+      if (!svg) {
+        return;
+      }
+      svg.dataset.barcodeValue = value || '';
+      renderBarcode(svg, value, textEl);
+    };
+
     const updateBarcodeForPicker = (picker) => {
       const wrapper = picker.closest('.card') || picker.closest('tr');
       if (!wrapper) {
@@ -408,6 +482,7 @@
         nextValue = barcodes.length ? barcodes[0] : '-';
       }
       valueEl.textContent = nextValue || '-';
+      renderBarcodeForWrapper(wrapper, nextValue || '-');
     };
 
     const setupSizePicker = (picker) => {

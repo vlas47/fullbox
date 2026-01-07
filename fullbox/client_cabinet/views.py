@@ -17,7 +17,7 @@ from sku.views import SKUCreateView, SKUUpdateView, SKUDuplicateView
 from todo.models import Task
 from .forms import AgencyForm
 from .services import fetch_party_by_inn
-from audit.models import OrderAuditEntry, log_order_action
+from audit.models import OrderAuditEntry, agency_snapshot, log_agency_change, log_order_action
 
 
 def _staff_allowed(request) -> bool:
@@ -58,6 +58,43 @@ def _manager_due_date(now):
     return now + timedelta(days=1)
 
 
+def _format_agency_value(value):
+    if value is None or value == "":
+        return "-"
+    if isinstance(value, bool):
+        return "Да" if value else "Нет"
+    return str(value).strip() or "-"
+
+
+def _describe_agency_changes(old_snapshot: dict, new_snapshot: dict) -> str:
+    fields = [
+        ("agn_name", "Название"),
+        ("pref", "Префикс"),
+        ("inn", "ИНН"),
+        ("kpp", "КПП"),
+        ("ogrn", "ОГРН"),
+        ("phone", "Телефон"),
+        ("email", "Email"),
+        ("adres", "Юр. адрес"),
+        ("fakt_adres", "Факт. адрес"),
+        ("fio_agn", "Контактное лицо"),
+        ("sign_oferta", "Оферта"),
+        ("use_nds", "НДС"),
+        ("contract_numb", "Номер договора"),
+        ("contract_link", "Ссылка на договор"),
+        ("archived", "Архив"),
+    ]
+    changes = []
+    for key, label in fields:
+        old_val = _format_agency_value(old_snapshot.get(key))
+        new_val = _format_agency_value(new_snapshot.get(key))
+        if old_val != new_val:
+            changes.append(f"{label}: {old_val} -> {new_val}")
+    if not changes:
+        return "Изменений нет"
+    return "Изменены реквизиты: " + "; ".join(changes)
+
+
 def _create_manager_task(order_id, agency, request, submitted_at):
     if not agency:
         return
@@ -86,9 +123,29 @@ def _order_type_label(order_type: str) -> str:
     return labels.get(order_type, order_type)
 
 
-def _order_title_label(order_type: str, order_id: str) -> str:
+def _has_receiving_items(payload: dict) -> bool:
+    items = payload.get("items") or []
+    for item in items:
+        for key in ("sku_code", "name", "qty", "size"):
+            if str(item.get(key) or "").strip():
+                return True
+    return False
+
+
+def _is_sent_to_manager(payload: dict) -> bool:
+    status_value = (payload.get("status") or payload.get("submit_action") or "").lower()
+    status_label = (payload.get("status_label") or "").lower()
+    if status_value in {"sent_unconfirmed", "send", "submitted"}:
+        return True
+    return "подтверждени" in status_label
+
+
+def _order_title_label(order_type: str, order_id: str, payload: dict | None = None) -> str:
     if order_type == "receiving":
-        return f"Заявка на приемку №{order_id}"
+        title = "Заявка на приемку"
+        if payload and not _has_receiving_items(payload):
+            title = "Заявка на приемку без указания товара"
+        return f"{title} №{order_id}"
     if order_type == "packing":
         return f"Заявка на упаковку №{order_id}"
     return f"Заявка №{order_id}"
@@ -96,11 +153,23 @@ def _order_title_label(order_type: str, order_id: str) -> str:
 
 def _order_status_label(entry) -> str:
     payload = entry.payload or {}
-    status_value = payload.get("status") or payload.get("submit_action")
+    status_value = (payload.get("status") or payload.get("submit_action") or "").lower()
     if status_value == "draft":
         return "Черновик"
-    if status_value in {"sent_unconfirmed", "send", "submitted"}:
-        return "На подтверждении"
+    if status_value in {"done", "completed", "closed", "finished"}:
+        return "Выполнена"
+    if payload.get("act_sent"):
+        return "Выполнена"
+    if payload.get("act") == "placement":
+        state = (payload.get("act_state") or "closed").lower()
+        return "Размещение на складе" if state == "open" else "Товар принят и размещен на складе"
+    status_label = (payload.get("status_label") or "").lower()
+    if "товар принят" in status_label:
+        return "Товар принят и размещен на складе"
+    if status_value in {"sent_unconfirmed", "send", "submitted"} or "подтверж" in status_label:
+        return "Ждет подтверждения"
+    if status_value in {"warehouse", "on_warehouse"} or "ожидании поставки" in status_label or "на складе" in status_label:
+        return "В ожидании поставки товара"
     return payload.get("status_label") or payload.get("status") or "-"
 
 
@@ -115,6 +184,20 @@ def _is_status_entry(entry) -> bool:
     )
 
 
+def _is_draft_entry(entry) -> bool:
+    payload = entry.payload or {}
+    status_value = (payload.get("status") or payload.get("submit_action") or "").lower()
+    status_label = (payload.get("status_label") or "").lower()
+    return status_value == "draft" or "черновик" in status_label
+
+
+def _order_detail_url(entry, client_id: int | None, client_view: bool) -> str:
+    if client_view and entry.order_type == "receiving" and _is_draft_entry(entry) and client_id:
+        return f"/orders/receiving/?client={client_id}&edit={entry.order_id}"
+    suffix = f"?client={client_id}" if client_view and client_id else ""
+    return f"/orders/{entry.order_type}/{entry.order_id}/{suffix}"
+
+
 def _order_bucket(entry) -> str:
     payload = entry.payload or {}
     status_value = (payload.get("status") or payload.get("submit_action") or "").lower()
@@ -123,7 +206,7 @@ def _order_bucket(entry) -> str:
         return "client"
     if status_value in {"done", "completed", "closed", "finished"}:
         return "done"
-    if any(token in status_label for token in ("склад", "прием", "приём")):
+    if status_value in {"warehouse", "on_warehouse"} or any(token in status_label for token in ("склад", "прием", "приём", "ожидании поставки")):
         return "warehouse"
     return "manager"
 
@@ -158,8 +241,13 @@ def dashboard(request):
     orders_panel_total = 0
     client_messages = []
     if selected_client:
-        raw_entries = (
+        base_entries = (
             OrderAuditEntry.objects.filter(agency=selected_client)
+            .order_by("-created_at")
+        )
+        order_ids = list(base_entries.values_list("order_id", flat=True).distinct())
+        raw_entries = (
+            OrderAuditEntry.objects.filter(order_id__in=order_ids)
             .order_by("-created_at")
         )
         latest_by_order = {}
@@ -174,12 +262,20 @@ def dashboard(request):
             for order_id, latest_entry in latest_by_order.items()
         ]
         selected_entries.sort(key=lambda item: item.created_at, reverse=True)
+        if not client_view:
+            selected_entries = [entry for entry in selected_entries if not _is_draft_entry(entry)]
+        order_titles = {
+            entry.order_id: _order_title_label(entry.order_type, entry.order_id, entry.payload or {})
+            for entry in selected_entries
+        }
         buckets = {
             "client": {"label": "У клиента", "orders": []},
             "manager": {"label": "У менеджера", "orders": []},
             "warehouse": {"label": "На складе", "orders": []},
             "done": {"label": "Выполнена", "orders": []},
         }
+        act_cards = []
+        visible_order_ids = {entry.order_id for entry in selected_entries}
         for entry in selected_entries:
             bucket = _order_bucket(entry)
             buckets[bucket]["orders"].append(
@@ -187,12 +283,32 @@ def dashboard(request):
                     "order_id": entry.order_id,
                     "order_type": entry.order_type,
                     "type_label": _order_type_label(entry.order_type),
-                    "title": _order_title_label(entry.order_type, entry.order_id),
+                    "title": _order_title_label(entry.order_type, entry.order_id, entry.payload or {}),
                     "status_label": _order_status_label(entry),
                     "created_at": entry.created_at,
-                    "detail_url": f"/orders/{entry.order_type}/{entry.order_id}/?client={selected_client.id}",
+                    "detail_url": _order_detail_url(entry, selected_client.id if selected_client else None, client_view),
                 }
             )
+            payload = entry.payload or {}
+            act_label = payload.get("act_sent")
+            if act_label and entry.order_type == "receiving":
+                act_viewed = bool(payload.get("act_viewed"))
+                if not act_viewed:
+                    act_cards.append(
+                        {
+                            "bucket": "client",
+                            "order_id": entry.order_id,
+                            "order_type": entry.order_type,
+                            "type_label": "Акт",
+                            "title": f"{act_label} по заявке №{entry.order_id}",
+                            "status_label": "Акт отправлен клиенту",
+                            "created_at": entry.created_at,
+                            "detail_url": f"/orders/receiving/{entry.order_id}/act/?client={selected_client.id}",
+                            "attention": True,
+                        }
+                    )
+        for card in act_cards:
+            buckets[card["bucket"]]["orders"].append(card)
         orders_panel_columns = [
             {
                 "status": key,
@@ -207,17 +323,23 @@ def dashboard(request):
             for column in orders_panel_columns
         ]
         orders_panel_total = sum(column["count"] for column in orders_panel_columns)
+        message_qs = OrderAuditEntry.objects.filter(
+            agency=selected_client,
+            action="update",
+        ).order_by("-created_at")
+        if not client_view:
+            message_qs = message_qs.filter(order_id__in=visible_order_ids)
         client_messages = [
             {
                 "created_at": entry.created_at,
                 "text": _format_message_text(entry.description) or "Исправление заявки",
+                "title": order_titles.get(
+                    entry.order_id,
+                    _order_title_label(entry.order_type, entry.order_id, entry.payload or {}),
+                ),
                 "detail_url": f"/orders/{entry.order_type}/{entry.order_id}/?client={selected_client.id}",
             }
-            for entry in OrderAuditEntry.objects.filter(
-                agency=selected_client,
-                action="update",
-            )
-            .order_by("-created_at")[:10]
+            for entry in message_qs[:30]
         ]
     else:
         orders_panel_columns = [
@@ -236,7 +358,7 @@ def dashboard(request):
         {
             "selected_client": selected_client,
             "client_filter_param": f"?agency={selected_client.id}" if selected_client else "",
-            "client_view": bool(selected_client),
+            "client_view": client_view,
             "orders_panel_columns": orders_panel_columns,
             "orders_panel_stats": orders_panel_stats,
             "orders_panel_total": orders_panel_total,
@@ -254,6 +376,17 @@ def receiving_redirect(request, pk: int):
     if not _check_agency_access(request, agency):
         return HttpResponseForbidden("Доступ запрещен")
     return redirect(f"/orders/receiving/?client={pk}")
+
+
+def packing_redirect(request, pk: int):
+    if not request.user.is_authenticated:
+        return HttpResponseForbidden("Доступ запрещен")
+    agency = Agency.objects.filter(pk=pk).first()
+    if not agency:
+        return redirect("/client/")
+    if not _check_agency_access(request, agency):
+        return HttpResponseForbidden("Доступ запрещен")
+    return redirect(f"/orders/packing/?client={pk}")
 
 
 class ClientListView(ListView):
@@ -362,9 +495,12 @@ class AgencyFormMixin:
 
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
+        staff_view = _staff_allowed(self.request)
         ctx["mode"] = getattr(self, "mode", "edit")
         ctx["title"] = getattr(self, "title", "Клиент")
         ctx["submit_label"] = getattr(self, "submit_label", "Сохранить")
+        ctx["staff_view"] = staff_view
+        ctx["cancel_url"] = "/client/" if staff_view else "/client/dashboard/"
         return ctx
 
 
@@ -378,6 +514,17 @@ class ClientCreateView(AgencyFormMixin, CreateView):
             return HttpResponseForbidden("Доступ запрещен")
         return super().dispatch(request, *args, **kwargs)
 
+    def form_valid(self, form):
+        response = super().form_valid(form)
+        log_agency_change(
+            "create",
+            self.object,
+            user=self.request.user if self.request.user.is_authenticated else None,
+            description=f"Создан клиент: {self.object.agn_name or self.object.inn or self.object.id}",
+            snapshot=agency_snapshot(self.object),
+        )
+        return response
+
 
 class ClientUpdateView(AgencyFormMixin, UpdateView):
     mode = "edit"
@@ -385,9 +532,31 @@ class ClientUpdateView(AgencyFormMixin, UpdateView):
     submit_label = "Сохранить"
 
     def dispatch(self, request, *args, **kwargs):
-        if not _staff_allowed(request):
+        agency = Agency.objects.filter(pk=kwargs.get("pk")).first()
+        if not agency:
+            return redirect("/client/")
+        if not _check_agency_access(request, agency):
             return HttpResponseForbidden("Доступ запрещен")
         return super().dispatch(request, *args, **kwargs)
+
+    def form_valid(self, form):
+        old_snapshot = agency_snapshot(self.get_object())
+        response = super().form_valid(form)
+        new_snapshot = agency_snapshot(self.object)
+        description = _describe_agency_changes(old_snapshot, new_snapshot)
+        log_agency_change(
+            "update",
+            self.object,
+            user=self.request.user if self.request.user.is_authenticated else None,
+            description=description,
+            snapshot=new_snapshot,
+        )
+        return response
+
+    def get_success_url(self):
+        if _staff_allowed(self.request):
+            return super().get_success_url()
+        return "/client/dashboard/"
 
 
 def archive_toggle(request, pk: int):
@@ -396,12 +565,23 @@ def archive_toggle(request, pk: int):
     agency = get_object_or_404(Agency, pk=pk)
     agency.archived = not agency.archived
     agency.save(update_fields=["archived"])
+    action_label = "Архивирован клиент" if agency.archived else "Разархивирован клиент"
+    log_agency_change(
+        "update",
+        agency,
+        user=request.user if request.user.is_authenticated else None,
+        description=f"{action_label}: {agency.agn_name or agency.inn or agency.id}",
+        snapshot=agency_snapshot(agency),
+    )
     next_url = request.GET.get("next") or reverse("client-list")
     return redirect(next_url)
 
 
 def fetch_by_inn(request):
-    if not _staff_allowed(request):
+    if not request.user.is_authenticated:
+        return JsonResponse({"ok": False, "error": "Доступ запрещен"}, status=403)
+    direct_client = Agency.objects.filter(portal_user=request.user).first()
+    if not _staff_allowed(request) and not direct_client:
         return JsonResponse({"ok": False, "error": "Доступ запрещен"}, status=403)
     inn = (request.GET.get("inn") or "").strip()
     if not inn:
@@ -846,7 +1026,7 @@ class ClientReceivingCreateView(TemplateView):
             )
         submit_action = request.POST.get("submit_action")
         status_value = "draft" if submit_action == "draft" else "sent_unconfirmed"
-        status_label = "Черновик" if status_value == "draft" else "Новая заявка"
+        status_label = "Черновик" if status_value == "draft" else "Ждет подтверждения"
         payload = {
             "eta_at": request.POST.get("eta_at"),
             "expected_boxes": request.POST.get("expected_boxes"),

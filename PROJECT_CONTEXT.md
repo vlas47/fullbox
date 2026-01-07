@@ -1,0 +1,256 @@
+# Project Context
+
+## Quick Summary
+- Project name: Fullbox (internal fulfillment/WMS portal).
+- Goal: manage SKU, orders/receiving, tasks, audits, role-based cabinets, and label printing.
+- Current status: Django 6.0 app in production; latest updates on 2026-01-04 (placement act UI changes, favicon, template tweaks).
+
+## Current Focus
+- Last recorded focus: placement act UI in склад (pallet contents in table, SKU column, box extraction rule).
+- Why it matters: clarifies warehouse placement workflow for storekeepers.
+
+## Recent Decisions
+- Decision: Django 6.0 + Python 3.12; default SQLite with optional PostgreSQL via env.
+- Reason: lightweight local setup with production-ready DB option.
+- Date: see `journal.md`.
+- Decision: always deploy changes to server after edits (and restart service when needed).
+- Reason: keep production in sync with local fixes.
+- Date: 2026-01-04.
+
+## Open Questions
+- Question: confirm scope/ownership of Oracle APEX + FastAPI integration (see `note.txt`).
+- Owner: project lead.
+
+## TODO (short list)
+- [ ] Capture current sprint goals / next tasks.
+- [ ] Verify pending deployments or migrations.
+- [ ] After reboot: confirm if busy cursor persists on desktop; if yes, check Task Manager/Explorer; if no, check browser extensions.
+
+## How to Run / Test
+- Setup: `python -m venv .venv`, `.venv\\Scripts\\activate`, `pip install -r requirements.txt`.
+- Run: `python fullbox/manage.py migrate`, `python fullbox/manage.py runserver`.
+- Tests: not documented.
+
+## Key Files / Folders
+- `README.md` - overview, routes, env vars.
+- `description.md` - stack, modules, local run details.
+- `journal.md` - detailed change log.
+- `fullbox/` - Django apps and project code.
+- `DEPLOY.md` - deployment steps.
+- `LABEL_PRINT.md` - label printing spec.
+- `server_access.md` - server access details (sensitive).
+- `.env.example` - env vars reference.
+- `Начальные таблицы/` - source XLSX data for `load_initial_tables`.
+- `fullbox/db.sqlite3` - local SQLite DB (default).
+
+## Notes for AI Assistant
+- Preferred language: Russian (based on chat).
+- Style constraints: concise, CLI-friendly; ask only when needed.
+- Anything to avoid: do not paste credentials; refer to `server_access.md` and `note.txt` for secrets.
+- This file is my memory aid; I must log each of my actions here.
+- Always deploy changes to the server after edits.
+
+## Restart Notes
+- After reboot: check if busy cursor appears on desktop (not just browser).
+- If yes: open Task Manager → sort by CPU/Disk; restart `Windows Explorer`.
+- If no: test in incognito or disable extensions; share pending requests if any.
+
+## AI Action Log
+- 2026-01-04 09:40: prepared guidance on Windows Terminal settings locations (Russian UI).
+- 2026-01-04 09:45: reviewed core Django config (`settings.py`, `urls.py`, `manage.py`).
+- 2026-01-04 09:45: reviewed key models (`sku`, `todo`, `employees`, `audit`).
+- 2026-01-04 09:45: reviewed key views (`orders`, `client_cabinet`, `sku`, `market_sync`).
+- 2026-01-04 09:48: reviewed `sklad` app (views/urls/templates) and inventory journal templates.
+- 2026-01-04 09:48: reviewed orders flow around storekeeper tasks and acts in `fullbox/orders/views.py`.
+- 2026-01-04 09:48: reviewed task panel template tag used by storekeeper dashboard.
+- 2026-01-04 09:52: inspected placement act template/JS to diagnose UI counts.
+- 2026-01-04 10:01: updated placement act UI to show pallet contents and correct pallet item counts.
+- 2026-01-04 10:04: user asked about deployment; changes are local only, not deployed.
+- 2026-01-04 10:06: added reminder to always deploy; uploaded `fullbox/orders/templates/orders/placement_act.html` to server via scp.
+- 2026-01-04 10:09: reviewed updated placement act UI screenshot feedback.
+- 2026-01-04 10:15: moved pallet contents into pallets table (removed right sidebar active pallet panel) and redeployed template to server.
+- 2026-01-04 10:19: verified server template has no "Активная палета" block; likely browser cache if still visible.
+- 2026-01-04 10:21: searched server for placement_act template and "Активная палета" string; only one template exists and it lacks the block.
+- 2026-01-04 10:26: restarted `fullbox` systemd service to refresh cached templates.
+- 2026-01-04 10:35: changed pallet logic so boxes in pallet cannot be opened; updated UI to only extract, deployed template, restarted service.
+- 2026-01-04 10:39: added SKU column to remaining items table in placement act; deployed template and restarted service.
+- 2026-01-04 10:42: investigating report of busy cursor/spinner on placement page; suggested checking pending network requests.
+- 2026-01-04 10:45: reviewed devtools screenshot; noted favicon 404 as likely cause of loading indicator.
+- 2026-01-04 10:47: added `/favicon.ico` route (SVG) in `fullbox/fullbox/views.py` and `fullbox/fullbox/urls.py`, deployed and restarted service.
+- 2026-01-04 10:50: advised checking pending network requests; suspect external fonts or extensions for spinner.
+- 2026-01-04 10:58: removed external Google Fonts from placement act template to avoid hanging loads; deployed and restarted service.
+- 2026-01-04 11:01: forced default cursor on placement act body to avoid busy cursor; deployed and restarted service.
+- 2026-01-04 11:08: advised OS/browser-level troubleshooting for persistent busy cursor across all pages.
+- 2026-01-04 11:26: listed project markdown files; reviewed README, description, DEPLOY, LABEL_PRINT, journal, and research notes to refresh project context.
+- 2026-01-04 11:27: reviewed storekeeper cabinet (sklad) views/templates and orders (urls, journal/detail, receiving/placement act templates) to summarize workflows.
+- 2026-01-04 11:35: reviewed placement act screenshot and checked UI logic in placement_act template to diagnose inconsistencies.
+- 2026-01-04 11:45: updated receiving act status labels and placement act active-container logic to match storekeeper workflow.
+- 2026-01-04 11:46: deployed updated placement act template and status logic to server; restarted fullbox service.
+- 2026-01-04 11:50: removed placement act notice/banner and active container strip from template per screenshot feedback.
+- 2026-01-04 11:51: deployed updated placement act template to server; restarted fullbox service.
+- 2026-01-04 11:57: enforced placement-act close validation requiring all boxes assigned to pallets.
+- 2026-01-04 11:57: deployed placement act validation update to server; restarted fullbox service.
+- 2026-01-04 12:00: added placement act info summary (items/boxes/pallets) in sidebar.
+- 2026-01-04 12:00: deployed placement act info summary update to server; restarted fullbox service.
+- 2026-01-04 12:05: replaced placement act info block with summary sentence and pluralization.
+- 2026-01-04 12:05: deployed placement act info summary sentence to server; restarted fullbox service.
+- 2026-01-04 12:13: added server-side validation to require boxes assigned to pallets before closing placement act.
+- 2026-01-04 12:14: deployed placement act validation update to server; restarted fullbox service.
+- 2026-01-04 12:21: reviewed client_cabinet views, urls, forms, services, and core templates (dashboard, SKU list/form, receiving/packing forms, clients list/form, inventory journal).
+- 2026-01-04 12:28: updated client dashboard status/bucket logic for acts and added highlight styling for client-side act cards.
+- 2026-01-04 12:28: deployed client dashboard status/highlight changes to server; restarted fullbox service.
+- 2026-01-04 12:31: adjusted client dashboard to keep act cards out of the "done" column.
+- 2026-01-04 12:31: deployed client dashboard bucket change to server; restarted fullbox service.
+- 2026-01-04 12:33: hide client act cards after they are viewed (client can open via order).
+- 2026-01-04 12:33: deployed client act visibility change to server; restarted fullbox service.
+- 2026-01-04 12:37: fixed client inventory journal filter column indices (SKU/Name/Size dropdowns).
+- 2026-01-04 12:38: deployed client inventory journal filter fix to server; restarted fullbox service.
+- 2026-01-04 20:11: listed repo root to check structure and searched for AGENTS.md (not found).
+- 2026-01-04 20:12: reviewed PROJECT_CONTEXT.md and README.md to refresh project context.
+- 2026-01-04 20:25: user asked to record each step; acknowledged and will log actions in this file.
+- 2026-01-04 20:38: reviewed client_cabinet backend (views.py, urls.py, forms.py, services.py).
+- 2026-01-04 20:38: reviewed client_cabinet templates (dashboard, clients list/form, SKU list/form, receiving/packing/order forms, inventory journal).
+- 2026-01-04 20:40: summarized client packing request flow (routes, view handling, payload logging, dashboard status behavior).
+- 2026-01-04 20:44: restyled client packing request form template to match receiving form visual style.
+- 2026-01-04 20:54: reviewed DEPLOY.md and server_access.md for server connection instructions.
+- 2026-01-04 20:54: uploaded updated client packing form template to `/opt/fullbox` on server.
+- 2026-01-04 20:54: restarted `fullbox` systemd service on server.
+- 2026-01-04 21:00: restyled client packing form to match client cabinet visual design.
+- 2026-01-04 21:00: uploaded updated client packing form template to `/opt/fullbox` on server.
+- 2026-01-04 21:00: restarted `fullbox` systemd service on server.
+- 2026-01-04 21:12: user request on packing form style was ambiguous; asked for clarification before changing.
+- 2026-01-04 21:14: reverted client packing form to match receiving form visual style.
+- 2026-01-04 21:14: uploaded updated client packing form template to `/opt/fullbox` on server.
+- 2026-01-04 21:14: restarted `fullbox` systemd service on server.
+- 2026-01-04 21:16: noted where the client receiving request lives (view, template, route).
+- 2026-01-04 21:18: checked orders urls/views/templates to confirm receiving form is rendered in orders app (`orders/index.html` via `OrdersHomeView`).
+- 2026-01-05 04:56: added packing order support in orders app (views: new packing submit flow, helper formatters, order number per type, packing detail view).
+- 2026-01-05 04:56: added packing routes and UI in orders (tabs/heading in `orders/index.html`, packing form markup there, packing detail display in `orders/detail.html`).
+- 2026-01-05 04:57: deployed updated orders views/urls/templates to server and restarted `fullbox`.
+- 2026-01-05 04:58: clarified that packing uses conditional blocks inside orders templates (no separate template file).
+- 2026-01-05 05:05: moved packing form into separate orders template (`orders/packing.html`) and wired OrdersPackingView.
+- 2026-01-05 05:05: updated client cabinet links to point packing to `/orders/packing/` and added packing redirect route.
+- 2026-01-05 05:06: deployed orders packing template/routes and client cabinet link updates to server; restarted `fullbox`.
+- 2026-01-05 05:35: restyled `orders/packing.html` to match client dashboard visual design (palette/layout/sidebar).
+- 2026-01-05 05:37: deployed updated `orders/packing.html` to server and restarted `fullbox`.
+- 2026-01-05 05:51: trimmed packing sidebar links and moved "В кабинет"/"Журнал заявок" into left nav; deployed and restarted `fullbox`.
+- 2026-01-05 05:57: user reported "Доступ запрещен" on client edit page; need to adjust access policy if client self-edit is desired.
+- 2026-01-05 05:58: allowed client users to edit their own agency record; deployed and restarted `fullbox`.
+- 2026-01-05 06:00: checked audit app; found SKU journal and order journal only, no отдельный журнал клиентов.
+- 2026-01-05 06:07: implemented client audit journal (AuditEntry with agency, new list view/template/route, logging on client create/update/archive).
+- 2026-01-05 06:07: deployed audit changes, ran migrations (audit/sku/todo), and restarted `fullbox`.
+- 2026-01-05 06:08: added client audit logging for Agency changes made via admin; deployed and restarted `fullbox`.
+- 2026-01-05 06:12: allowed client users to access INN autofill endpoint; deployed and restarted `fullbox`.
+- 2026-01-05 06:20: checked server journalctl/nginx logs for client edit 500; no gunicorn errors found.
+- 2026-01-05 06:21: inspected PostgreSQL logs; found missing `audit_auditentry.agency_id` column causing 500 on client save.
+- 2026-01-05 06:22: verified Postgres schema missing `agency_id` on `audit_auditentry`.
+- 2026-01-05 06:23: applied audit migrations to Postgres with `.env` loaded (previously ran against SQLite).
+- 2026-01-05 06:23: rechecked Postgres schema; `audit_auditentry.agency_id` column now present.
+- 2026-01-05 06:29: adjusted client edit success redirect for non-staff to stay on `/client/<id>/edit/` instead of staff-only list.
+- 2026-01-05 06:29: deployed updated `client_cabinet/views.py` to server and restarted `fullbox`.
+- 2026-01-05 06:36: added validation for client requisites form (required INN/phone/FIO, field format checks).
+- 2026-01-05 06:36: updated client requisites template labels to mark required fields.
+- 2026-01-05 06:36: deployed updated `client_cabinet/forms.py` and `client_cabinet/templates/client_cabinet/clients_form.html`, restarted `fullbox`.
+- 2026-01-05 06:41: added phone input mask (+7 with brackets/dashes) and enforced +7 formatting/validation for client requisites form.
+- 2026-01-05 06:41: deployed updated `client_cabinet/forms.py` and `client_cabinet/templates/client_cabinet/clients_form.html`, restarted `fullbox`.
+- 2026-01-05 06:46: hid client-only buttons ("К списку клиентов", "Dev") on requisites form; cancel now points to client dashboard.
+- 2026-01-05 06:46: changed client save redirect to `/client/dashboard/`.
+- 2026-01-05 06:46: deployed updated `client_cabinet/views.py` and `client_cabinet/templates/client_cabinet/clients_form.html`, restarted `fullbox`.
+- 2026-01-05 06:53: removed client/contact sections from packing form (kept hidden agency/contact fields); deployed and restarted `fullbox`.
+- 2026-01-05 07:02: updated `journal.md` with summary of 2026-01-05 changes (packing request, client edit, audit journal, validations).
+- 2026-01-05 07:02: uploaded updated `journal.md` to server.
+- 2026-01-05 07:06: added 2026-01-04 summary to `journal.md` and uploaded to server.
+- 2026-01-05 07:11: reordered packing request form to start with item description and deadline, moved materials/comment sections; deployed and restarted `fullbox`.
+- 2026-01-05 07:18: reworked packing order detail layout to remove right column; moved info/comments under main content for packing; deployed and restarted `fullbox`.
+- 2026-01-05 07:25: restored right column for packing detail; info/comments stay in two blocks on the right; deployed and restarted `fullbox`.
+- 2026-01-05 07:33: скрыты черновики заявок для не-клиентов в клиентском кабинете и журнале заявок; задеплоены `client_cabinet/views.py` и `orders/views.py`, перезапущен `fullbox`.
+- 2026-01-05 07:36: уточнена фильтрация сообщений для не-клиентов (исключены черновики); задеплоен `client_cabinet/views.py`, перезапущен `fullbox`.
+- 2026-01-05 07:45: черновики в кабинете/журнале открываются в форме редактирования для клиента; разрешено редактирование черновиков клиентом; задеплоены `client_cabinet/views.py` и `orders/views.py`, перезапущен `fullbox`.
+- 2026-01-05 07:49: исправлена ошибка отступов в `orders/views.py` (500 на /orders/); задеплоен файл и перезапущен `fullbox`.
+- 2026-01-05 07:55: для клиента разрешен просмотр заказов без параметра `?client=` (берется привязанный portal_user); задеплоен `orders/views.py`, перезапущен `fullbox`.
+- 2026-01-05 08:03: добавлены кнопки "Отправить менеджеру" и "Сохранить черновик" в режиме редактирования черновика, отправка меняет статус; задеплоены `orders/views.py` и `orders/templates/orders/index.html`, перезапущен `fullbox`.
+- 2026-01-05 08:11: для отправленных заявок на приемку без товаров добавлено спец-имя "Заявка на приемку без указания товара" в карточках/детали; задеплоены `client_cabinet/views.py` и `orders/views.py`, перезапущен `fullbox`.
+- 2026-01-06 07:21: listed repo root to find project memory file; searched for memory markers.
+- 2026-01-06 07:21: reviewed `README.md` and `PROJECT_CONTEXT.md` to refresh project context.
+- 2026-01-06 07:30: updated task display titles to use receiving order payload so empty receiving orders show "Заявка на приемку без указания товара" (todo `models.py`).
+- 2026-01-06 07:32: uploaded updated `fullbox/todo/models.py` to `/opt/fullbox` and restarted `fullbox` service.
+- 2026-01-06 07:44: updated order title logic for empty receiving orders (orders/client_cabinet/todo), deployed changes, restarted `fullbox`.
+- 2026-01-06 08:08: added manual restore prompt for receiving autosave drafts so new orders start clean; deployed updated `orders/index.html`, restarted `fullbox`.
+- 2026-01-06 08:19: added client line to order task cards in task panel (todo template tag + `_task_panel.html`), deployed and restarted `fullbox`.
+- 2026-01-06 08:26: removed stray todo files on server; highlighted client/status values and shortened "Индивидуальный предприниматель" to "ИП" in task cards; deployed and restarted `fullbox`.
+- 2026-01-06 08:28: colored task card status values (waiting red, done green) in `_task_panel.html`, deployed and restarted `fullbox`.
+- 2026-01-06 08:40: renamed receiving act creation button to "Взять в работу" in order detail and task detail; deployed and restarted `fullbox`.
+- 2026-01-06 08:49: changed receiving act add-item flow to a persistent top entry row with add button; extra items append below; deployed and restarted `fullbox`.
+- 2026-01-06 08:54: updated receiving act page title/header to "В работе ..." using order title derived from payload; deployed and restarted `fullbox`.
+- 2026-01-06 09:03: added SKU/barcode columns to receiving act table with backend lookup and extra-item fields; deployed and restarted `fullbox`.
+- 2026-01-06 09:17: added SKU/barcode/name datalist suggestions for receiving act entry fields; deployed and restarted `fullbox`.
+- 2026-01-06 09:21: listed repo root, searched for memory markers, reviewed `PROJECT_CONTEXT.md` and `README.md` to refresh project context and confirm memory file.
+- 2026-01-06 09:24: searched for barcode/scanner references and reviewed `fullbox/templates/scanner_test.html` plus `fullbox/orders/templates/orders/receiving_act.html` to prep scanner troubleshooting.
+- 2026-01-06 09:27: updated head manager dashboard scanner link to "Настройка сканеров" (points to `/scanner-test/`).
+- 2026-01-06 09:31: added `/scanner-settings/` route and new `scanner_settings.html` page; updated head manager dashboard link to new settings page.
+- 2026-01-06 09:37: deployed updated head manager dashboard, new scanner settings template, and `fullbox/fullbox/urls.py` to server; restarted `fullbox`.
+- 2026-01-06 09:53: added Web Serial (COM) connect UI + read loop to `scanner_settings.html`, updated instructions, deployed template, restarted `fullbox`.
+- 2026-01-06 10:13: added Proton IMS-2290HD_K guidance and COM control-char display to `scanner_settings.html`; deployed template, restarted `fullbox`.
+- 2026-01-06 11:15: added Proton IMS-2290HD_K dedicated page with barcode instructions, new route and button, added static barcode images, updated static settings; deployed templates/settings/static to server and restarted `fullbox`.
+- 2026-01-06 11:21: embedded IMS-2290HD_K barcode images as data URIs in `scanner_ims_2290hd.html`, fixed scanner settings text, redeployed templates, restarted `fullbox`.
+- 2026-01-06 12:07: troubleshooting scanner COM/VCP; identified USB port issue (scanner started working on different USB port).
+- 2026-01-06 13:18: added barcode scan support to receiving act page (scanner UI, barcode->SKU map, auto-add/increment, unknown barcode link to SKU) in `orders/views.py` and `orders/templates/orders/receiving_act.html`.
+- 2026-01-06 14:13: added "Настройка сканеров" link to storekeeper dashboard nav (`sklad/templates/sklad/dashboard.html`) pointing to `/scanner-settings/`.
+- 2026-01-06 14:17: made scanner settings "В кабинет" button return to referrer when available (`templates/scanner_settings.html`).
+- 2026-01-06 14:31: rendered barcode as SVG in client SKU card view using JsBarcode; updated `client_cabinet/templates/client_cabinet/client_sku_list.html`.
+- 2026-01-06 15:15: allow receiving act save when planned items are empty but extra scanned items exist; keep mismatch logic only for planned items (`orders/views.py`).
+- 2026-01-06 15:21: prevent Enter key in act inputs from submitting form (scanner/text inputs won’t auto-save act) in `orders/templates/orders/receiving_act.html`.
+- 2026-01-06 15:37: journal list now shows actual qty for receiving orders after acceptance (added totals from act items in `orders/views.py`, column in `orders/templates/orders/index.html`).
+- 2026-01-06 15:44: receiving order detail now shows actual qty from act (falls back to act items when no planned items) in `orders/views.py` and `orders/templates/orders/detail.html`.
+- 2026-01-06 16:15: client dashboard messages now use full order titles and the messages panel scrolls (`client_cabinet/views.py`, `client_cabinet/templates/client_cabinet/dashboard.html`); deployed and restarted `fullbox`.
+- 2026-01-06 16:31: increased client dashboard messages list to 30 items (`client_cabinet/views.py`); deployed and restarted `fullbox`.
+- 2026-01-06 17:09: removed packing tab/button from client view in orders list/receiving (`orders/templates/orders/index.html`); deployed and restarted `fullbox`.
+- 2026-01-06 17:13: removed journal and receiving tabs from client view in orders pages header (`orders/templates/orders/index.html`); deployed and restarted `fullbox`.
+- 2026-01-06 17:24: wired receiving "Скачать шаблон" button to download receiving + SKU upload templates from new static docs (`orders/templates/orders/index.html`, `static/docs`); deployed and restarted `fullbox`.
+- 2026-01-06 17:28: fixed static download URLs to use absolute `/static/...` paths on receiving template download button (`orders/templates/orders/index.html`); deployed and restarted `fullbox`.
+- 2026-01-06 17:33: added Django download endpoints for receiving/SKU templates and switched "Скачать шаблон" to those URLs (`orders/views.py`, `orders/urls.py`, `orders/templates/orders/index.html`); deployed and restarted `fullbox`.
+- 2026-01-06 17:42: added upload modal for filled templates on receiving form (modal UI + file input attached to form, JS open/close, file list) in `orders/templates/orders/index.html`; deployed and restarted `fullbox`.
+- 2026-01-06 17:45: updated `journal.md` with 2026-01-05 and 2026-01-06 work summary entries; deployed to server.
+- 2026-01-06 18:48: receiving template upload now accepts only SKU/receiving templates; SKU template adds SKUs first, receiving template adds order items only from catalog, with new backend parsing logic and modal text updates (`orders/views.py`, `orders/templates/orders/index.html`); deployed and restarted `fullbox`.
+- 2026-01-06 18:55: template upload modal now has separate file inputs for SKU vs receiving templates with client-facing descriptions; backend accepts both fields (`orders/views.py`, `orders/templates/orders/index.html`); deployed and restarted `fullbox`.
+- 2026-01-06 19:05: storekeeper dashboard task board no longer stretches columns; switched to content-height layout with scroll on main content (`sklad/templates/sklad/dashboard.html`); deployed and restarted `fullbox`.
+- 2026-01-06 19:10: storekeeper dashboard task columns now capped to viewport with internal scroll; task cards stay compact (`sklad/templates/sklad/dashboard.html`); deployed and restarted `fullbox`.
+- 2026-01-06 19:33: receiving act now detects fast scanner input and routes it to the scan field even when focus is elsewhere (keyboard-wedge heuristic), without affecting manual typing (`orders/templates/orders/receiving_act.html`); deployed and restarted `fullbox`.
+- 2026-01-06 19:46: relaxed scan heuristic timing for keyboard-wedge input to capture full barcode strings (gap/avg/total thresholds) in `orders/templates/orders/receiving_act.html`; deployed and restarted `fullbox`.
+- 2026-01-06 19:51: reworked scan heuristic to avoid truncation (no per-char preventDefault, larger gaps, only intercept on terminator) in `orders/templates/orders/receiving_act.html`; deployed and restarted `fullbox`.
+- 2026-01-06 19:54: disabled global scanner heuristic when scan input is focused and restored direct Enter handling on scan field (`orders/templates/orders/receiving_act.html`); deployed and restarted `fullbox`.
+- 2026-01-06 22:36: added automatic act document generation (receiving act + МХ-1), download endpoints, and links in receiving act UI; added template xlsx files under `static/docs` (`orders/views.py`, `orders/urls.py`, `orders/templates/orders/receiving_act.html`, `static/docs`); deployed and restarted `fullbox`.
+- 2026-01-07 08:12: cleared unused template rows in act documents and forced regeneration on download to remove sample positions (`orders/views.py`); deployed and restarted `fullbox`.
+- 2026-01-07 08:17: avoid writing into merged cells while clearing act templates (prevents 500 on download) in `orders/views.py`; deployed and restarted `fullbox`.
+- 2026-01-07 08:24: act document generation now deletes unused item rows so only actual items remain (no sample/blank rows) for receiving act and MX-1 sheets (`orders/views.py`); deployed and restarted `fullbox`.
+- 2026-01-07 08:35: wired placement payload into act document generation so box quantities can fill receiving act columns; deployed and restarted `fullbox` (`orders/views.py`).
+- 2026-01-07 08:43: reviewed project docs (`README.md`, `PROJECT_CONTEXT.md`, `description.md`, `note.txt`), searched for "вспоин/споин" and apex/fastapi references, inspected Django root routes and FastAPI entry (`fullbox/fullbox/urls.py`, `nb/FApiT.py`) to locate the requested file.
+- 2026-01-07 08:48: reviewed storekeeper receiving act route/view/template for `/orders/receiving/<id>/act/` (`fullbox/orders/urls.py`, `fullbox/orders/views.py`, `fullbox/orders/templates/orders/receiving_act.html`).
+- 2026-01-07 08:53: acknowledged renaming the receiving act document label to "акт приемки печатная форма" per request; pending implementation.
+- 2026-01-07 08:54: renamed receiving act document button label to "Акт приемки печатная форма" and deployed updated `fullbox/orders/views.py`, restarted `fullbox` service.
+- 2026-01-07 09:02: added printable receiving act page (`fullbox/orders/templates/orders/receiving_act_print.html`), wired new print route and updated act button URL (`fullbox/orders/views.py`, `fullbox/orders/urls.py`).
+- 2026-01-07 09:03: deployed receiving act print changes to server (views/urls/template), corrected template path on server, restarted `fullbox` service.
+- 2026-01-07 09:25: adjusted receiving act print layout to match spreadsheet sample and count boxes by number of boxes, deployed updated `fullbox/orders/views.py` and `fullbox/orders/templates/orders/receiving_act_print.html`, restarted `fullbox` service.
+- 2026-01-07 09:30: added bottom signature/summary block to receiving act print and switched total boxes/pallets to unique counts from placement payload, deployed updated `fullbox/orders/views.py` and `fullbox/orders/templates/orders/receiving_act_print.html`, restarted `fullbox` service.
+- 2026-01-07 10:06: added printable MХ-1 page (HTML template + route), wired MХ-1 button to print view, included per-item boxes/pallets and page splitting (`fullbox/orders/views.py`, `fullbox/orders/urls.py`, `fullbox/orders/templates/orders/mx1_print.html`).
+- 2026-01-07 10:20: reworked MХ-1 print layout to match sample form (header blocks, codes, contract, act block, column numbering), adjusted item mapping and page size (`fullbox/orders/views.py`, `fullbox/orders/templates/orders/mx1_print.html`).
+- 2026-01-07 10:23: added "Артикул" column to receiving act print and separated SKU from item name (`fullbox/orders/views.py`, `fullbox/orders/templates/orders/receiving_act_print.html`).
+- 2026-01-07 10:36: updated receiving act print title to "Акт приемки" and adjusted column widths (wider name, narrower barcode), deployed template and restarted `fullbox`.
+- 2026-01-07 10:42: added "Сотрудники" navigation link to head manager dashboard (`fullbox/templates/head_manager/dashboard.html`).
+- 2026-01-07 10:42: deployed updated head manager dashboard and restarted `fullbox` service.
+- 2026-01-07 10:47: added head manager employee edit view + template and edit links, deployed `fullbox/employees/views.py`, `fullbox/employees/urls.py`, `fullbox/employees/templates/employees/employee_list.html`, `fullbox/employees/templates/employees/employee_form.html`, restarted `fullbox`.
+- 2026-01-07 10:57: restyled employees list/edit pages to match head manager cabinet and removed Dev/Admin buttons, deployed updated `fullbox/employees/views.py`, `fullbox/employees/templates/employees/employee_list.html`, `fullbox/employees/templates/employees/employee_form.html`, restarted `fullbox`.
+- 2026-01-07 11:03: expanded employees list/edit pages to full-width layout, deployed updated `fullbox/employees/templates/employees/employee_list.html` and `fullbox/employees/templates/employees/employee_form.html`, restarted `fullbox`.
+- 2026-01-07 11:15: added employee facsimile upload (PNG normalization), wired facsimile into receiving act and MX-1 print templates, updated settings and requirements, deployed, ran migrations, installed Pillow, restarted `fullbox`.
+- 2026-01-07 11:26: applied facsimile migration to production DB with env loaded and restarted `fullbox` to fix missing column error.
+- 2026-01-07 11:33: ensured facsimile normalization runs on new uploads and added facsimile preview column to employees list; deployed and restarted `fullbox`.
+- 2026-01-07 11:39: fixed media access for facsimile previews by opening permissions on `/opt/fullbox/fullbox/media` and parent folder; verified `/media/` returns 200 from nginx.
+- 2026-01-07 11:43: set employees list/edit pages background to white; deployed and restarted `fullbox`.
+- 2026-01-07 11:45: set facsimile preview background to white on employees list/edit pages; deployed and restarted `fullbox`.
+- 2026-01-07 11:47: boosted facsimile preview visibility with CSS contrast/brightness filters; deployed and restarted `fullbox`.
+- 2026-01-07 11:49: adjusted facsimile preview to darker tone for better visibility on white background; deployed and restarted `fullbox`.
+- 2026-01-07 11:51: increased facsimile preview darkness (contrast 1.7, brightness 0.65) to improve visibility; deployed and restarted `fullbox`.
+- 2026-01-07 11:39: reviewed `README.md`, `description.md`, and `PROJECT_CONTEXT.md` to refresh project overview.
+- 2026-01-07 11:41: reviewed `fullbox/sku/models.py` to list client (Agency) fields.
+- 2026-01-07 11:48: checked local SQLite `fullbox/db.sqlite3` for Agency pref заполненность (counts and sample rows).
+- 2026-01-07 11:58: queried production Postgres on server for Agency pref заполненность (counts).

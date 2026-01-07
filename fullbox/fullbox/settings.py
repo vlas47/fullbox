@@ -156,8 +156,9 @@ LOGIN_URL = "/login/"
 
 STATIC_URL = 'static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
+STATICFILES_DIRS = [BASE_DIR / 'static']
 
-MEDIA_URL = 'media/'
+MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
 
 JOURNAL_REMOTE_URL = os.environ.get("JOURNAL_REMOTE_URL", "").strip()

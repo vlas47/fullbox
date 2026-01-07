@@ -14,6 +14,10 @@
   .task-title { font-weight:600; margin-bottom:6px; }
   .task-title a { color:inherit; }
   .task-meta { color:var(--muted); font-size:12px; line-height:1.4; }
+  .task-meta-label { color:var(--muted); }
+  .task-meta-value { color:#0e6b5b; font-weight:600; }
+  .task-meta-value.status-waiting { color:#d14343; }
+  .task-meta-value.status-done { color:#1f9d55; }
   .task-tags { display:flex; gap:6px; flex-wrap:wrap; margin-top:6px; }
   .task-tag { padding:3px 8px; border-radius:999px; border:1px solid var(--stroke); font-size:11px; text-transform:uppercase; letter-spacing:0.4px; }
   .task-empty { color:var(--muted); font-size:12px; border:1px dashed var(--stroke); border-radius:10px; padding:10px; text-align:center; }
@@ -75,7 +79,7 @@
         <div class="task-col-body">
           {% if column.tasks %}
             {% for task in column.tasks %}
-              <div class="task-card{% if task_panel_attention_employee_id and task.assigned_to_id == task_panel_attention_employee_id %} attention{% endif %}">
+              <div class="task-card{% if task_panel_attention_employee_id and task.assigned_to_id == task_panel_attention_employee_id %}{% if task_panel_role == "manager" and task.status == "done" %}{% else %} attention{% endif %}{% endif %}">
                 <div class="task-title">
                   {% if task.route and "/orders/receiving/" in task.route %}
                     <a href="{{ task.route }}">{{ task.display_title }}</a>
@@ -113,15 +117,47 @@
                     {% endif %}
                   {% endif %}
                 </div>
-                <div class="task-tags">
-                  <span class="task-tag {{ task.priority }}">{{ task.get_priority_display }}</span>
-                  {% if task.created_by %}
-                    <span class="task-tag">Постановщик: {{ task.created_by }}</span>
-                  {% endif %}
-                  {% if task.observer %}
-                    <span class="task-tag">Наблюдатель: {{ task.observer.full_name }}</span>
-                  {% endif %}
-                </div>
+                {% if task.order_status_label %}
+                  {% with status_lower=task.order_status_label|lower %}
+                    {% if "в ожидании" in status_lower %}
+                      {% with status_class="status-waiting" %}
+                  <div class="task-meta">
+                    <span class="task-meta-label">Статус заявки:</span>
+                    <span class="task-meta-value {{ status_class }}">{{ task.order_status_label }}</span>
+                  </div>
+                      {% endwith %}
+                    {% elif "выполн" in status_lower %}
+                      {% with status_class="status-done" %}
+                  <div class="task-meta">
+                    <span class="task-meta-label">Статус заявки:</span>
+                    <span class="task-meta-value {{ status_class }}">{{ task.order_status_label }}</span>
+                  </div>
+                      {% endwith %}
+                    {% else %}
+                  <div class="task-meta">
+                    <span class="task-meta-label">Статус заявки:</span>
+                    <span class="task-meta-value">{{ task.order_status_label }}</span>
+                  </div>
+                    {% endif %}
+                  {% endwith %}
+                {% endif %}
+                {% if task.order_client_label %}
+                  <div class="task-meta">
+                    <span class="task-meta-label">Клиент:</span>
+                    <span class="task-meta-value">{{ task.order_client_label }}</span>
+                  </div>
+                {% endif %}
+                {% if not task.route or "/orders/receiving/" not in task.route %}
+                  <div class="task-tags">
+                    <span class="task-tag {{ task.priority }}">{{ task.get_priority_display }}</span>
+                    {% if task.created_by %}
+                      <span class="task-tag">Постановщик: {{ task.created_by }}</span>
+                    {% endif %}
+                    {% if task.observer %}
+                      <span class="task-tag">Наблюдатель: {{ task.observer.full_name }}</span>
+                    {% endif %}
+                  </div>
+                {% endif %}
               </div>
             {% endfor %}
           {% else %}

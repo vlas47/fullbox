@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{{ act_label }} · заявка № {{ order_id }}</title>
+  <title>В работе {{ order_title|default:"Заявка"|lower }} № {{ order_id }}</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600&display=swap" rel="stylesheet">
@@ -49,6 +49,52 @@
     .btn { padding:10px 14px; border-radius:10px; border:1px solid var(--stroke); background:rgba(15,23,42,0.04); color:var(--text); font-weight:600; cursor:pointer; }
     .btn.primary { background: linear-gradient(120deg,var(--gold),var(--gold-soft)); color:#1f2328; border-color: transparent; }
     .btn[disabled] { opacity:0.6; cursor:not-allowed; }
+    .entry-actual { display:flex; gap:8px; align-items:center; }
+    .entry-actual input { flex:1; }
+    .entry-add {
+      padding:8px 10px;
+      border-radius:8px;
+      border:1px solid var(--stroke);
+      background:rgba(15,23,42,0.04);
+      color:var(--text);
+      font-weight:600;
+      cursor:pointer;
+      line-height:1;
+    }
+    .entry-add:hover { border-color: var(--gold); }
+    .scanner-panel {
+      display:flex;
+      flex-wrap:wrap;
+      gap:12px;
+      align-items:flex-end;
+      margin-bottom:12px;
+      padding:10px 12px;
+      border-radius:12px;
+      border:1px solid var(--stroke);
+      background:var(--card-soft);
+    }
+    .scanner-field { flex:1 1 260px; }
+    .scanner-label { font-size:12px; text-transform:uppercase; letter-spacing:1px; color:var(--muted); margin-bottom:6px; }
+    .scanner-input {
+      width:100%;
+      padding:8px 10px;
+      border-radius:10px;
+      border:1px solid var(--stroke);
+      background:#fff;
+      color:var(--text);
+      font-size:14px;
+    }
+    .scan-toggle {
+      display:flex;
+      align-items:center;
+      gap:6px;
+      font-size:12px;
+      color:var(--muted);
+    }
+    .scan-toggle input { accent-color: var(--gold); }
+    .scanner-status { width:100%; font-size:12px; color:var(--muted); }
+    .scanner-status.ok { color:#166534; }
+    .scanner-status.warn { color:#7f1d1d; }
     @media (max-width: 1100px) {
       .detail-layout { grid-template-columns: 1fr; }
     }
@@ -62,7 +108,7 @@
         <aside class="detail-side">
           <div class="side-card">
             <div class="muted">FULLBOX · {% include "partials/current_user.html" %}</div>
-            <h3>{{ act_label }} · заявка № {{ order_id }}</h3>
+            <h3>В работе {{ order_title|default:"Заявка"|lower }} № {{ order_id }}</h3>
             <div class="muted">Статус: {{ status_label }}</div>
           </div>
 
@@ -119,10 +165,26 @@
             {% if error %}
               <div class="error">Не удалось создать акт приемки. Проверьте данные.</div>
             {% endif %}
+            {% if can_add_items %}
+              <div class="scanner-panel">
+                <div class="scanner-field">
+                  <div class="scanner-label">Сканер</div>
+                  <input id="scan-input" class="scanner-input" placeholder="Сканируйте штрихкод (Enter в конце)">
+                </div>
+                <label class="scan-toggle">
+                  <input type="checkbox" id="scan-autosum" checked>
+                  Суммировать по скану
+                </label>
+                <div class="scanner-status" id="scan-status">Готов к сканированию.</div>
+                <a class="btn" id="scan-sku-link" href="/sku/new/?agency={{ agency_id }}" target="_blank" rel="noopener" hidden>Завести номенклатуру</a>
+              </div>
+            {% endif %}
             <div class="table-scroll">
               <table>
                 <thead>
                   <tr>
+                    <th>SKU</th>
+                    <th>Штрихкод</th>
                     <th>Наименование</th>
                     <th>Размер</th>
                     <th>Кол-во по заявке</th>
@@ -130,8 +192,25 @@
                   </tr>
                 </thead>
                 <tbody id="act-items">
+                  {% if can_add_items %}
+                    <tr class="act-entry-row">
+                      <td><input type="text" class="entry-sku" placeholder="SKU" list="sku-options"></td>
+                      <td><input type="text" class="entry-barcode" placeholder="ШК" list="barcode-options"></td>
+                      <td><input type="text" class="entry-name" placeholder="Новое наименование" list="sku-name-options"></td>
+                      <td><input type="text" class="entry-size" placeholder="-"></td>
+                      <td><input type="number" class="entry-planned" min="0" step="1" placeholder="0"></td>
+                      <td>
+                        <div class="entry-actual">
+                          <input type="number" class="entry-actual-input" min="0" step="1" placeholder="0">
+                          <button class="entry-add" type="button" id="add-act-item" title="Добавить позицию">+</button>
+                        </div>
+                      </td>
+                    </tr>
+                  {% endif %}
                   {% for item in items %}
-                    <tr>
+                    <tr data-sku-code="{% if item.sku_code != '-' %}{{ item.sku_code }}{% endif %}" data-barcode="{% if item.barcode and item.barcode != '-' %}{{ item.barcode }}{% endif %}">
+                      <td>{{ item.sku_code|default:"-" }}</td>
+                      <td>{{ item.barcode|default:"-" }}</td>
                       <td>{{ item.name }}</td>
                       <td>{{ item.size }}</td>
                       <td>{{ item.planned_qty }}</td>
@@ -148,7 +227,7 @@
                       </td>
                     </tr>
                   {% empty %}
-                    <tr><td colspan="4" class="muted">В заявке нет товарных позиций.</td></tr>
+                    <tr class="act-empty-row"><td colspan="6" class="muted">В заявке нет товарных позиций.</td></tr>
                   {% endfor %}
                 </tbody>
               </table>
@@ -156,8 +235,10 @@
             {% if can_add_items %}
               <template id="act-item-template">
                 <tr>
-                  <td><input type="text" name="extra_name[]" required></td>
-                  <td><input type="text" name="extra_size[]" placeholder="-"></td>
+                  <td><input type="text" name="extra_sku_code[]" placeholder="SKU" list="sku-options"></td>
+                  <td><input type="text" name="extra_barcode[]" placeholder="ШК" list="barcode-options"></td>
+                  <td><input type="text" name="extra_name[]" required list="sku-name-options"></td>
+                <td><input type="text" name="extra_size[]" placeholder="-"></td>
                   <td><input type="number" name="extra_planned_qty[]" min="0" step="1" value="0"></td>
                   <td><input type="number" name="extra_actual_qty[]" min="0" step="1" value="" required></td>
                 </tr>
@@ -165,8 +246,10 @@
             {% endif %}
             <div class="action-bar" style="justify-content:space-between;">
               <div class="action-left">
-                {% if can_add_items %}
-                  <button class="btn" type="button" id="add-act-item">Добавить товар</button>
+                {% if act_documents %}
+                  {% for doc in act_documents %}
+                    <a class="btn" href="{{ doc.url }}" target="_blank" rel="noopener">{{ doc.label }}</a>
+                  {% endfor %}
                 {% endif %}
                 {% if act_exists %}
                   <span class="muted">Акт уже создан.</span>
@@ -180,6 +263,29 @@
                 {% endif %}
               </div>
             </div>
+
+            {% if sku_options %}
+              <datalist id="sku-options">
+                {% for sku in sku_options %}
+                  <option value="{{ sku.code }}" label="{{ sku.name }}"></option>
+                {% endfor %}
+              </datalist>
+            {% endif %}
+            {% if sku_name_options %}
+              <datalist id="sku-name-options">
+                {% for name in sku_name_options %}
+                  <option value="{{ name }}"></option>
+                {% endfor %}
+              </datalist>
+            {% endif %}
+            {% if barcode_options %}
+              <datalist id="barcode-options">
+                {% for barcode in barcode_options %}
+                  <option value="{{ barcode }}"></option>
+                {% endfor %}
+              </datalist>
+            {% endif %}
+            {{ barcode_map|json_script:"barcode-map" }}
           </div>
         </main>
       </div>
@@ -188,11 +294,24 @@
   <script>
     (function(){
       const draftKey = 'receiving_act_draft_{{ order_id|default:"0" }}';
-      const addBtn = document.getElementById('add-act-item');
       const tbody = document.getElementById('act-items');
       const template = document.getElementById('act-item-template');
       const form = document.querySelector('form');
       const canSubmit = !!document.querySelector('button.btn.primary[type="submit"]');
+      const entryRow = document.querySelector('.act-entry-row');
+      const entrySku = entryRow ? entryRow.querySelector('.entry-sku') : null;
+      const entryBarcode = entryRow ? entryRow.querySelector('.entry-barcode') : null;
+      const entryName = entryRow ? entryRow.querySelector('.entry-name') : null;
+      const entrySize = entryRow ? entryRow.querySelector('.entry-size') : null;
+      const entryPlanned = entryRow ? entryRow.querySelector('.entry-planned') : null;
+      const entryActual = entryRow ? entryRow.querySelector('.entry-actual-input') : null;
+      const addBtn = document.getElementById('add-act-item');
+      const scanInput = document.getElementById('scan-input');
+      const scanAutoSum = document.getElementById('scan-autosum');
+      const scanStatus = document.getElementById('scan-status');
+      const scanSkuLink = document.getElementById('scan-sku-link');
+      const barcodeMapEl = document.getElementById('barcode-map');
+      const barcodeMap = barcodeMapEl ? JSON.parse(barcodeMapEl.textContent || '{}') : {};
 
       const toNumber = (value) => {
         const num = parseInt((value || '').toString().trim(), 10);
@@ -214,7 +333,7 @@
       };
 
       const getPlanned = (row) => {
-        const cell = row.querySelector('td:nth-child(3)');
+        const cell = row.querySelector('td:nth-child(5)');
         if (!cell) return null;
         const input = cell.querySelector('input');
         const raw = input ? input.value : cell.textContent;
@@ -222,7 +341,7 @@
       };
 
       const getActual = (row) => {
-        const cell = row.querySelector('td:nth-child(4)');
+        const cell = row.querySelector('td:nth-child(6)');
         if (!cell) return null;
         const input = cell.querySelector('input');
         const raw = input ? input.value : cell.textContent;
@@ -245,8 +364,8 @@
       };
 
       const bindRow = (row) => {
-        const plannedInput = row.querySelector('td:nth-child(3) input');
-        const actualInput = row.querySelector('td:nth-child(4) input');
+        const plannedInput = row.querySelector('td:nth-child(5) input');
+        const actualInput = row.querySelector('td:nth-child(6) input');
         if (plannedInput) {
           plannedInput.addEventListener('focus', () => clearZeroOnFocus(plannedInput));
           plannedInput.addEventListener('input', () => stripLeadingZeros(plannedInput));
@@ -264,13 +383,198 @@
         tbody.querySelectorAll('tr').forEach(bindRow);
       }
 
-      if (addBtn && tbody && template) {
-        addBtn.addEventListener('click', () => {
-          const row = template.content.firstElementChild.cloneNode(true);
+      const appendRow = (row) => {
+        if (!tbody) {
+          return;
+        }
+        const emptyRow = tbody.querySelector('.act-empty-row');
+        if (emptyRow) {
+          tbody.insertBefore(row, emptyRow);
+        } else {
           tbody.appendChild(row);
+        }
+      };
+
+      const resetEntryRow = () => {
+        if (entrySku) entrySku.value = '';
+        if (entryBarcode) entryBarcode.value = '';
+        if (entryName) entryName.value = '';
+        if (entrySize) entrySize.value = '';
+        if (entryPlanned) entryPlanned.value = '';
+        if (entryActual) entryActual.value = '';
+        if (entryName) entryName.focus();
+      };
+
+      if (addBtn && tbody && template && entryName && entryActual) {
+        addBtn.addEventListener('click', () => {
+          const sku = entrySku ? entrySku.value.trim() : '';
+          const barcode = entryBarcode ? entryBarcode.value.trim() : '';
+          const name = entryName.value.trim();
+          const size = entrySize ? entrySize.value.trim() : '';
+          const plannedRaw = entryPlanned ? entryPlanned.value.trim() : '';
+          const actualRaw = entryActual.value.trim();
+          const hasAny = name || size || plannedRaw || actualRaw;
+          if (!hasAny) {
+            return;
+          }
+          if (!name) {
+            alert('Укажите наименование.');
+            entryName.focus();
+            return;
+          }
+          if (toNumber(actualRaw) === null) {
+            alert('Укажите фактическое количество.');
+            entryActual.focus();
+            return;
+          }
+          const row = template.content.firstElementChild.cloneNode(true);
+          const skuInput = row.querySelector('input[name="extra_sku_code[]"]');
+          const barcodeInput = row.querySelector('input[name="extra_barcode[]"]');
+          const nameInput = row.querySelector('input[name="extra_name[]"]');
+          const sizeInput = row.querySelector('input[name="extra_size[]"]');
+          const plannedInput = row.querySelector('input[name="extra_planned_qty[]"]');
+          const actualInput = row.querySelector('input[name="extra_actual_qty[]"]');
+          if (skuInput) skuInput.value = sku;
+          if (barcodeInput) barcodeInput.value = barcode;
+          if (nameInput) nameInput.value = name;
+          if (sizeInput) sizeInput.value = size;
+          if (plannedInput) plannedInput.value = plannedRaw || '0';
+          if (actualInput) actualInput.value = actualRaw;
+          row.dataset.skuCode = sku;
+          row.dataset.barcode = barcode;
+          appendRow(row);
           bindRow(row);
+          resetEntryRow();
         });
       }
+
+      const normalizeBarcode = (value) => (value || '').toString().trim();
+
+      const rowValue = (row, index) => {
+        const cell = row.querySelector(`td:nth-child(${index})`);
+        if (!cell) return '';
+        const input = cell.querySelector('input');
+        return (input ? input.value : cell.textContent).trim();
+      };
+
+      const rowSku = (row) => (row.dataset.skuCode || rowValue(row, 1));
+      const rowBarcode = (row) => (row.dataset.barcode || rowValue(row, 2));
+
+      const findRowByBarcode = (barcode) => {
+        if (!tbody) return null;
+        const rows = Array.from(tbody.querySelectorAll('tr')).filter(
+          (row) => !row.classList.contains('act-entry-row'),
+        );
+        return rows.find((row) => rowBarcode(row) === barcode) || null;
+      };
+
+      const findRowBySku = (sku) => {
+        if (!tbody) return null;
+        const rows = Array.from(tbody.querySelectorAll('tr')).filter(
+          (row) => !row.classList.contains('act-entry-row'),
+        );
+        return rows.find((row) => rowSku(row) === sku) || null;
+      };
+
+      const setScanStatus = (message, tone) => {
+        if (!scanStatus) return;
+        scanStatus.textContent = message;
+        scanStatus.classList.remove('ok', 'warn');
+        if (tone) {
+          scanStatus.classList.add(tone);
+        }
+      };
+
+      const bumpActual = (row) => {
+        const actualInput = row.querySelector('td:nth-child(6) input');
+        if (!actualInput) return;
+        const current = toNumber(actualInput.value) || 0;
+        actualInput.value = current + 1;
+        updateRow(row);
+        actualInput.focus();
+      };
+
+      const focusActual = (row) => {
+        const actualInput = row.querySelector('td:nth-child(6) input');
+        if (actualInput) {
+          actualInput.focus();
+          actualInput.select();
+        }
+      };
+
+      const addExtraRowFromScan = (barcode, data) => {
+        if (!template || !tbody) return null;
+        const row = template.content.firstElementChild.cloneNode(true);
+        const skuInput = row.querySelector('input[name="extra_sku_code[]"]');
+        const barcodeInput = row.querySelector('input[name="extra_barcode[]"]');
+        const nameInput = row.querySelector('input[name="extra_name[]"]');
+        const sizeInput = row.querySelector('input[name="extra_size[]"]');
+        const plannedInput = row.querySelector('input[name="extra_planned_qty[]"]');
+        const actualInput = row.querySelector('input[name="extra_actual_qty[]"]');
+        const skuValue = (data && data.sku) ? data.sku : '';
+        const nameValue = (data && data.name) ? data.name : '';
+        const sizeValue = (data && data.size) ? data.size : '';
+        if (skuInput) skuInput.value = skuValue;
+        if (barcodeInput) barcodeInput.value = barcode;
+        if (nameInput) nameInput.value = nameValue;
+        if (sizeInput) sizeInput.value = sizeValue;
+        if (plannedInput) plannedInput.value = '0';
+        if (actualInput) {
+          actualInput.value = scanAutoSum && scanAutoSum.checked ? '1' : '';
+        }
+        row.dataset.skuCode = skuValue;
+        row.dataset.barcode = barcode;
+        appendRow(row);
+        bindRow(row);
+        return row;
+      };
+
+      const handleScan = (raw) => {
+        const barcode = normalizeBarcode(raw);
+        if (!barcode) return;
+        const data = barcodeMap[barcode];
+        if (!data) {
+          setScanStatus(`ШК ${barcode} не найден в номенклатуре.`, 'warn');
+          if (scanSkuLink) {
+            scanSkuLink.hidden = false;
+            scanSkuLink.href = `/sku/new/?agency={{ agency_id }}&barcode=${encodeURIComponent(barcode)}`;
+          }
+          return;
+        }
+
+        if (scanSkuLink) {
+          scanSkuLink.hidden = true;
+        }
+
+        const skuValue = (data.sku || '').toString().trim();
+        let row = findRowByBarcode(barcode);
+        if (!row && skuValue) {
+          row = findRowBySku(skuValue);
+        }
+
+        if (row) {
+          row.scrollIntoView({ block: 'center', behavior: 'smooth' });
+          if (scanAutoSum && scanAutoSum.checked) {
+            bumpActual(row);
+            setScanStatus(`Добавлено: ${data.name || skuValue} (+1).`, 'ok');
+          } else {
+            focusActual(row);
+            setScanStatus(`Найдено: ${data.name || skuValue}. Укажите количество вручную.`, 'ok');
+          }
+          return;
+        }
+
+        const newRow = addExtraRowFromScan(barcode, data);
+        if (newRow) {
+          newRow.scrollIntoView({ block: 'center', behavior: 'smooth' });
+          if (scanAutoSum && scanAutoSum.checked) {
+            setScanStatus(`Добавлено: ${data.name || skuValue} (1).`, 'ok');
+          } else {
+            focusActual(newRow);
+            setScanStatus(`Добавлено: ${data.name || skuValue}. Укажите количество вручную.`, 'ok');
+          }
+        }
+      };
 
       const collectDraft = () => {
         if (!canSubmit) return null;
@@ -288,13 +592,20 @@
         if (tbody) {
           const rows = Array.from(tbody.querySelectorAll('tr'));
           rows.forEach((row) => {
-            const nameCell = row.querySelector('td:first-child');
+            if (row.classList.contains('act-entry-row')) {
+              return;
+            }
+            const nameCell = row.querySelector('td:nth-child(3)');
             const nameInput = nameCell ? nameCell.querySelector('input[name="extra_name[]"]') : null;
+            const skuInput = row.querySelector('input[name="extra_sku_code[]"]');
+            const barcodeInput = row.querySelector('input[name="extra_barcode[]"]');
             const sizeInput = row.querySelector('input[name="extra_size[]"]');
             const plannedInput = row.querySelector('input[name="extra_planned_qty[]"]');
-            const actualInput = row.querySelector('td:nth-child(4) input');
+            const actualInput = row.querySelector('td:nth-child(6) input');
             if (nameInput || sizeInput || plannedInput) {
               data.extras.push({
+                sku_code: skuInput ? skuInput.value : '',
+                barcode: barcodeInput ? barcodeInput.value : '',
                 name: nameInput ? nameInput.value : '',
                 size: sizeInput ? sizeInput.value : '',
                 planned_qty: plannedInput ? plannedInput.value : '',
@@ -317,10 +628,12 @@
         if (etaInput && draft.eta_at) etaInput.value = draft.eta_at;
         if (vehicleInput && draft.vehicle_number) vehicleInput.value = draft.vehicle_number;
 
-        const rows = Array.from(tbody.querySelectorAll('tr'));
+        const rows = Array.from(tbody.querySelectorAll('tr')).filter(
+          (row) => !row.classList.contains('act-entry-row'),
+        );
         const itemRows = rows.filter((row) => !row.querySelector('input[name="extra_name[]"]'));
         itemRows.forEach((row, idx) => {
-          const actualInput = row.querySelector('td:nth-child(4) input');
+          const actualInput = row.querySelector('td:nth-child(6) input');
           if (actualInput && draft.items && draft.items[idx]) {
             actualInput.value = draft.items[idx].actual_qty || actualInput.value;
             updateRow(row);
@@ -330,15 +643,19 @@
         if (draft.extras && draft.extras.length && template && addBtn) {
           draft.extras.forEach((extra) => {
             const row = template.content.firstElementChild.cloneNode(true);
+            const skuInput = row.querySelector('input[name="extra_sku_code[]"]');
+            const barcodeInput = row.querySelector('input[name="extra_barcode[]"]');
             const nameInput = row.querySelector('input[name="extra_name[]"]');
             const sizeInput = row.querySelector('input[name="extra_size[]"]');
             const plannedInput = row.querySelector('input[name="extra_planned_qty[]"]');
             const actualInput = row.querySelector('input[name="extra_actual_qty[]"]');
+            if (skuInput) skuInput.value = extra.sku_code || '';
+            if (barcodeInput) barcodeInput.value = extra.barcode || '';
             if (nameInput) nameInput.value = extra.name || '';
             if (sizeInput) sizeInput.value = extra.size || '';
             if (plannedInput) plannedInput.value = extra.planned_qty || '';
             if (actualInput) actualInput.value = extra.actual_qty || '';
-            tbody.appendChild(row);
+            appendRow(row);
             bindRow(row);
           });
         }
@@ -383,6 +700,112 @@
           } catch (e) {
             // Ignore storage errors.
           }
+        });
+        form.addEventListener('keydown', (event) => {
+          if (event.key !== 'Enter') return;
+          const target = event.target;
+          if (target === scanInput) {
+            return;
+          }
+          if (target && target.tagName === 'INPUT' && target.type !== 'submit') {
+            event.preventDefault();
+          }
+        });
+      }
+
+      const scanConfig = {
+        maxGap: 250,
+        minLength: 6,
+        maxTotal: 3500,
+        avgMax: 90,
+      };
+      let scanBuffer = '';
+      let scanStart = 0;
+      let scanLast = 0;
+      let scanSourceEl = null;
+      let scanSourceValue = '';
+
+      const resetScanBuffer = () => {
+        scanBuffer = '';
+        scanStart = 0;
+        scanLast = 0;
+        scanSourceEl = null;
+        scanSourceValue = '';
+      };
+
+      const handleManualScanInput = () => {
+        if (!scanInput) return;
+        const value = scanInput.value;
+        if (!value) return;
+        handleScan(value);
+        scanInput.value = '';
+        scanInput.focus();
+      };
+
+      document.addEventListener(
+        'keydown',
+        (event) => {
+          if (!scanInput) return;
+          if (event.ctrlKey || event.altKey || event.metaKey) {
+            resetScanBuffer();
+            return;
+          }
+          const key = event.key;
+          const target = event.target;
+          if (target === scanInput) {
+            return;
+          }
+          const isScanInput = target === scanInput;
+          const isChar = key.length === 1;
+          const isTerminator = key === 'Enter' || key === 'Tab';
+          if (isScanInput && key === 'Enter') {
+            event.preventDefault();
+            handleManualScanInput();
+            resetScanBuffer();
+            return;
+          }
+          if (!isChar && !isTerminator) {
+            if (!scanBuffer) {
+              resetScanBuffer();
+            }
+            return;
+          }
+          const now = Date.now();
+          if (!scanStart || target !== scanSourceEl || now - scanLast > scanConfig.maxGap) {
+            scanBuffer = '';
+            scanStart = now;
+            scanSourceEl = target;
+            scanSourceValue = target && typeof target.value === 'string' ? target.value : '';
+          }
+          scanLast = now;
+
+          if (isChar) {
+            scanBuffer += key;
+            return;
+          }
+
+          if (isTerminator) {
+            const total = now - scanStart;
+            const avg = scanBuffer.length ? total / scanBuffer.length : total;
+            const isScan = scanBuffer.length >= scanConfig.minLength && total <= scanConfig.maxTotal && avg <= scanConfig.avgMax;
+            if (isScan) {
+              event.preventDefault();
+              if (scanSourceEl && scanSourceEl !== scanInput && typeof scanSourceEl.value === 'string') {
+                scanSourceEl.value = scanSourceValue;
+              }
+              scanInput.value = scanBuffer;
+              handleManualScanInput();
+            }
+            resetScanBuffer();
+          }
+        },
+        true,
+      );
+      if (scanInput) {
+        scanInput.addEventListener('keydown', (event) => {
+          if (event.key !== 'Enter') return;
+          event.preventDefault();
+          handleManualScanInput();
         });
       }
     })();

@@ -1,20 +1,51 @@
 import json
 import re
 from datetime import datetime, time, timedelta
+from pathlib import Path
 
-from django.http import HttpResponseForbidden
-from django.shortcuts import redirect
+from django.conf import settings
+from django.db import transaction
+from django.http import FileResponse, Http404, HttpResponseForbidden
+from django.shortcuts import redirect, render
 from django.utils import timezone
 from django.views.generic import TemplateView
+from openpyxl import load_workbook
+from openpyxl.cell.cell import MergedCell
 
 from audit.models import OrderAuditEntry, log_order_action
 from employees.models import Employee
 from employees.access import RoleRequiredMixin, get_request_role, resolve_cabinet_url
-from sku.models import Agency, SKU
+from sku.models import Agency, SKU, SKUBarcode
 from todo.models import Task
 
 
 _IP_PREFIX_RE = re.compile(r"\bиндивидуальный предприниматель\b", re.IGNORECASE)
+_TEMPLATE_DOCS_DIR = settings.BASE_DIR / "static" / "docs"
+_ACT_DOCS_DIR = settings.MEDIA_ROOT / "acts"
+
+_ACT_TEMPLATE_FILE = _TEMPLATE_DOCS_DIR / "receiving_act_template.xlsx"
+_MX1_TEMPLATE_FILE = _TEMPLATE_DOCS_DIR / "mx1_template.xlsx"
+_EXECUTOR_LABEL = (
+    'ООО "Фуллбокс", ИНН 5001149130, КПП 503101001, 142450, Московская обл, '
+    "г.о. Богородский, г Старая Купавна, ул Магистральная, д. 59, помещ. 55, "
+    "тел.: +79778088386"
+)
+_OKUD_MX1 = "0335001"
+
+
+def _download_template_file(file_name: str, download_name: str):
+    file_path = _TEMPLATE_DOCS_DIR / file_name
+    if not file_path.exists():
+        raise Http404("Файл не найден")
+    return FileResponse(open(file_path, "rb"), as_attachment=True, filename=download_name)
+
+
+def download_receiving_template(request):
+    return _download_template_file("receiving_template.xlsx", "Шаблон приемки.xlsx")
+
+
+def download_sku_upload_template(request):
+    return _download_template_file("sku_upload_template.xlsx", "Шаблон для загрузки номенклатуры.xlsx")
 
 
 def _shorten_ip_name(name: str) -> str:
@@ -38,13 +69,69 @@ def _short_name(full_name: str) -> str:
 def _order_type_label(order_type: str) -> str:
     if not order_type:
         return "-"
-    labels = {"receiving": "ЗП"}
+    labels = {"receiving": "ЗП", "packing": "ЗУ"}
     return labels.get(order_type, order_type)
 
 
-def _order_title_label(order_type: str) -> str:
+def _first_active_employee_by_roles(*roles: str) -> Employee | None:
+    for role in [role for role in roles if role]:
+        employee = (
+            Employee.objects.filter(role=role, is_active=True)
+            .order_by("full_name")
+            .first()
+        )
+        if employee:
+            return employee
+    return None
+
+
+def _facsimile_url(employee: Employee | None) -> str:
+    if not employee or not getattr(employee, "facsimile", None):
+        return ""
+    url = employee.facsimile.url
+    if url and not url.startswith(("http://", "https://", "/")):
+        return f"/{url}"
+    return url
+
+
+def _barcode_value_for_sku(sku, size: str | None) -> str:
+    if not sku:
+        return "-"
+    barcodes = list(getattr(sku, "barcodes", []).all())
+    if not barcodes:
+        return "-"
+    size_value = (size or "").strip()
+    if size_value:
+        for barcode in barcodes:
+            if (barcode.size or "").strip() == size_value:
+                return barcode.value
+    primary = next((barcode for barcode in barcodes if barcode.is_primary), None)
+    return primary.value if primary else barcodes[0].value
+
+
+def _has_receiving_items(payload: dict) -> bool:
+    items = payload.get("items") or []
+    for item in items:
+        for key in ("sku_code", "name", "qty", "size"):
+            if str(item.get(key) or "").strip():
+                return True
+    return False
+
+
+def _is_sent_to_manager(payload: dict) -> bool:
+    status_value = (payload.get("status") or payload.get("submit_action") or "").lower()
+    status_label = (payload.get("status_label") or "").lower()
+    if status_value in {"sent_unconfirmed", "send", "submitted"}:
+        return True
+    return "подтверждени" in status_label
+
+
+def _order_title_label(order_type: str, payload: dict | None = None) -> str:
     if order_type == "receiving":
-        return "Заявка на приемку"
+        title = "Заявка на приемку"
+        if payload and not _has_receiving_items(payload):
+            title = "Заявка на приемку без указания товара"
+        return title
     if order_type == "packing":
         return "Заявка на упаковку"
     return "Заявка"
@@ -56,8 +143,24 @@ def _journal_status_label(entry):
     if status == "draft":
         return "Черновик"
     if status in {"sent_unconfirmed", "send", "submitted"}:
-        return "На подтверждении"
+        return "Ждет подтверждения"
     return _status_label_from_entry(entry)
+
+
+def _is_draft_entry(entry) -> bool:
+    payload = entry.payload or {}
+    status_value = (payload.get("status") or payload.get("submit_action") or "").lower()
+    status_label = (payload.get("status_label") or "").lower()
+    return status_value == "draft" or "черновик" in status_label
+
+
+def _can_client_edit_draft(entries, client_agency) -> bool:
+    if not client_agency or not entries:
+        return False
+    if not any(entry.agency_id == client_agency.id for entry in entries if entry.agency_id):
+        return False
+    status_entry = _current_status_entry(entries)
+    return _is_draft_entry(status_entry or entries[-1])
 
 
 def _is_status_entry(entry) -> bool:
@@ -104,7 +207,7 @@ def _journal_action_label(entry, manager_label: str, storekeeper_label: str) -> 
     status_label = (payload.get("status_label") or "").lower()
     if status_value == "draft" or "черновик" in status_label:
         return "У клиента"
-    if status_value in {"warehouse", "storekeeper"} or "склад" in status_label:
+    if status_value in {"warehouse", "storekeeper"} or "склад" in status_label or "ожидании поставки" in status_label:
         if storekeeper_label and storekeeper_label != "-":
             return f"У кладовщика {storekeeper_label}"
         return "У кладовщика"
@@ -115,6 +218,17 @@ def _journal_action_label(entry, manager_label: str, storekeeper_label: str) -> 
 
 def _status_label_from_entry(entry):
     payload = entry.payload or {}
+    if payload.get("act_sent"):
+        return "Акт отправлен клиенту" if not payload.get("act_viewed") else "Выполнена"
+    if payload.get("act") == "placement":
+        state = (payload.get("act_state") or "closed").lower()
+        return "Размещение на складе" if state == "open" else "Товар принят и размещен на складе"
+    status_value = (payload.get("status") or payload.get("submit_action") or "").lower()
+    status_label = (payload.get("status_label") or "").lower()
+    if status_value in {"sent_unconfirmed", "send", "submitted"} or "подтверждени" in status_label:
+        return "Ждет подтверждения"
+    if status_value in {"warehouse", "on_warehouse"} or "ожидании поставки" in status_label or "на складе" in status_label:
+        return "В ожидании поставки товара"
     return payload.get("status_label") or payload.get("status") or "-"
 
 
@@ -138,7 +252,7 @@ def _current_responsible_label(entry):
         return f"Клиент {base}" if base else "Клиент"
     if status_value in {"done", "completed", "closed", "finished"} or "выполн" in status_label:
         return "Выполнено"
-    if any(token in status_label for token in ("склад", "прием", "приём")):
+    if status_value in {"warehouse", "on_warehouse"} or any(token in status_label for token in ("склад", "прием", "приём", "ожидании поставки")):
         return "Склад"
     manager = _manager_full_name()
     return f"Менеджер {manager}" if manager else "Менеджер"
@@ -229,7 +343,7 @@ def _warehouse_status_from_entry(entry) -> bool:
     payload = entry.payload or {}
     status_value = (payload.get("status") or payload.get("submit_action") or "").lower()
     status_label = (payload.get("status_label") or "").lower()
-    return status_value in {"warehouse", "on_warehouse"} or "склад" in status_label
+    return status_value in {"warehouse", "on_warehouse"} or "склад" in status_label or "ожидании поставки" in status_label
 
 
 def _act_entry_from_entries(entries, act_type: str = "receiving"):
@@ -272,17 +386,23 @@ def _send_act_to_client(order_id, entries, user) -> bool:
     if _is_done_status(status_entry):
         return False
     latest = entries[-1]
+    agency = next((entry.agency for entry in reversed(entries) if entry.agency), None)
+    if not agency:
+        agency = latest.agency
     payload = dict(status_entry.payload or {}) if status_entry else {}
     payload["status"] = "done"
     payload["status_label"] = "Выполнена"
     act_label = (receiving_entry.payload or {}).get("act_label") or "Акт приемки"
     payload["act_sent"] = act_label
+    payload["act_sent_at"] = timezone.localtime().isoformat()
+    if "act_viewed" not in payload:
+        payload["act_viewed"] = False
     log_order_action(
         "status",
         order_id=order_id,
         order_type="receiving",
         user=user if getattr(user, "is_authenticated", False) else None,
-        agency=latest.agency,
+        agency=agency,
         description="Акт отправлен клиенту",
         payload=payload,
     )
@@ -291,7 +411,7 @@ def _send_act_to_client(order_id, entries, user) -> bool:
         order_id=order_id,
         order_type="receiving",
         user=user if getattr(user, "is_authenticated", False) else None,
-        agency=latest.agency,
+        agency=agency,
         description=f"{act_label} отправлен клиенту",
         payload={"message": act_label},
     )
@@ -403,9 +523,9 @@ def _client_agency_from_request(request):
     if not request.user.is_authenticated:
         return None
     client_id = request.GET.get("client") or request.GET.get("agency")
-    if not client_id:
-        return None
-    return Agency.objects.filter(pk=client_id, portal_user=request.user).first()
+    if client_id:
+        return Agency.objects.filter(pk=client_id, portal_user=request.user).first()
+    return Agency.objects.filter(portal_user=request.user).first()
 
 
 _PHONE_DIGITS_RE = re.compile(r"\D+")
@@ -433,6 +553,34 @@ def _format_payload_value(value):
     if value is None or value == "":
         return "-"
     return str(value).strip()
+
+
+def _format_party_label(name: str | None, address: str | None, phone: str | None) -> str:
+    parts = []
+    if name:
+        parts.append(name.strip())
+    if address:
+        parts.append(address.strip())
+    if phone:
+        parts.append(f"тел.: {phone.strip()}")
+    return ", ".join([part for part in parts if part]) or "-"
+
+
+def _format_payload_list(value):
+    if value is None or value == "":
+        return "-"
+    if isinstance(value, (list, tuple, set)):
+        items = [str(item).strip() for item in value if str(item).strip()]
+        return ", ".join(items) if items else "-"
+    text = str(value).strip()
+    return text or "-"
+
+
+def _resolve_choice_value(value, other):
+    other_text = (other or "").strip()
+    if other_text:
+        return other_text
+    return (value or "").strip()
 
 
 def _place_type_label(value: str) -> str:
@@ -476,6 +624,305 @@ def _format_message_text(text: str) -> str:
     return _ISO_DATETIME_RE.sub(_replace, text)
 
 
+def _normalize_header(value) -> str:
+    text = str(value or "").strip()
+    if not text or text.lower() == "nan":
+        return ""
+    return re.sub(r"\s+", " ", text).lower()
+
+
+def _clean_cell(value) -> str:
+    if value is None:
+        return ""
+    text = str(value).strip()
+    if not text or text.lower() == "nan":
+        return ""
+    return text
+
+
+def _header_index(header_map: dict, *names: str):
+    for name in names:
+        idx = header_map.get(name)
+        if idx is not None:
+            return idx
+    return None
+
+
+def _load_template_rows(uploaded_file):
+    import pandas as pd
+
+    try:
+        uploaded_file.seek(0)
+    except (AttributeError, OSError):
+        pass
+    df = pd.read_excel(uploaded_file, header=None, dtype=str)
+    if df.empty:
+        return {}, []
+    header_map = {}
+    header_row = df.iloc[0].tolist()
+    for idx, value in enumerate(header_row):
+        name = _normalize_header(value)
+        if not name:
+            continue
+        header_map.setdefault(name, idx)
+    rows = df.iloc[1:].fillna("")
+    return header_map, rows
+
+
+def _template_type_for_header(header_map: dict) -> str | None:
+    if "артикул заказчика" in header_map:
+        return "sku"
+    if "количество" in header_map and (
+        "штрихкод" in header_map or "артикул" in header_map or "баркод" in header_map
+    ):
+        return "receiving"
+    return None
+
+
+def _apply_sku_template(rows, header_map: dict, agency: Agency):
+    sku_code_idx = _header_index(header_map, "артикул заказчика", "артикул")
+    barcode_idx = _header_index(header_map, "баркод", "штрихкод")
+    name_idx = _header_index(header_map, "предмет", "наименование", "товар")
+    size_idx = _header_index(header_map, "размер")
+    brand_idx = _header_index(header_map, "бренд")
+    color_idx = _header_index(header_map, "цвет")
+    composition_idx = _header_index(header_map, "состав")
+    gender_idx = _header_index(header_map, "пол")
+    season_idx = _header_index(header_map, "сезон")
+    made_in_idx = _header_index(header_map, "страна пр-ва", "страна производства")
+    img_idx = _header_index(header_map, "ссылка на товар", "ссылка")
+
+    if sku_code_idx is None:
+        return ["В шаблоне номенклатуры не найдена колонка «Артикул Заказчика»."]
+
+    errors = []
+    for _, row in rows.iterrows():
+        values = [ _clean_cell(value) for value in row.tolist() ]
+        if not any(values):
+            continue
+        sku_code = _clean_cell(row.iloc[sku_code_idx])
+        if not sku_code:
+            continue
+        name = _clean_cell(row.iloc[name_idx]) if name_idx is not None else ""
+        size = _clean_cell(row.iloc[size_idx]) if size_idx is not None else ""
+        barcode = _clean_cell(row.iloc[barcode_idx]) if barcode_idx is not None else ""
+        brand = _clean_cell(row.iloc[brand_idx]) if brand_idx is not None else ""
+        color = _clean_cell(row.iloc[color_idx]) if color_idx is not None else ""
+        composition = _clean_cell(row.iloc[composition_idx]) if composition_idx is not None else ""
+        gender = _clean_cell(row.iloc[gender_idx]) if gender_idx is not None else ""
+        season = _clean_cell(row.iloc[season_idx]) if season_idx is not None else ""
+        made_in = _clean_cell(row.iloc[made_in_idx]) if made_in_idx is not None else ""
+        img = _clean_cell(row.iloc[img_idx]) if img_idx is not None else ""
+
+        sku = SKU.objects.filter(agency=agency, sku_code=sku_code, deleted=False).first()
+        if not sku:
+            sku = SKU.objects.create(
+                agency=agency,
+                sku_code=sku_code,
+                name=name or sku_code,
+                brand=brand or None,
+                size=size or None,
+                color=color or None,
+                composition=composition or None,
+                gender=gender or None,
+                season=season or None,
+                made_in=made_in or None,
+                img=img or None,
+                source="manual",
+            )
+        else:
+            updated = False
+            if name and not sku.name:
+                sku.name = name
+                updated = True
+            if brand and not sku.brand:
+                sku.brand = brand
+                updated = True
+            if size and not sku.size:
+                sku.size = size
+                updated = True
+            if color and not sku.color:
+                sku.color = color
+                updated = True
+            if composition and not sku.composition:
+                sku.composition = composition
+                updated = True
+            if gender and not sku.gender:
+                sku.gender = gender
+                updated = True
+            if season and not sku.season:
+                sku.season = season
+                updated = True
+            if made_in and not sku.made_in:
+                sku.made_in = made_in
+                updated = True
+            if img and not sku.img:
+                sku.img = img
+                updated = True
+            if updated:
+                sku.save(update_fields=[
+                    "name",
+                    "brand",
+                    "size",
+                    "color",
+                    "composition",
+                    "gender",
+                    "season",
+                    "made_in",
+                    "img",
+                    "updated_at",
+                ])
+
+        if barcode:
+            existing_barcode = SKUBarcode.objects.select_related("sku").filter(value=barcode).first()
+            if existing_barcode and existing_barcode.sku_id != sku.id:
+                errors.append(f"ШК {barcode} уже привязан к SKU {existing_barcode.sku.sku_code}.")
+                continue
+            if not existing_barcode:
+                SKUBarcode.objects.create(
+                    sku=sku,
+                    value=barcode,
+                    size=size or None,
+                    is_primary=not sku.barcodes.exists(),
+                )
+
+    return errors
+
+
+def _parse_receiving_template(rows, header_map: dict, agency: Agency):
+    barcode_idx = _header_index(header_map, "штрихкод", "баркод")
+    qty_idx = _header_index(header_map, "количество", "кол-во", "колво")
+    sku_code_idx = _header_index(header_map, "артикул", "артикул заказчика")
+
+    if qty_idx is None or (barcode_idx is None and sku_code_idx is None):
+        return [], ["В шаблоне приемки не найдены колонки «Штрихкод» и «Количество»."]
+
+    sku_map = {
+        sku.sku_code: sku
+        for sku in SKU.objects.filter(agency=agency, deleted=False).prefetch_related("barcodes")
+    }
+    barcode_map = {
+        barcode.value: barcode
+        for barcode in SKUBarcode.objects.select_related("sku").filter(sku__agency=agency, sku__deleted=False)
+    }
+
+    items = []
+    missing = []
+    for _, row in rows.iterrows():
+        values = [_clean_cell(value) for value in row.tolist()]
+        if not any(values):
+            continue
+        sku_code = _clean_cell(row.iloc[sku_code_idx]) if sku_code_idx is not None else ""
+        barcode = _clean_cell(row.iloc[barcode_idx]) if barcode_idx is not None else ""
+        qty_raw = _clean_cell(row.iloc[qty_idx]) if qty_idx is not None else ""
+        qty_value = _parse_qty_value(qty_raw)
+        if not sku_code and not barcode and qty_value is None:
+            continue
+        if qty_value is None or qty_value <= 0:
+            continue
+
+        sku = None
+        size_value = ""
+        if sku_code:
+            sku = sku_map.get(sku_code)
+        if not sku and barcode:
+            barcode_entry = barcode_map.get(barcode)
+            if barcode_entry and barcode_entry.sku and not barcode_entry.sku.deleted:
+                sku = barcode_entry.sku
+                size_value = (barcode_entry.size or "").strip()
+        if not sku:
+            missing.append(sku_code or barcode)
+            continue
+        if not size_value:
+            size_value = (sku.size or "").strip()
+
+        items.append(
+            {
+                "sku_id": str(sku.id),
+                "sku_code": sku.sku_code,
+                "name": sku.name,
+                "size": size_value,
+                "qty": str(qty_value),
+                "comment": "",
+            }
+        )
+
+    if missing:
+        sample = ", ".join(missing[:5])
+        suffix = "..." if len(missing) > 5 else ""
+        return [], [f"В шаблоне приемки нет позиций в номенклатуре: {sample}{suffix}"]
+
+    return items, []
+
+
+def _merge_items(items: list[dict]) -> list[dict]:
+    merged = {}
+    for item in items:
+        sku_code = (item.get("sku_code") or "").strip()
+        size = (item.get("size") or "").strip()
+        if sku_code:
+            key = f"{sku_code.lower()}|{size.lower()}"
+        else:
+            key = _item_key(item.get("sku_code"), item.get("name"), item.get("size"))
+        qty_value = _parse_qty_value(item.get("qty"))
+        if key not in merged:
+            merged[key] = dict(item)
+            if qty_value is not None:
+                merged[key]["qty"] = str(qty_value)
+            continue
+        existing_qty = _parse_qty_value(merged[key].get("qty")) or 0
+        merged_qty = existing_qty + (qty_value or 0)
+        merged[key]["qty"] = str(merged_qty)
+        if not merged[key].get("sku_id") and item.get("sku_id"):
+            merged[key]["sku_id"] = item.get("sku_id")
+    return list(merged.values())
+
+
+def _process_template_uploads(template_files, agency: Agency):
+    allowed_ext = {".xlsx", ".xls"}
+    sku_file = None
+    receiving_file = None
+
+    for uploaded_file in template_files:
+        if not uploaded_file or not getattr(uploaded_file, "name", ""):
+            continue
+        ext = "." + uploaded_file.name.split(".")[-1].lower()
+        if ext not in allowed_ext:
+            raise ValueError(f"Файл «{uploaded_file.name}» не является Excel-шаблоном.")
+        header_map, rows = _load_template_rows(uploaded_file)
+        template_type = _template_type_for_header(header_map)
+        if not template_type:
+            raise ValueError(f"Файл «{uploaded_file.name}» не похож на шаблон приемки или номенклатуры.")
+        if template_type == "sku":
+            if sku_file:
+                raise ValueError("Можно загрузить только один шаблон номенклатуры.")
+            sku_file = (rows, header_map, uploaded_file.name)
+        elif template_type == "receiving":
+            if receiving_file:
+                raise ValueError("Можно загрузить только один шаблон приемки.")
+            receiving_file = (rows, header_map, uploaded_file.name)
+
+    template_names = []
+    for entry in (sku_file, receiving_file):
+        if entry:
+            template_names.append(entry[2])
+
+    if sku_file:
+        rows, header_map, _ = sku_file
+        errors = _apply_sku_template(rows, header_map, agency)
+        if errors:
+            raise ValueError("; ".join(errors))
+
+    items = []
+    if receiving_file:
+        rows, header_map, _ = receiving_file
+        items, errors = _parse_receiving_template(rows, header_map, agency)
+        if errors:
+            raise ValueError("; ".join(errors))
+
+    return items, template_names
+
+
 def _describe_payload_changes(old_payload, new_payload):
     changes = []
     fields = [
@@ -505,6 +952,578 @@ def _describe_payload_changes(old_payload, new_payload):
     return changes
 
 
+def _safe_doc_name(value: str) -> str:
+    text = re.sub(r"[^A-Za-z0-9_-]+", "_", str(value or "")).strip("_")
+    return text or "act"
+
+
+def _format_doc_date(value: str | None) -> str:
+    if not value:
+        return timezone.localtime().strftime("%d.%m.%Y")
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        return str(value)
+    if timezone.is_naive(parsed):
+        parsed = timezone.make_aware(parsed, timezone.get_current_timezone())
+    return timezone.localtime(parsed).strftime("%d.%m.%Y")
+
+
+def _agency_label(agency: Agency | None) -> str:
+    if not agency:
+        return "-"
+    parts = []
+    name = (agency.agn_name or agency.fio_agn or "").strip()
+    if name:
+        parts.append(name)
+    inn = (agency.inn or "").strip()
+    if inn:
+        parts.append(f"ИНН {inn}")
+    return ", ".join(parts) if parts else f"Клиент {agency.id}"
+
+
+def _placement_box_map(placement_payload: dict | None) -> dict:
+    items = (placement_payload or {}).get("act_items") or []
+    box_map = {}
+    for item in items:
+        key = _item_key(item.get("sku_code"), item.get("name"), item.get("size"))
+        if not key:
+            continue
+        box_map[key] = _parse_qty_value(item.get("box_qty")) or 0
+    return box_map
+
+
+def _placement_box_count_map(placement_payload: dict | None) -> dict:
+    boxes = (placement_payload or {}).get("act_boxes") or []
+    box_counts: dict[str, int] = {}
+    for box in boxes:
+        if not isinstance(box, dict):
+            continue
+        keys = set()
+        for item in (box.get("items") or []):
+            if not isinstance(item, dict):
+                continue
+            sku_code = item.get("sku") or item.get("sku_code")
+            key = _item_key(sku_code, item.get("name"), item.get("size"))
+            if key:
+                keys.add(key)
+        for key in keys:
+            box_counts[key] = box_counts.get(key, 0) + 1
+    return box_counts
+
+
+def _placement_pallet_count_map(placement_payload: dict | None) -> dict:
+    pallets = (placement_payload or {}).get("act_pallets") or []
+    pallet_counts: dict[str, int] = {}
+    for pallet in pallets:
+        if not isinstance(pallet, dict):
+            continue
+        keys = set()
+        for item in (pallet.get("items") or []):
+            if not isinstance(item, dict):
+                continue
+            sku_code = item.get("sku") or item.get("sku_code")
+            key = _item_key(sku_code, item.get("name"), item.get("size"))
+            if key:
+                keys.add(key)
+        for key in keys:
+            pallet_counts[key] = pallet_counts.get(key, 0) + 1
+    return pallet_counts
+
+
+def _act_items_with_barcodes(
+    agency_id: int | None,
+    act_items: list[dict],
+    placement_box_map: dict | None = None,
+) -> list[dict]:
+    sku_codes = set()
+    for item in act_items:
+        sku_code = str(item.get("sku_code") or "").strip()
+        if sku_code:
+            sku_codes.add(sku_code)
+
+    sku_by_code = {}
+    if agency_id and sku_codes:
+        sku_qs = SKU.objects.filter(agency_id=agency_id, sku_code__in=sku_codes, deleted=False).prefetch_related("barcodes")
+        for sku in sku_qs:
+            sku_by_code[sku.sku_code] = sku
+
+    rows = []
+    for item in act_items:
+        sku_code = str(item.get("sku_code") or "").strip()
+        size = str(item.get("size") or "").strip()
+        name = str(item.get("name") or "").strip()
+        barcode = str(item.get("barcode") or "").strip()
+        if not barcode and sku_code:
+            sku = sku_by_code.get(sku_code)
+            barcode = _barcode_value_for_sku(sku, size)
+        planned = _parse_qty_value(item.get("planned_qty") or item.get("qty")) or 0
+        actual = _parse_qty_value(item.get("actual_qty") or item.get("qty")) or 0
+        key = _item_key(sku_code, name, size)
+        box_qty = None
+        if placement_box_map and key in placement_box_map:
+            box_qty = placement_box_map.get(key)
+        rows.append(
+            {
+                "sku_code": sku_code,
+                "name": name,
+                "size": size,
+                "barcode": barcode,
+                "planned": planned,
+                "actual": actual,
+                "box_qty": box_qty,
+            }
+        )
+    return rows
+
+
+def _merge_row_cells(ws, row: int, left: str, right: str):
+    cell_range = f"{left}{row}:{right}{row}"
+    if cell_range in ws.merged_cells:
+        return
+    ws.merge_cells(cell_range)
+
+
+def _set_cell_value(ws, row: int, col: int, value):
+    cell = ws.cell(row=row, column=col)
+    if isinstance(cell, MergedCell):
+        return
+    cell.value = value
+
+
+def _find_row_with_text(ws, needles: tuple[str, ...], start_row: int) -> int | None:
+    lowered = [needle.lower() for needle in needles]
+    for row in ws.iter_rows(min_row=start_row, max_row=ws.max_row):
+        for cell in row:
+            if not isinstance(cell.value, str):
+                continue
+            text = cell.value.strip().lower()
+            if not text:
+                continue
+            if any(needle in text for needle in lowered):
+                return cell.row
+    return None
+
+
+def _fill_receiving_act_sheet(
+    ws,
+    order_id: str,
+    agency: Agency | None,
+    act_items: list[dict],
+    eta_raw: str | None,
+    expected_boxes: int | None = None,
+):
+    doc_date = _format_doc_date(eta_raw)
+    ws["B7"] = f"Приемка № {order_id} от {doc_date}"
+    ws["B9"] = f"Поставщик: {_agency_label(agency)}"
+
+    start_row = 14
+    footer_row = _find_row_with_text(ws, ("итого",), start_row) or ws.max_row + 1
+    current_rows = max(0, footer_row - start_row)
+    item_count = len(act_items)
+    if item_count < current_rows:
+        ws.delete_rows(start_row + item_count, current_rows - item_count)
+    elif item_count > current_rows:
+        ws.insert_rows(footer_row, item_count - current_rows)
+    footer_row = start_row + item_count
+    for row in range(start_row, footer_row):
+        for col in range(2, 13):
+            _set_cell_value(ws, row, col, None)
+    for idx, item in enumerate(act_items):
+        row = start_row + idx
+        _merge_row_cells(ws, row, "C", "D")
+        _merge_row_cells(ws, row, "E", "I")
+        ws[f"B{row}"] = idx + 1
+        ws[f"C{row}"] = item.get("barcode") or "-"
+        name_parts = [item.get("name") or "-"]
+        if item.get("sku_code"):
+            name_parts.append(f"арт.: {item['sku_code']}")
+        if item.get("size"):
+            name_parts.append(f"р-р {item['size']}")
+        ws[f"E{row}"] = ", ".join(name_parts)
+        ws[f"J{row}"] = item.get("planned", 0)
+        ws[f"K{row}"] = item.get("actual", 0)
+        box_qty = item.get("box_qty")
+        if box_qty is not None:
+            ws[f"L{row}"] = box_qty
+    total_planned = sum(item.get("planned", 0) or 0 for item in act_items)
+    total_actual = sum(item.get("actual", 0) or 0 for item in act_items)
+    total_boxes = sum((item.get("box_qty") or 0) for item in act_items if item.get("box_qty") is not None)
+    if not total_boxes and expected_boxes:
+        total_boxes = expected_boxes
+    ws[f"J{footer_row}"] = total_planned
+    ws[f"K{footer_row}"] = total_actual
+    if total_boxes:
+        ws[f"L{footer_row}"] = total_boxes
+
+
+def _fill_mx1_sheet_one(ws, order_id: str, agency: Agency | None, act_items: list[dict]):
+    ws["H18"] = order_id
+    ws["C12"] = _agency_label(agency)
+
+    start_row = 29
+    capacity = 20
+    items = act_items[:capacity]
+    footer_row = _find_row_with_text(ws, ("итого", "èòîãî"), start_row) or (start_row + capacity)
+    current_rows = max(0, footer_row - start_row)
+    item_count = len(items)
+    if item_count < current_rows:
+        ws.delete_rows(start_row + item_count, current_rows - item_count)
+    elif item_count > current_rows:
+        ws.insert_rows(footer_row, item_count - current_rows)
+    footer_row = start_row + item_count
+    for row in range(start_row, footer_row):
+        for col in range(2, 13):
+            _set_cell_value(ws, row, col, None)
+    for idx, item in enumerate(items):
+        row = start_row + idx
+        _merge_row_cells(ws, row, "B", "C")
+        _merge_row_cells(ws, row, "G", "H")
+        _merge_row_cells(ws, row, "I", "K")
+        _merge_row_cells(ws, row, "L", "O")
+        ws[f"B{row}"] = idx + 1
+        name_parts = [item.get("name") or "-"]
+        if item.get("sku_code"):
+            name_parts.append(f"арт.: {item['sku_code']}")
+        ws[f"D{row}"] = ", ".join(name_parts)
+        characteristic = item.get("size") or ""
+        if characteristic:
+            ws[f"F{row}"] = f"размер {characteristic}"
+        ws[f"G{row}"] = "шт"
+        ws[f"I{row}"] = "796"
+        ws[f"L{row}"] = item.get("actual", 0)
+    ws[f"L{footer_row}"] = sum(item.get("actual", 0) or 0 for item in items)
+
+
+def _fill_mx1_sheet_two(ws, act_items: list[dict], offset: int):
+    start_row = 7
+    capacity = 23
+    items = act_items[offset:offset + capacity]
+    footer_row = _find_row_with_text(ws, ("условия хранения",), start_row) or (start_row + capacity)
+    current_rows = max(0, footer_row - start_row)
+    item_count = len(items)
+    if item_count < current_rows:
+        ws.delete_rows(start_row + item_count, current_rows - item_count)
+    elif item_count > current_rows:
+        ws.insert_rows(footer_row, item_count - current_rows)
+    footer_row = start_row + item_count
+    for row in range(start_row, footer_row):
+        for col in range(2, 15):
+            _set_cell_value(ws, row, col, None)
+    for idx, item in enumerate(items):
+        row = start_row + idx
+        _merge_row_cells(ws, row, "C", "F")
+        _merge_row_cells(ws, row, "H", "I")
+        _merge_row_cells(ws, row, "J", "L")
+        ws[f"B{row}"] = offset + idx + 1
+        name_parts = [item.get("name") or "-"]
+        if item.get("sku_code"):
+            name_parts.append(f"арт.: {item['sku_code']}")
+        ws[f"C{row}"] = ", ".join(name_parts)
+        characteristic = item.get("size") or ""
+        if characteristic:
+            ws[f"H{row}"] = f"размер {characteristic}"
+        ws[f"J{row}"] = "шт"
+        ws[f"M{row}"] = "796"
+        ws[f"N{row}"] = item.get("actual", 0)
+
+
+def _ensure_act_documents(
+    order_id: str,
+    agency: Agency | None,
+    act_payload: dict,
+    placement_payload: dict | None = None,
+):
+    if not _ACT_TEMPLATE_FILE.exists() or not _MX1_TEMPLATE_FILE.exists():
+        raise Http404("Шаблоны актов не найдены.")
+    placement_box_map = _placement_box_map(placement_payload)
+    act_items = _act_items_with_barcodes(
+        agency.id if agency else None,
+        act_payload.get("act_items") or [],
+        placement_box_map,
+    )
+    expected_boxes = _parse_qty_value(act_payload.get("expected_boxes"))
+    safe_id = _safe_doc_name(order_id)
+    target_dir = Path(_ACT_DOCS_DIR) / safe_id
+    target_dir.mkdir(parents=True, exist_ok=True)
+    act_path = target_dir / f"act_receiving_{safe_id}.xlsx"
+    mx1_path = target_dir / f"mx1_{safe_id}.xlsx"
+    wb = load_workbook(_ACT_TEMPLATE_FILE)
+    ws = wb.active
+    _fill_receiving_act_sheet(
+        ws,
+        order_id,
+        agency,
+        act_items,
+        act_payload.get("eta_at"),
+        expected_boxes,
+    )
+    wb.save(act_path)
+    wb = load_workbook(_MX1_TEMPLATE_FILE)
+    sheet_one = wb["МХ-1 (1стр)"]
+    sheet_two = wb["МХ-1(2стр)"]
+    _fill_mx1_sheet_one(sheet_one, order_id, agency, act_items)
+    _fill_mx1_sheet_two(sheet_two, act_items, 20)
+    wb.save(mx1_path)
+    return act_path, mx1_path
+
+
+def _load_order_entries(order_id: str, order_type: str = "receiving"):
+    return list(
+        OrderAuditEntry.objects.filter(order_id=order_id, order_type=order_type).order_by("created_at")
+    )
+
+
+def _act_access_allowed(request, entries):
+    if not request.user.is_authenticated:
+        return False
+    client_agency = _client_agency_from_request(request)
+    if client_agency:
+        return any(entry.agency_id == client_agency.id for entry in entries if entry.agency_id)
+    role = get_request_role(request)
+    return request.user.is_staff or role in {"storekeeper", "manager", "head_manager", "director", "admin"}
+
+
+def download_receiving_act_doc(request, order_id: str):
+    entries = _load_order_entries(order_id)
+    if not entries:
+        raise Http404("Заявка не найдена")
+    if not _act_access_allowed(request, entries):
+        return HttpResponseForbidden("Доступ запрещен")
+    act_entry = _find_act_entry(entries, "receiving", "акт приемки")
+    if not act_entry:
+        raise Http404("Акт приемки не найден")
+    placement_entry = _find_act_entry(entries, "placement", "акт размещения")
+    act_path, _ = _ensure_act_documents(
+        order_id,
+        act_entry.agency,
+        act_entry.payload or {},
+        placement_entry.payload if placement_entry else None,
+    )
+    return FileResponse(open(act_path, "rb"), as_attachment=True, filename=act_path.name)
+
+
+def download_receiving_act_mx1(request, order_id: str):
+    entries = _load_order_entries(order_id)
+    if not entries:
+        raise Http404("Заявка не найдена")
+    if not _act_access_allowed(request, entries):
+        return HttpResponseForbidden("Доступ запрещен")
+    act_entry = _find_act_entry(entries, "receiving", "акт приемки")
+    if not act_entry:
+        raise Http404("Акт приемки не найден")
+    placement_entry = _find_act_entry(entries, "placement", "акт размещения")
+    _, mx1_path = _ensure_act_documents(
+        order_id,
+        act_entry.agency,
+        act_entry.payload or {},
+        placement_entry.payload if placement_entry else None,
+    )
+    return FileResponse(open(mx1_path, "rb"), as_attachment=True, filename=mx1_path.name)
+
+
+def print_receiving_act(request, order_id: str):
+    entries = _load_order_entries(order_id)
+    if not entries:
+        raise Http404("Заявка не найдена")
+    if not _act_access_allowed(request, entries):
+        return HttpResponseForbidden("Доступ запрещен")
+    act_entry = _find_act_entry(entries, "receiving", "акт приемки")
+    if not act_entry:
+        raise Http404("Акт приемки не найден")
+    placement_entry = _find_act_entry(entries, "placement", "акт размещения")
+    act_payload = act_entry.payload or {}
+    placement_payload = placement_entry.payload if placement_entry else None
+    agency = act_entry.agency or (entries[-1].agency if entries else None)
+    doc_date = _format_doc_date(act_payload.get("eta_at") or act_entry.created_at.isoformat())
+    arrival_at = _format_datetime_value(act_payload.get("eta_at"))
+    vehicle_number = _format_payload_value(act_payload.get("vehicle_number"))
+    driver_phone = _format_payload_value(act_payload.get("driver_phone"))
+    agency_name = "-"
+    agency_inn = "-"
+    agency_kpp = "-"
+    agency_address = "-"
+    if agency:
+        agency_name = (agency.agn_name or agency.fio_agn or str(agency)).strip() or agency_name
+        agency_inn = (agency.inn or "").strip() or agency_inn
+        agency_kpp = (agency.kpp or "").strip() or agency_kpp
+        agency_address = (agency.adres or agency.fakt_adres or "").strip() or agency_address
+
+    act_items_raw = act_payload.get("act_items") or []
+    box_count_map = _placement_box_count_map(placement_payload) if placement_payload else None
+    boxes_payload = (placement_payload or {}).get("act_boxes") or []
+    pallets_payload = (placement_payload or {}).get("act_pallets") or []
+    box_codes = set()
+    for box in boxes_payload:
+        if not isinstance(box, dict):
+            continue
+        code = (box.get("code") or "").strip()
+        if code:
+            box_codes.add(code)
+    if box_codes:
+        total_boxes_unique = len(box_codes)
+    else:
+        total_boxes_unique = len([box for box in boxes_payload if isinstance(box, dict)])
+    total_pallets = len([pallet for pallet in pallets_payload if isinstance(pallet, dict)])
+    act_items = _act_items_with_barcodes(agency.id if agency else None, act_items_raw, box_count_map)
+    display_items = []
+    total_planned = 0
+    total_actual = 0
+    total_boxes = 0
+    for item in act_items:
+        planned = item.get("planned", 0) or 0
+        actual = item.get("actual", 0) or 0
+        total_planned += planned
+        total_actual += actual
+        box_qty = item.get("box_qty")
+        if box_qty is not None:
+            total_boxes += box_qty
+        mismatch = actual - planned
+        name_parts = [item.get("name") or "-"]
+        if item.get("size"):
+            name_parts.append(f"р-р {item['size']}")
+        display_items.append(
+            {
+                "barcode": item.get("barcode") or "-",
+                "sku_code": item.get("sku_code") or "-",
+                "name": ", ".join(name_parts),
+                "planned": planned,
+                "actual": actual,
+                "box_qty": "-" if box_qty is None else box_qty,
+                "mismatch": "" if mismatch == 0 else mismatch,
+            }
+        )
+    total_boxes_label = total_boxes_unique if total_boxes_unique else "-"
+    total_pallets_label = total_pallets if total_pallets else "-"
+    total_mismatch = total_actual - total_planned
+
+    manager_employee = _first_active_employee_by_roles("manager", "head_manager")
+    storekeeper_employee = _first_active_employee_by_roles("storekeeper")
+
+    ctx = {
+        "order_id": order_id,
+        "act_label": (act_payload.get("act_label") or "Акт приемки").strip(),
+        "doc_date": doc_date,
+        "arrival_at": arrival_at,
+        "vehicle_number": vehicle_number,
+        "driver_phone": driver_phone,
+        "agency_name": agency_name,
+        "agency_inn": agency_inn,
+        "agency_kpp": agency_kpp,
+        "agency_address": agency_address,
+        "agency_label": _agency_label(agency),
+        "items": display_items,
+        "total_planned": total_planned,
+        "total_actual": total_actual,
+        "total_boxes": total_boxes_label,
+        "total_pallets": total_pallets_label,
+        "total_mismatch": "" if total_mismatch == 0 else total_mismatch,
+        "print_date": timezone.localtime().strftime("%d.%m.%Y %H:%M"),
+        "executor_label": _EXECUTOR_LABEL,
+        "manager_facsimile_url": _facsimile_url(manager_employee),
+        "storekeeper_facsimile_url": _facsimile_url(storekeeper_employee),
+    }
+    return render(request, "orders/receiving_act_print.html", ctx)
+
+
+def print_receiving_act_mx1(request, order_id: str):
+    entries = _load_order_entries(order_id)
+    if not entries:
+        raise Http404("Заявка не найдена")
+    if not _act_access_allowed(request, entries):
+        return HttpResponseForbidden("Доступ запрещен")
+    act_entry = _find_act_entry(entries, "receiving", "акт приемки")
+    if not act_entry:
+        raise Http404("Акт приемки не найден")
+    placement_entry = _find_act_entry(entries, "placement", "акт размещения")
+    act_payload = act_entry.payload or {}
+    placement_payload = placement_entry.payload if placement_entry else None
+    agency = act_entry.agency or (entries[-1].agency if entries else None)
+    doc_date = _format_doc_date(act_payload.get("eta_at") or act_entry.created_at.isoformat())
+    agency_name = "-"
+    agency_address = "-"
+    agency_phone = "-"
+    if agency:
+        agency_name = (agency.agn_name or agency.fio_agn or str(agency)).strip() or agency_name
+        agency_address = (agency.adres or agency.fakt_adres or "").strip() or agency_address
+        agency_phone = (agency.phone or "").strip() or agency_phone
+    keeper_label = _EXECUTOR_LABEL
+    depositor_label = _format_party_label(agency_name, agency_address, agency_phone)
+
+    act_items_raw = act_payload.get("act_items") or []
+    box_count_map = _placement_box_count_map(placement_payload) if placement_payload else {}
+    pallet_count_map = _placement_pallet_count_map(placement_payload) if placement_payload else {}
+    act_items = _act_items_with_barcodes(agency.id if agency else None, act_items_raw, box_count_map)
+    display_items = []
+    total_actual = 0
+    for item in act_items:
+        actual = item.get("actual", 0) or 0
+        total_actual += actual
+        key = _item_key(item.get("sku_code"), item.get("name"), item.get("size"))
+        pallet_qty = pallet_count_map.get(key)
+        name_parts = [item.get("name") or "-"]
+        if item.get("sku_code"):
+            name_parts.append(f"арт.: {item['sku_code']}")
+        if item.get("size"):
+            name_parts.append(f"р-р {item['size']}")
+        display_items.append(
+            {
+                "sku_code": item.get("sku_code") or "-",
+                "barcode": item.get("barcode") or "-",
+                "name": ", ".join(name_parts),
+                "size": item.get("size") or "-",
+                "actual": actual,
+                "box_qty": "-" if item.get("box_qty") is None else item.get("box_qty"),
+                "pallet_qty": "-" if pallet_qty is None else pallet_qty,
+            }
+        )
+
+    boxes_payload = (placement_payload or {}).get("act_boxes") or []
+    pallets_payload = (placement_payload or {}).get("act_pallets") or []
+    box_codes = set()
+    for box in boxes_payload:
+        if not isinstance(box, dict):
+            continue
+        code = (box.get("code") or "").strip()
+        if code:
+            box_codes.add(code)
+    if box_codes:
+        total_boxes = len(box_codes)
+    else:
+        total_boxes = len([box for box in boxes_payload if isinstance(box, dict)])
+    total_pallets = len([pallet for pallet in pallets_payload if isinstance(pallet, dict)])
+
+    manager_employee = _first_active_employee_by_roles("manager", "head_manager")
+    storekeeper_employee = _first_active_employee_by_roles("storekeeper")
+
+    items_per_page = 18
+    pages = []
+    for start in range(0, max(len(display_items), 1), items_per_page):
+        pages.append(
+            {
+                "start": start,
+                "items": display_items[start:start + items_per_page],
+            }
+        )
+
+    ctx = {
+        "order_id": order_id,
+        "doc_date": doc_date,
+        "agency_label": _agency_label(agency),
+        "executor_label": _EXECUTOR_LABEL,
+        "okud_code": _OKUD_MX1,
+        "keeper_label": keeper_label,
+        "depositor_label": depositor_label,
+        "pages": pages,
+        "total_actual": total_actual,
+        "total_boxes": total_boxes if total_boxes else "-",
+        "total_pallets": total_pallets if total_pallets else "-",
+        "manager_facsimile_url": _facsimile_url(manager_employee),
+        "storekeeper_facsimile_url": _facsimile_url(storekeeper_employee),
+    }
+    return render(request, "orders/mx1_print.html", ctx)
+
+
 class OrdersHomeView(RoleRequiredMixin, TemplateView):
     template_name = 'orders/index.html'
     allowed_roles = ("manager", "storekeeper", "head_manager", "director", "admin")
@@ -517,9 +1536,9 @@ class OrdersHomeView(RoleRequiredMixin, TemplateView):
         return super().dispatch(request, *args, **kwargs)
 
     @staticmethod
-    def _next_order_number() -> str:
+    def _next_order_number(order_type: str = "receiving") -> str:
         last = (
-            OrderAuditEntry.objects.filter(order_type="receiving")
+            OrderAuditEntry.objects.filter(order_type=order_type)
             .order_by("-created_at")
             .first()
         )
@@ -527,7 +1546,7 @@ class OrdersHomeView(RoleRequiredMixin, TemplateView):
             return "1"
         match = re.search(r"(\d+)$", last.order_id)
         if not match:
-            count = OrderAuditEntry.objects.filter(order_type="receiving").count()
+            count = OrderAuditEntry.objects.filter(order_type=order_type).count()
             return str(count + 1)
         return str(int(match.group(1)) + 1)
 
@@ -547,6 +1566,8 @@ class OrdersHomeView(RoleRequiredMixin, TemplateView):
 
     def post(self, request, *args, **kwargs):
         active_tab = kwargs.get("tab", "journal")
+        if active_tab == "packing":
+            return self._submit_packing(request)
         if active_tab != "receiving":
             return redirect("/orders/")
 
@@ -558,6 +1579,23 @@ class OrdersHomeView(RoleRequiredMixin, TemplateView):
             agency = Agency.objects.filter(pk=agency_id).first()
         if not agency:
             return self.get(request, error="Выберите клиента.")
+
+        template_items = []
+        template_files = []
+        template_files.extend(request.FILES.getlist("template_files"))
+        sku_template_file = request.FILES.get("template_sku_file")
+        receiving_template_file = request.FILES.get("template_receiving_file")
+        if sku_template_file:
+            template_files.append(sku_template_file)
+        if receiving_template_file:
+            template_files.append(receiving_template_file)
+        template_names = [f.name for f in template_files if getattr(f, "name", "")]
+        if template_files:
+            try:
+                with transaction.atomic():
+                    template_items, template_names = _process_template_uploads(template_files, agency)
+            except ValueError as exc:
+                return self.get(request, error=str(exc))
 
         eta_raw = (request.POST.get("eta_at") or "").strip()
         if not eta_raw:
@@ -623,13 +1661,14 @@ class OrdersHomeView(RoleRequiredMixin, TemplateView):
                     "comment": position_comments[idx] if idx < len(position_comments) else "",
                 }
             )
+        if template_items:
+            items = _merge_items(items + template_items)
 
         submit_action = request.POST.get("submit_action")
         edit_order_id = request.POST.get("edit_order_id")
         role = get_request_role(request)
-        if edit_order_id and role != "manager":
-            return self.get(request, error="Недостаточно прав для исправления заявки")
-        old_payload = {}
+        previous_entries = []
+        can_client_edit = False
         if edit_order_id:
             previous_entries = list(
                 OrderAuditEntry.objects.filter(
@@ -637,10 +1676,15 @@ class OrdersHomeView(RoleRequiredMixin, TemplateView):
                     order_type="receiving",
                 ).order_by("created_at")
             )
+            can_client_edit = bool(client_agency and _can_client_edit_draft(previous_entries, client_agency))
+            if role != "manager" and not can_client_edit:
+                return self.get(request, error="Недостаточно прав для исправления заявки")
+        old_payload = {}
+        if edit_order_id:
             old_payload = _latest_payload_from_entries(previous_entries)
         status_value = "draft" if submit_action == "draft" else "sent_unconfirmed"
-        status_label = "Черновик" if status_value == "draft" else "Новая заявка"
-        if edit_order_id and old_payload:
+        status_label = "Черновик" if status_value == "draft" else "Ждет подтверждения"
+        if edit_order_id and old_payload and submit_action != "send":
             preserved_status = old_payload.get("status") or old_payload.get("submit_action")
             preserved_label = old_payload.get("status_label")
             if preserved_status:
@@ -659,6 +1703,7 @@ class OrdersHomeView(RoleRequiredMixin, TemplateView):
             "status_label": status_label,
             "items": items,
             "documents": [f.name for f in request.FILES.getlist("documents")],
+            "template_files": template_names,
         }
         if edit_order_id:
             changes = _describe_payload_changes(old_payload, payload)
@@ -666,6 +1711,8 @@ class OrdersHomeView(RoleRequiredMixin, TemplateView):
                 description = f"Исправление заявки №{edit_order_id}: " + "; ".join(changes)
             else:
                 description = f"Исправление заявки №{edit_order_id}: без изменений"
+            if submit_action == "send":
+                description = f"Отправлено менеджеру. {description}"
             log_order_action(
                 "update",
                 order_id=edit_order_id,
@@ -675,10 +1722,12 @@ class OrdersHomeView(RoleRequiredMixin, TemplateView):
                 description=description,
                 payload=payload,
             )
+            if submit_action == "send" and self.request.GET.get("client"):
+                _create_manager_task(edit_order_id, agency, request, timezone.localtime())
             return redirect(f"/orders/receiving/{edit_order_id}/")
 
         action_label = "черновик" if submit_action == "draft" else "заявка"
-        order_id = self._next_order_number()
+        order_id = self._next_order_number(order_type="receiving")
         log_order_action(
             "create",
             order_id=order_id,
@@ -692,6 +1741,80 @@ class OrdersHomeView(RoleRequiredMixin, TemplateView):
             _create_manager_task(order_id, agency, request, timezone.localtime())
         return redirect(
             f"/orders/receiving/?client={agency.id}&ok=1&status={status_value}&order={order_id}"
+        )
+
+    def _submit_packing(self, request):
+        client_agency = getattr(request, "_client_agency", None) or _client_agency_from_request(request)
+        if client_agency:
+            agency = client_agency
+        else:
+            agency_id = request.POST.get("agency_id")
+            agency = Agency.objects.filter(pk=agency_id).first()
+        if not agency:
+            return self.get(request, error="Выберите клиента.")
+
+        email = (request.POST.get("email") or "").strip()
+        fio = (request.POST.get("fio") or "").strip()
+        plan_date = (request.POST.get("plan_date") or "").strip()
+        total_qty_raw = (request.POST.get("total_qty") or "").strip()
+        if not email:
+            return self.get(request, error="Укажите email.")
+        if not fio:
+            return self.get(request, error="Укажите ФИО.")
+        if not plan_date:
+            return self.get(request, error="Укажите плановую дату выполнения.")
+        try:
+            total_qty_value = int(total_qty_raw)
+        except (TypeError, ValueError):
+            total_qty_value = 0
+        if total_qty_value <= 0:
+            return self.get(request, error="Укажите общее количество к обработке.")
+
+        marketplaces = request.POST.getlist("mp[]")
+        mp_other = (request.POST.get("mp_other") or "").strip()
+        if not marketplaces and not mp_other:
+            return self.get(request, error="Выберите маркетплейс или укажите другое.")
+
+        payload = {
+            "email": email,
+            "fio": fio,
+            "org": request.POST.get("org"),
+            "plan_date": plan_date,
+            "marketplaces": marketplaces,
+            "mp_other": request.POST.get("mp_other"),
+            "subject": request.POST.get("subject"),
+            "total_qty": total_qty_raw,
+            "box_mode": request.POST.get("box_mode"),
+            "box_mode_other": request.POST.get("box_mode_other"),
+            "tasks": request.POST.getlist("tasks[]"),
+            "tasks_other": request.POST.get("tasks_other"),
+            "marking": request.POST.get("marking"),
+            "marking_other": request.POST.get("marking_other"),
+            "ship_as": request.POST.get("ship_as"),
+            "ship_other": request.POST.get("ship_other"),
+            "has_distribution": request.POST.get("has_distribution"),
+            "comments": request.POST.get("comments"),
+            "files_report": [f.name for f in request.FILES.getlist("files_report")],
+            "files_distribution": [f.name for f in request.FILES.getlist("files_distribution")],
+            "files_cz": [f.name for f in request.FILES.getlist("files_cz")],
+        }
+        status_value = "sent_unconfirmed"
+        status_label = "Ждет подтверждения"
+        payload["status"] = status_value
+        payload["status_label"] = status_label
+        payload["submit_action"] = "submitted"
+        order_id = self._next_order_number(order_type="packing")
+        log_order_action(
+            "create",
+            order_id=order_id,
+            order_type="packing",
+            user=request.user if request.user.is_authenticated else None,
+            agency=agency,
+            description=f"Заявка на упаковку №{order_id}",
+            payload=payload,
+        )
+        return redirect(
+            f"/orders/packing/?client={agency.id}&ok=1&status={status_value}&order={order_id}"
         )
 
     def get_context_data(self, **kwargs):
@@ -721,6 +1844,22 @@ class OrdersHomeView(RoleRequiredMixin, TemplateView):
             raw_entries = list(raw_entries)
             manager_label = _manager_label()
             storekeeper_label = _storekeeper_label()
+            receiving_totals = {}
+            for entry in raw_entries:
+                if entry.order_type != "receiving":
+                    continue
+                payload = entry.payload or {}
+                if payload.get("act") != "receiving":
+                    continue
+                if entry.order_id in receiving_totals:
+                    continue
+                total = 0
+                for item in payload.get("act_items") or []:
+                    qty = _parse_qty_value(item.get("actual_qty"))
+                    if qty is None:
+                        qty = _parse_qty_value(item.get("qty")) or 0
+                    total += qty
+                receiving_totals[entry.order_id] = total
             latest_by_order = {}
             status_by_order = {}
             for entry in raw_entries:
@@ -733,23 +1872,33 @@ class OrdersHomeView(RoleRequiredMixin, TemplateView):
                 for order_id, latest_entry in latest_by_order.items()
             ]
             latest_entries.sort(key=lambda item: item.created_at, reverse=True)
-            ctx["entries"] = [
-                {
-                    "created_at": entry.created_at,
-                    "order_type": entry.order_type,
-                    "type_label": _order_type_label(entry.order_type),
-                    "order_id": entry.order_id,
-                    "action_label": _journal_action_label(entry, manager_label, storekeeper_label),
-                    "status_label": _journal_status_label(entry),
-                    "agency": entry.agency,
-                    "client_label": _shorten_ip_name(
-                        (entry.agency.agn_name or str(entry.agency)) if entry.agency else "-"
-                    ),
-                    "detail_url": f"/orders/{entry.order_type}/{entry.order_id}/"
-                    + (f"?client={entry.agency.id}" if client_view and entry.agency else ""),
-                }
-                for entry in latest_entries
-            ]
+            if not client_view:
+                latest_entries = [entry for entry in latest_entries if not _is_draft_entry(entry)]
+            entries_payload = []
+            for entry in latest_entries:
+                if client_view and entry.order_type == "receiving" and _is_draft_entry(entry) and entry.agency_id:
+                    detail_url = f"/orders/receiving/?client={entry.agency_id}&edit={entry.order_id}"
+                else:
+                    detail_url = f"/orders/{entry.order_type}/{entry.order_id}/"
+                    if client_view and entry.agency:
+                        detail_url += f"?client={entry.agency.id}"
+                entries_payload.append(
+                        {
+                            "created_at": entry.created_at,
+                            "order_type": entry.order_type,
+                            "type_label": _order_type_label(entry.order_type),
+                            "order_id": entry.order_id,
+                            "action_label": _journal_action_label(entry, manager_label, storekeeper_label),
+                            "status_label": _journal_status_label(entry),
+                            "agency": entry.agency,
+                            "actual_qty": receiving_totals.get(entry.order_id),
+                            "client_label": _shorten_ip_name(
+                                (entry.agency.agn_name or str(entry.agency)) if entry.agency else "-"
+                            ),
+                            "detail_url": detail_url,
+                    }
+                )
+            ctx["entries"] = entries_payload
         if active_tab == "receiving":
             ctx["agencies"] = Agency.objects.order_by("agn_name")
             ctx["current_time"] = timezone.localtime()
@@ -759,34 +1908,37 @@ class OrdersHomeView(RoleRequiredMixin, TemplateView):
             if status == "draft":
                 status_label = "Черновик"
             elif status == "sent_unconfirmed":
-                status_label = "Новая заявка"
+                status_label = "Ждет подтверждения"
+            elif status in {"warehouse", "on_warehouse"}:
+                status_label = "В ожидании поставки товара"
             ctx["status_label"] = status_label
             ctx["order_number"] = self.request.GET.get("order", "")
 
             edit_order_id = self.request.GET.get("edit")
             if edit_order_id:
                 role = get_request_role(self.request)
-                if role != "manager":
-                    ctx["error"] = "Недостаточно прав для исправления заявки"
-                else:
-                    entries = list(
-                        OrderAuditEntry.objects.filter(
-                            order_id=edit_order_id,
-                            order_type="receiving",
-                        )
-                        .select_related("agency")
-                        .order_by("created_at")
+                entries = list(
+                    OrderAuditEntry.objects.filter(
+                        order_id=edit_order_id,
+                        order_type="receiving",
                     )
-                    if entries:
-                        edit_payload = _latest_payload_from_entries(entries)
-                        if not agency:
-                            agency = entries[-1].agency
-                            ctx["agency"] = agency
-                        ctx["edit_mode"] = True
-                        ctx["edit_order_id"] = edit_order_id
-                        ctx["edit_payload"] = edit_payload
-                        ctx["status_label"] = "Исправление заявки"
-                        ctx["order_number"] = edit_order_id
+                    .select_related("agency")
+                    .order_by("created_at")
+                )
+                can_client_edit = client_view and _can_client_edit_draft(entries, client_agency)
+                if role != "manager" and not can_client_edit:
+                    ctx["error"] = "Недостаточно прав для исправления заявки"
+                elif entries:
+                    edit_payload = _latest_payload_from_entries(entries)
+                    if not agency:
+                        agency = entries[-1].agency
+                        ctx["agency"] = agency
+                    ctx["edit_mode"] = True
+                    ctx["edit_order_id"] = edit_order_id
+                    ctx["edit_payload"] = edit_payload
+                    ctx["edit_is_draft"] = bool(can_client_edit)
+                    ctx["status_label"] = "Черновик" if can_client_edit else "Исправление заявки"
+                    ctx["order_number"] = edit_order_id
 
             sku_options = []
             if agency:
@@ -813,7 +1965,20 @@ class OrdersHomeView(RoleRequiredMixin, TemplateView):
                         }
                     )
             ctx["sku_options"] = sku_options
+        if active_tab == "packing":
+            status = self.request.GET.get("status")
+            status_label = "Подготовка заявки"
+            if status == "draft":
+                status_label = "Черновик"
+            elif status in {"sent_unconfirmed", "send", "submitted"}:
+                status_label = "Ждет подтверждения"
+            ctx["status_label"] = status_label
+            ctx["order_number"] = self.request.GET.get("order", "")
         return ctx
+
+
+class OrdersPackingView(OrdersHomeView):
+    template_name = "orders/packing.html"
 
 
 class OrdersDetailView(RoleRequiredMixin, TemplateView):
@@ -861,7 +2026,7 @@ class OrdersDetailView(RoleRequiredMixin, TemplateView):
                 return redirect("/orders/")
             payload = dict(latest.payload or {})
             payload["status"] = "warehouse"
-            payload["status_label"] = "На складе"
+            payload["status_label"] = "В ожидании поставки товара"
             log_order_action(
                 "status",
                 order_id=order_id,
@@ -942,22 +2107,26 @@ class OrdersDetailView(RoleRequiredMixin, TemplateView):
         payload = self._payload_from_entries(entries_list)
         ctx["order_id"] = order_id
         ctx["order_type"] = self.order_type
-        ctx["order_title"] = _order_title_label(self.order_type)
+        ctx["order_title"] = _order_title_label(self.order_type, payload)
         ctx["agency"] = latest.agency if latest else client_agency
         ctx["client_view"] = client_view
-        ctx["status_label"] = _status_label_from_entry(status_entry) if status_entry else "-"
+        status_text = _status_label_from_entry(status_entry) if status_entry else "-"
+        ctx["status_label"] = status_text
         ctx["responsible"] = _current_responsible_label(status_entry)
         ctx["cabinet_url"] = resolve_cabinet_url(get_request_role(self.request))
         can_send_to_warehouse = False
         role = get_request_role(self.request)
-        ctx["can_edit_order"] = bool(role == "manager" and not client_view)
+        can_edit_order = bool(role == "manager" and not client_view)
+        if "товар принят" in (status_text or "").lower():
+            can_edit_order = False
+        ctx["can_edit_order"] = can_edit_order
         can_create_receiving_act = False
         if status_entry and not client_view and role == "manager":
             payload = status_entry.payload or {}
             status_value = (payload.get("status") or payload.get("submit_action") or "").lower()
             status_label = (payload.get("status_label") or "").lower()
             can_send_to_warehouse = status_value in {"sent_unconfirmed", "send", "submitted"}
-            if "склад" in status_label or status_value in {"warehouse", "on_warehouse"}:
+            if "склад" in status_label or "ожидании поставки" in status_label or status_value in {"warehouse", "on_warehouse"}:
                 can_send_to_warehouse = False
             if status_value == "draft":
                 can_send_to_warehouse = False
@@ -969,7 +2138,9 @@ class OrdersDetailView(RoleRequiredMixin, TemplateView):
                 (entry.payload or {}).get("act") == "receiving" for entry in entries_list
             )
             if not has_receiving_act and (
-                status_value in {"warehouse", "on_warehouse"} or "склад" in status_label
+                status_value in {"warehouse", "on_warehouse"}
+                or "склад" in status_label
+                or "ожидании поставки" in status_label
             ):
                 can_create_receiving_act = True
         ctx["can_send_to_warehouse"] = can_send_to_warehouse
@@ -987,7 +2158,47 @@ class OrdersDetailView(RoleRequiredMixin, TemplateView):
             "driver_phone": payload.get("driver_phone"),
             "comment": payload.get("comment"),
         }
-        ctx["items"] = payload.get("items") or []
+        act_entry_for_items = _find_act_entry(entries_list, "receiving", "акт приемки")
+        act_items = (act_entry_for_items.payload or {}).get("act_items") if act_entry_for_items else []
+        items = payload.get("items") or []
+        display_items = []
+        if items:
+            actual_map = {}
+            for act_item in act_items:
+                key = _item_key(act_item.get("sku_code"), act_item.get("name"), act_item.get("size"))
+                qty = _parse_qty_value(act_item.get("actual_qty"))
+                if qty is None:
+                    qty = _parse_qty_value(act_item.get("qty")) or 0
+                actual_map[key] = (actual_map.get(key) or 0) + qty
+            for item in items:
+                key = _item_key(item.get("sku_code"), item.get("name"), item.get("size"))
+                display_items.append(
+                    {
+                        "sku_code": item.get("sku_code"),
+                        "name": item.get("name"),
+                        "size": item.get("size"),
+                        "qty": item.get("qty"),
+                        "comment": item.get("comment"),
+                        "actual_qty": actual_map.get(key),
+                    }
+                )
+        elif act_items:
+            for item in act_items:
+                planned_qty = item.get("planned_qty")
+                if planned_qty in (None, ""):
+                    planned_qty = item.get("qty")
+                actual_qty = _parse_qty_value(item.get("actual_qty"))
+                display_items.append(
+                    {
+                        "sku_code": item.get("sku_code"),
+                        "name": item.get("name"),
+                        "size": item.get("size"),
+                        "qty": planned_qty,
+                        "comment": item.get("comment"),
+                        "actual_qty": actual_qty,
+                    }
+                )
+        ctx["items"] = display_items
         participants = []
         seen = set()
         for entry in entries_list:
@@ -1051,10 +2262,77 @@ class OrdersDetailView(RoleRequiredMixin, TemplateView):
         return ctx
 
 
+class PackingDetailView(OrdersDetailView):
+    order_type = "packing"
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        order_id = kwargs.get("order_id")
+        entries_list = list(
+            OrderAuditEntry.objects.filter(order_id=order_id, order_type=self.order_type)
+            .select_related("user", "agency")
+            .order_by("created_at")
+        )
+        payload = self._payload_from_entries(entries_list)
+        marketplaces = payload.get("marketplaces") or []
+        if isinstance(marketplaces, str):
+            marketplaces = [marketplaces] if marketplaces else []
+        mp_other = (payload.get("mp_other") or "").strip()
+        if mp_other:
+            marketplaces = list(marketplaces) + [mp_other]
+        tasks = payload.get("tasks") or []
+        if isinstance(tasks, str):
+            tasks = [tasks] if tasks else []
+        tasks_other = (payload.get("tasks_other") or "").strip()
+        if tasks_other:
+            tasks = list(tasks) + [tasks_other]
+        box_mode = _resolve_choice_value(payload.get("box_mode"), payload.get("box_mode_other"))
+        marking = _resolve_choice_value(payload.get("marking"), payload.get("marking_other"))
+        ship_as = _resolve_choice_value(payload.get("ship_as"), payload.get("ship_other"))
+        ctx["packing_fields"] = [
+            {"label": "Email", "value": _format_payload_value(payload.get("email"))},
+            {"label": "ФИО", "value": _format_payload_value(payload.get("fio"))},
+            {"label": "Организация", "value": _format_payload_value(payload.get("org"))},
+            {"label": "Плановая дата", "value": _format_payload_value(payload.get("plan_date"))},
+            {"label": "Маркетплейсы", "value": _format_payload_list(marketplaces)},
+            {"label": "Предмет", "value": _format_payload_value(payload.get("subject"))},
+            {"label": "Общее количество", "value": _format_payload_value(payload.get("total_qty"))},
+            {"label": "Кратность коробов", "value": _format_payload_value(box_mode)},
+            {"label": "Работы", "value": _format_payload_list(tasks)},
+            {"label": "Маркировка", "value": _format_payload_value(marking)},
+            {"label": "Отгрузка", "value": _format_payload_value(ship_as)},
+            {"label": "Распределение", "value": _format_payload_value(payload.get("has_distribution"))},
+            {"label": "Комментарий", "value": _format_payload_value(payload.get("comments"))},
+            {"label": "Файлы отчета", "value": _format_payload_list(payload.get("files_report"))},
+            {"label": "Файл распределения", "value": _format_payload_list(payload.get("files_distribution"))},
+            {"label": "Файлы ЧЗ", "value": _format_payload_list(payload.get("files_cz"))},
+        ]
+        ctx["packing_meta"] = {
+            "plan_date": _format_payload_value(payload.get("plan_date")),
+            "total_qty": _format_payload_value(payload.get("total_qty")),
+            "marketplaces": _format_payload_list(marketplaces),
+            "box_mode": _format_payload_value(box_mode),
+            "marking": _format_payload_value(marking),
+            "ship_as": _format_payload_value(ship_as),
+            "has_distribution": _format_payload_value(payload.get("has_distribution")),
+            "comment": _format_payload_value(payload.get("comments")),
+        }
+        ctx["items"] = []
+        ctx["can_edit_order"] = False
+        ctx["can_send_to_warehouse"] = False
+        ctx["can_create_receiving_act"] = False
+        ctx["has_receiving_act"] = False
+        ctx["has_placement_act"] = False
+        ctx["act_label"] = ""
+        ctx["placement_act_label"] = ""
+        ctx["can_send_act_to_client"] = False
+        return ctx
+
+
 class ReceivingActView(RoleRequiredMixin, TemplateView):
     template_name = "orders/receiving_act.html"
     order_type = "receiving"
-    allowed_roles = ("storekeeper", "head_manager", "director", "admin")
+    allowed_roles = ("storekeeper", "manager", "head_manager", "director", "admin")
 
     def dispatch(self, request, *args, **kwargs):
         client_agency = _client_agency_from_request(request)
@@ -1069,6 +2347,23 @@ class ReceivingActView(RoleRequiredMixin, TemplateView):
                 return HttpResponseForbidden("Доступ запрещен")
             if request.method != "GET":
                 return HttpResponseForbidden("Доступ запрещен")
+            status_entry = _current_status_entry(entries)
+            if status_entry:
+                payload = dict(status_entry.payload or {})
+                if payload.get("act_sent") and not payload.get("act_viewed"):
+                    payload["status"] = payload.get("status") or "done"
+                    payload["status_label"] = payload.get("status_label") or "Выполнена"
+                    payload["act_viewed"] = True
+                    payload["act_viewed_at"] = timezone.localtime().isoformat()
+                    log_order_action(
+                        "status",
+                        order_id=order_id,
+                        order_type=self.order_type,
+                        user=request.user if request.user.is_authenticated else None,
+                        agency=entries[-1].agency if entries else None,
+                        description="Акт приемки просмотрен клиентом",
+                        payload=payload,
+                    )
             request._client_agency = client_agency
             return TemplateView.dispatch(self, request, *args, **kwargs)
         return super().dispatch(request, *args, **kwargs)
@@ -1102,12 +2397,14 @@ class ReceivingActView(RoleRequiredMixin, TemplateView):
         entries = self._load_entries(order_id)
         if not entries:
             return redirect("/orders/")
+        role = get_request_role(request)
+        if role != "storekeeper":
+            return HttpResponseForbidden("Доступ запрещен")
         if not self._can_create(entries):
             return redirect(f"/orders/receiving/{order_id}/act/?error=1")
         payload = _latest_payload_from_entries(entries)
         items = payload.get("items") or []
-        if not items:
-            return redirect(f"/orders/receiving/{order_id}/act/?error=1")
+        has_planned_items = bool(items)
         actual_raw = request.POST.getlist("actual_qty[]")
         eta_raw = (request.POST.get("eta_at") or "").strip()
         vehicle_number = (request.POST.get("vehicle_number") or "").strip()
@@ -1142,12 +2439,23 @@ class ReceivingActView(RoleRequiredMixin, TemplateView):
                     "comment": item.get("comment"),
                 }
             )
+        extra_sku_codes = request.POST.getlist("extra_sku_code[]")
+        extra_barcodes = request.POST.getlist("extra_barcode[]")
         extra_names = request.POST.getlist("extra_name[]")
         extra_sizes = request.POST.getlist("extra_size[]")
         extra_planned = request.POST.getlist("extra_planned_qty[]")
         extra_actual = request.POST.getlist("extra_actual_qty[]")
-        extra_count = max(len(extra_names), len(extra_sizes), len(extra_planned), len(extra_actual))
+        extra_count = max(
+            len(extra_names),
+            len(extra_sizes),
+            len(extra_planned),
+            len(extra_actual),
+            len(extra_sku_codes),
+            len(extra_barcodes),
+        )
         for idx in range(extra_count):
+            sku_code = (extra_sku_codes[idx] if idx < len(extra_sku_codes) else "").strip()
+            barcode = (extra_barcodes[idx] if idx < len(extra_barcodes) else "").strip()
             name = (extra_names[idx] if idx < len(extra_names) else "").strip()
             size = (extra_sizes[idx] if idx < len(extra_sizes) else "").strip()
             planned_raw = extra_planned[idx] if idx < len(extra_planned) else ""
@@ -1162,11 +2470,12 @@ class ReceivingActView(RoleRequiredMixin, TemplateView):
             actual_value = _parse_qty_value(actual_raw_value)
             if actual_value is None:
                 return redirect(f"/orders/receiving/{order_id}/act/?error=1")
-            if planned_value != actual_value:
+            if has_planned_items and planned_value != actual_value:
                 has_mismatch = True
             act_items.append(
                 {
-                    "sku_code": "",
+                    "sku_code": sku_code,
+                    "barcode": barcode,
                     "name": name,
                     "size": size,
                     "planned_qty": planned_value,
@@ -1175,13 +2484,16 @@ class ReceivingActView(RoleRequiredMixin, TemplateView):
                     "extra": True,
                 }
             )
+        if not act_items:
+            return redirect(f"/orders/receiving/{order_id}/act/?error=1")
         status_entry = _current_status_entry(entries)
         latest = entries[-1]
         act_payload = dict((status_entry.payload or {}) if status_entry else {})
         if not act_payload.get("status"):
             act_payload["status"] = "warehouse"
-        if not act_payload.get("status_label"):
-            act_payload["status_label"] = "На складе"
+        act_payload["status_label"] = (
+            "Товар принят на склад с расхождениями" if has_mismatch else "Товар принят на склад"
+        )
         act_payload["eta_at"] = eta_value.isoformat()
         act_payload["vehicle_number"] = vehicle_number
         act_payload["act"] = "receiving"
@@ -1210,6 +2522,7 @@ class ReceivingActView(RoleRequiredMixin, TemplateView):
         client_view = bool(client_agency)
         status_entry = _current_status_entry(entries)
         payload = _latest_payload_from_entries(entries)
+        order_title = _order_title_label(self.order_type, payload)
         items = payload.get("items") or []
         act_entry = self._act_entry(entries)
         act_items = (act_entry.payload or {}).get("act_items") if act_entry else []
@@ -1217,11 +2530,44 @@ class ReceivingActView(RoleRequiredMixin, TemplateView):
             act_label = (act_entry.payload or {}).get("act_label") or "Акт приемки"
         else:
             act_label = "Акт приемки"
-        can_submit = self._can_create(entries)
+        act_documents = []
+        if act_entry:
+            act_documents = [
+                {
+                    "label": "Акт приемки печатная форма",
+                    "url": f"/orders/receiving/{order_id}/act/print/",
+                },
+                {"label": "МХ-1", "url": f"/orders/receiving/{order_id}/act/mx1/print/"},
+            ]
+        role = get_request_role(self.request)
+        can_submit = role == "storekeeper" and self._can_create(entries)
         if client_view:
             can_submit = False
         display_items = []
         base_items = act_items or items
+        sku_ids = set()
+        sku_codes = set()
+        for item in base_items:
+            sku_code = str(item.get("sku_code") or "").strip()
+            if sku_code:
+                sku_codes.add(sku_code)
+            sku_id_raw = item.get("sku_id")
+            if sku_id_raw:
+                try:
+                    sku_ids.add(int(sku_id_raw))
+                except (TypeError, ValueError):
+                    pass
+        sku_by_id = {}
+        if sku_ids:
+            for sku in SKU.objects.filter(id__in=sku_ids, deleted=False).prefetch_related("barcodes"):
+                sku_by_id[sku.id] = sku
+        sku_by_code = {}
+        if sku_codes:
+            sku_qs = SKU.objects.filter(sku_code__in=sku_codes, deleted=False)
+            if latest and latest.agency_id:
+                sku_qs = sku_qs.filter(agency_id=latest.agency_id)
+            for sku in sku_qs.prefetch_related("barcodes"):
+                sku_by_code.setdefault(sku.sku_code, sku)
         for idx, item in enumerate(base_items):
             actual_value = "" if not act_items else item.get("actual_qty")
             if act_items:
@@ -1232,9 +2578,20 @@ class ReceivingActView(RoleRequiredMixin, TemplateView):
                 planned_value = item.get("qty")
                 name = item.get("name")
                 size = item.get("size")
+            sku_code_value = item.get("sku_code") or ""
+            sku_id_value = item.get("sku_id")
+            sku_id = None
+            if sku_id_value not in (None, ""):
+                try:
+                    sku_id = int(sku_id_value)
+                except (TypeError, ValueError):
+                    sku_id = None
+            sku = sku_by_id.get(sku_id) or sku_by_code.get(sku_code_value)
+            barcode_value = item.get("barcode") or _barcode_value_for_sku(sku, size)
             display_items.append(
                 {
-                    "sku_code": item.get("sku_code") or "",
+                    "sku_code": sku_code_value or "-",
+                    "barcode": barcode_value,
                     "name": name or "-",
                     "size": size or "-",
                     "planned_qty": planned_value if planned_value not in (None, "") else "-",
@@ -1246,6 +2603,58 @@ class ReceivingActView(RoleRequiredMixin, TemplateView):
         if latest and latest.agency:
             name = latest.agency.agn_name or latest.agency.fio_agn or str(latest.agency)
             client_label = _shorten_ip_name(name)
+        sku_options = []
+        sku_name_options = []
+        barcode_options = []
+        barcode_map = {}
+        if latest and latest.agency_id:
+            name_seen = set()
+            barcode_seen = set()
+            for sku in (
+                SKU.objects.filter(agency_id=latest.agency_id, deleted=False)
+                .prefetch_related("barcodes")
+                .order_by("sku_code")
+            ):
+                barcode_values = []
+                for barcode in sku.barcodes.all():
+                    value = (barcode.value or "").strip()
+                    if not value:
+                        continue
+                    barcode_values.append(value)
+                    if value not in barcode_seen:
+                        barcode_seen.add(value)
+                        barcode_options.append(value)
+                    if value not in barcode_map:
+                        barcode_map[value] = {
+                            "sku": sku.sku_code,
+                            "name": sku.name,
+                            "size": (barcode.size or sku.size or "").strip(),
+                        }
+                sku_code_barcode = (sku.code or "").strip()
+                if sku_code_barcode:
+                    if sku_code_barcode not in barcode_values:
+                        barcode_values.append(sku_code_barcode)
+                    if sku_code_barcode not in barcode_seen:
+                        barcode_seen.add(sku_code_barcode)
+                        barcode_options.append(sku_code_barcode)
+                    barcode_map.setdefault(
+                        sku_code_barcode,
+                        {
+                            "sku": sku.sku_code,
+                            "name": sku.name,
+                            "size": (sku.size or "").strip(),
+                        },
+                    )
+                sku_options.append(
+                    {
+                        "code": sku.sku_code,
+                        "name": sku.name,
+                        "barcodes_joined": "|".join(barcode_values),
+                    }
+                )
+                if sku.name and sku.name not in name_seen:
+                    name_seen.add(sku.name)
+                    sku_name_options.append(sku.name)
         arrival_value = payload.get("eta_at")
         if act_entry:
             act_payload = act_entry.payload or {}
@@ -1273,6 +2682,7 @@ class ReceivingActView(RoleRequiredMixin, TemplateView):
         ctx.update(
             {
                 "order_id": order_id,
+                "order_title": order_title,
                 "client_label": client_label,
                 "status_label": _status_label_from_entry(status_entry) if status_entry else "-",
                 "cabinet_url": cabinet_url,
@@ -1288,7 +2698,13 @@ class ReceivingActView(RoleRequiredMixin, TemplateView):
                 "can_add_items": can_submit,
                 "act_exists": bool(act_entry),
                 "act_label": act_label,
+                "act_documents": act_documents,
                 "items": display_items,
+                "sku_options": sku_options,
+                "sku_name_options": sku_name_options,
+                "barcode_options": barcode_options,
+                "barcode_map": barcode_map,
+                "agency_id": latest.agency_id if latest else "",
                 "ok": kwargs.get("ok", False),
                 "error": kwargs.get("error"),
             }
@@ -1319,8 +2735,6 @@ class PlacementActView(RoleRequiredMixin, TemplateView):
             return False
         if not self._receiving_act_entry(entries):
             return False
-        if self._placement_act_entry(entries):
-            return False
         return True
 
     def get(self, request, *args, **kwargs):
@@ -1334,36 +2748,43 @@ class PlacementActView(RoleRequiredMixin, TemplateView):
         entries = self._load_entries(order_id)
         if not entries:
             return redirect("/orders/")
+        action = (request.POST.get("action") or "close").lower()
         role = get_request_role(request)
         if role != "storekeeper":
             return redirect(f"/orders/receiving/{order_id}/placement/")
         if not self._can_create(entries):
             return redirect(f"/orders/receiving/{order_id}/placement/?error=1")
+        placement_act = self._placement_act_entry(entries)
+        if action == "open":
+            if not placement_act:
+                return redirect(f"/orders/receiving/{order_id}/placement/")
+            payload = placement_act.payload or {}
+            current_state = (payload.get("act_state") or "closed").lower()
+            if current_state == "open":
+                return redirect(f"/orders/receiving/{order_id}/placement/")
+            act_payload = dict(payload)
+            if not act_payload.get("status"):
+                act_payload["status"] = "warehouse"
+            act_payload["status_label"] = "Размещение на складе"
+            act_payload["act"] = "placement"
+            act_payload["act_label"] = act_payload.get("act_label") or "Акт размещения"
+            act_payload["act_state"] = "open"
+            latest = entries[-1]
+            log_order_action(
+                "status",
+                order_id=order_id,
+                order_type=self.order_type,
+                user=request.user if request.user.is_authenticated else None,
+                agency=latest.agency,
+                description="Открыт акт размещения",
+                payload=act_payload,
+            )
+            return redirect(f"/orders/receiving/{order_id}/placement/")
         receiving_act = self._receiving_act_entry(entries)
         act_items = (receiving_act.payload or {}).get("act_items") if receiving_act else []
         if not act_items:
             return redirect(f"/orders/receiving/{order_id}/placement/?error=1")
-        box_raw = request.POST.getlist("box_qty[]")
-        pallet_raw = request.POST.getlist("pallet_qty[]")
         placement_items = []
-        for idx, item in enumerate(act_items):
-            box_value = _parse_qty_value(box_raw[idx] if idx < len(box_raw) else "")
-            pallet_value = _parse_qty_value(pallet_raw[idx] if idx < len(pallet_raw) else "")
-            if box_value is None:
-                box_value = 0
-            if pallet_value is None:
-                pallet_value = 0
-            placement_items.append(
-                {
-                    "sku_code": item.get("sku_code"),
-                    "name": item.get("name"),
-                    "size": item.get("size"),
-                    "actual_qty": item.get("actual_qty"),
-                    "box_qty": box_value,
-                    "pallet_qty": pallet_value,
-                    "comment": item.get("comment"),
-                }
-            )
         boxes_raw = request.POST.get("boxes_json") or "[]"
         pallets_raw = request.POST.get("pallets_json") or "[]"
         try:
@@ -1371,6 +2792,16 @@ class PlacementActView(RoleRequiredMixin, TemplateView):
             pallets_data = json.loads(pallets_raw)
         except json.JSONDecodeError:
             return redirect(f"/orders/receiving/{order_id}/placement/?error=1")
+        if not isinstance(boxes_data, list):
+            boxes_data = []
+        if isinstance(pallets_data, list):
+            pallets_data = [
+                pallet for pallet in pallets_data
+                if isinstance(pallet, dict)
+                and ((pallet.get("items") or []) or (pallet.get("boxes") or []))
+            ]
+        else:
+            pallets_data = []
         totals = {}
         def add_total(item, qty, field):
             key = _item_key(item.get("sku"), item.get("name"), item.get("size"))
@@ -1387,50 +2818,89 @@ class PlacementActView(RoleRequiredMixin, TemplateView):
                 for item in (pallet or {}).get("items", []) or []:
                     qty = _parse_qty_value(item.get("qty")) or 0
                     add_total(item, qty, "pallet")
-        if totals:
-            placement_items = []
-            for item in act_items:
-                key = _item_key(item.get("sku_code"), item.get("name"), item.get("size"))
-                entry = totals.get(key, {"box": 0, "pallet": 0, "total": 0})
-                actual_qty = _parse_qty_value(item.get("actual_qty")) or 0
-                if entry["total"] > actual_qty:
-                    return redirect(f"/orders/receiving/{order_id}/placement/?error=1")
-                placement_items.append(
-                    {
-                        "sku_code": item.get("sku_code"),
-                        "name": item.get("name"),
-                        "size": item.get("size"),
-                        "actual_qty": actual_qty,
-                        "box_qty": entry["box"],
-                        "pallet_qty": entry["pallet"],
-                        "comment": item.get("comment"),
-                    }
-                )
+        placement_items = []
+        for item in act_items:
+            key = _item_key(item.get("sku_code"), item.get("name"), item.get("size"))
+            entry = totals.get(key, {"box": 0, "pallet": 0, "total": 0})
+            actual_qty = _parse_qty_value(item.get("actual_qty")) or 0
+            if entry["total"] > actual_qty:
+                return redirect(f"/orders/receiving/{order_id}/placement/?error=1")
+            if entry["total"] != actual_qty:
+                return redirect(f"/orders/receiving/{order_id}/placement/?error=1")
+            placement_items.append(
+                {
+                    "sku_code": item.get("sku_code"),
+                    "name": item.get("name"),
+                    "size": item.get("size"),
+                    "actual_qty": actual_qty,
+                    "box_qty": entry["box"],
+                    "pallet_qty": entry["pallet"],
+                    "comment": item.get("comment"),
+                }
+            )
+        for box in boxes_data:
+            if not isinstance(box, dict):
+                continue
+            if not box.get("sealed"):
+                return redirect(f"/orders/receiving/{order_id}/placement/?error=1")
+        pallet_box_codes = set()
+        for pallet in pallets_data:
+            if not isinstance(pallet, dict):
+                continue
+            for box_code in (pallet.get("boxes") or []):
+                if box_code:
+                    pallet_box_codes.add(box_code)
+        unassigned_boxes = [
+            box
+            for box in boxes_data
+            if isinstance(box, dict)
+            and (box.get("code") or "")
+            and (box.get("code") not in pallet_box_codes)
+        ]
+        if unassigned_boxes:
+            return redirect(f"/orders/receiving/{order_id}/placement/?error=1")
+        for pallet in pallets_data:
+            if not isinstance(pallet, dict):
+                continue
+            if not pallet.get("sealed"):
+                return redirect(f"/orders/receiving/{order_id}/placement/?error=1")
+            location = pallet.get("location") or {}
+            rack = (location.get("rack") or pallet.get("rack") or "").strip()
+            row = (location.get("row") or pallet.get("row") or "").strip()
+            shelf = (location.get("shelf") or pallet.get("shelf") or "").strip()
+            if not rack or not row or not shelf:
+                return redirect(f"/orders/receiving/{order_id}/placement/?error=1")
         status_entry = _current_status_entry(entries)
         latest = entries[-1]
         act_payload = dict((status_entry.payload or {}) if status_entry else {})
         if not act_payload.get("status"):
             act_payload["status"] = "warehouse"
-        if not act_payload.get("status_label"):
-            act_payload["status_label"] = "На складе"
+        act_payload["status_label"] = "Товар принят и размещен на складе"
         act_payload["act"] = "placement"
         act_payload["act_label"] = "Акт размещения"
+        act_payload["act_state"] = "closed"
         act_payload["act_items"] = placement_items
         act_payload["act_boxes"] = boxes_data if isinstance(boxes_data, list) else []
         act_payload["act_pallets"] = pallets_data if isinstance(pallets_data, list) else []
+        has_closed_act = any(
+            (entry.payload or {}).get("act") == "placement"
+            and ((entry.payload or {}).get("act_state") or "closed") == "closed"
+            for entry in entries
+        )
         log_order_action(
             "status",
             order_id=order_id,
             order_type=self.order_type,
             user=request.user if request.user.is_authenticated else None,
             agency=latest.agency,
-            description="Создан акт размещения",
+            description="Обновлен акт размещения" if has_closed_act else "Создан акт размещения",
             payload=act_payload,
         )
-        Task.objects.filter(
-            route=f"/orders/receiving/{order_id}/",
-            assigned_to__role="storekeeper",
-        ).exclude(status="done").update(status="done")
+        if not has_closed_act:
+            Task.objects.filter(
+                route=f"/orders/receiving/{order_id}/",
+                assigned_to__role="storekeeper",
+            ).exclude(status="done").update(status="done")
         observer = Employee.objects.filter(user=request.user, is_active=True).first()
         _create_manager_followup_task(
             order_id,
@@ -1487,7 +2957,10 @@ class PlacementActView(RoleRequiredMixin, TemplateView):
             name = latest.agency.agn_name or latest.agency.fio_agn or str(latest.agency)
             client_label = _shorten_ip_name(name)
         role = get_request_role(self.request)
-        can_submit = self._can_create(entries) and role == "storekeeper"
+        can_submit = role == "storekeeper"
+        act_state = "open"
+        if placement_act:
+            act_state = (placement_act.payload or {}).get("act_state") or "closed"
         boxes_data = (placement_act.payload or {}).get("act_boxes") if placement_act else []
         pallets_data = (placement_act.payload or {}).get("act_pallets") if placement_act else []
         ctx.update(
@@ -1498,6 +2971,7 @@ class PlacementActView(RoleRequiredMixin, TemplateView):
                 "cabinet_url": resolve_cabinet_url(get_request_role(self.request)),
                 "can_submit": can_submit,
                 "act_exists": bool(placement_act),
+                "act_state": act_state,
                 "items": display_items,
                 "catalog_items": catalog_items,
                 "remaining_items": remaining_items,

@@ -6,10 +6,12 @@ from django.conf import settings
 from django.db import models
 from django.utils import timezone
 
+from audit.models import OrderAuditEntry
 from employees.models import Employee
 
 
 _RECEIVING_ROUTE_RE = re.compile(r"/orders/receiving/([^/]+)/")
+_STATUS_ONLY_KEYS = {"comment", "message", "status", "status_label", "submit_action"}
 
 
 def _extract_receiving_order_id(route: str | None) -> str | None:
@@ -19,6 +21,42 @@ def _extract_receiving_order_id(route: str | None) -> str | None:
     if not match:
         return None
     return match.group(1)
+
+
+def _has_receiving_items(payload: dict) -> bool:
+    items = payload.get("items") or []
+    for item in items:
+        for key in ("sku_code", "name", "qty", "size"):
+            if str(item.get(key) or "").strip():
+                return True
+    return False
+
+
+def _latest_payload_from_entries(entries) -> dict:
+    for entry in reversed(entries):
+        payload = entry.payload or {}
+        if not payload:
+            continue
+        significant_keys = set(payload.keys()) - _STATUS_ONLY_KEYS
+        if significant_keys:
+            return payload
+    return entries[-1].payload or {} if entries else {}
+
+
+def _receiving_title_from_payload(payload: dict | None) -> str:
+    title = "Заявка на приемку"
+    if payload and not _has_receiving_items(payload):
+        title = "Заявка на приемку без указания товара"
+    return title
+
+
+def _payload_for_receiving_order(order_id: str) -> dict:
+    entries = list(
+        OrderAuditEntry.objects.filter(order_id=order_id, order_type="receiving")
+        .only("payload", "created_at")
+        .order_by("created_at")
+    )
+    return _latest_payload_from_entries(entries)
 
 
 def default_due_date():
@@ -82,10 +120,17 @@ class Task(models.Model):
         return self.title
 
     def display_title(self) -> str:
+        cached = getattr(self, "_display_title_cache", None)
+        if cached:
+            return cached
         order_id = _extract_receiving_order_id(self.route)
         if order_id:
-            return f"Заявка на приемку товара №{order_id}"
-        return self.title
+            payload = _payload_for_receiving_order(order_id)
+            title = _receiving_title_from_payload(payload)
+            self._display_title_cache = f"{title} №{order_id}"
+            return self._display_title_cache
+        self._display_title_cache = self.title
+        return self._display_title_cache
 
 
 class TaskComment(models.Model):

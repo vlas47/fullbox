@@ -23,6 +23,7 @@ from django.views.generic import RedirectView, TemplateView
 from fullbox import views
 
 urlpatterns = [
+    path('favicon.ico', views.favicon, name='favicon'),
     path('', TemplateView.as_view(template_name='landing.html'), name='home'),
     path('dev/', TemplateView.as_view(template_name='developer.html'), name='dev-home'),
     path('login-menu/', views.login_menu, name='login-menu'),
@@ -37,6 +38,8 @@ urlpatterns = [
     path('admin/audit/', RedirectView.as_view(pattern_name='admin:audit_auditjournal_changelist', permanent=False)),
     path('admin/', admin.site.urls),
     path('scanner-test/', TemplateView.as_view(template_name='scanner_test.html'), name='scanner-test'),
+    path('scanner-settings/', TemplateView.as_view(template_name='scanner_settings.html'), name='scanner-settings'),
+    path('scanner/ims-2290hd/', TemplateView.as_view(template_name='scanner_ims_2290hd.html'), name='scanner-ims-2290hd'),
     path('orders/', include('orders.urls')),
     path('head-manager/', include('head_manager.urls')),
     path('client/', include('client_cabinet.urls')),

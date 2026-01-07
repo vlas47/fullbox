@@ -37,10 +37,12 @@
         <div class="muted">FULLBOX · {% include "partials/current_user.html" %}</div>
         <h1>{{ title }}</h1>
       </div>
-      <div style="display:flex; gap:10px; flex-wrap:wrap;">
-        <a class="btn" href="/client/">К списку клиентов</a>
-        <a class="btn" href="/dev/">Dev</a>
-      </div>
+      {% if staff_view %}
+        <div style="display:flex; gap:10px; flex-wrap:wrap;">
+          <a class="btn" href="/client/">К списку клиентов</a>
+          <a class="btn" href="/dev/">Dev</a>
+        </div>
+      {% endif %}
     </header>
 
     <div class="card">
@@ -60,7 +62,7 @@
             {{ form.pref.errors }}{% if form.pref.errors %}{% render_field form.pref class+="field-error" %}{% else %}{% render_field form.pref %}{% endif %}
           </div>
           <div>
-            <label>ИНН</label>
+            <label>ИНН *</label>
             <div style="display:flex; gap:8px; align-items:center;">
               {{ form.inn.errors }}{% if form.inn.errors %}{% render_field form.inn class+="field-error" id="field-inn" %}{% else %}{% render_field form.inn id="field-inn" %}{% endif %}
               <button class="btn" type="button" id="btn-fetch-inn" style="padding:8px 10px;" title="Заполнить данные по ИНН">⚡</button>
@@ -82,11 +84,11 @@
             {{ form.email.errors }}{% if form.email.errors %}{% render_field form.email class+="field-error" %}{% else %}{% render_field form.email %}{% endif %}
           </div>
           <div>
-            <label>Телефон</label>
+            <label>Телефон *</label>
             {{ form.phone.errors }}{% if form.phone.errors %}{% render_field form.phone class+="field-error" %}{% else %}{% render_field form.phone %}{% endif %}
           </div>
           <div>
-            <label>ФИО контактного</label>
+            <label>ФИО контактного *</label>
             {{ form.fio_agn.errors }}{% if form.fio_agn.errors %}{% render_field form.fio_agn class+="field-error" %}{% else %}{% render_field form.fio_agn %}{% endif %}
           </div>
         </div>
@@ -121,7 +123,7 @@
 
         <div style="display:flex; gap:10px; flex-wrap:wrap;">
           <button type="submit" class="btn primary">{{ submit_label }}</button>
-          <a class="btn" href="/client/">Отмена</a>
+          <a class="btn" href="{{ cancel_url }}">Отмена</a>
         </div>
       </form>
     </div>
@@ -168,6 +170,53 @@
           if (chkOferta && d.sign_oferta !== undefined) chkOferta.checked = !!d.sign_oferta;
         })
         .catch(() => alert('Ошибка запроса к DaData'));
+    });
+  })();
+</script>
+<script>
+  (function(){
+    const phoneInput = document.getElementById('id_phone');
+    if (!phoneInput) return;
+
+    const onlyDigits = (value) => (value || '').replace(/\D/g, '');
+    const formatPhone = (digits) => {
+      if (!digits) return '+7 ';
+      let d = digits;
+      if (d[0] === '8') d = `7${d.slice(1)}`;
+      if (d[0] !== '7') d = `7${d}`;
+      d = d.slice(0, 11);
+      const main = d.slice(1);
+      let out = '+7';
+      if (main.length) {
+        out += ` (${main.slice(0, 3)}`;
+        if (main.length >= 3) out += ')';
+      }
+      if (main.length > 3) out += ` ${main.slice(3, 6)}`;
+      if (main.length > 6) out += `-${main.slice(6, 8)}`;
+      if (main.length > 8) out += `-${main.slice(8, 10)}`;
+      return out;
+    };
+
+    const applyFormat = () => {
+      const digits = onlyDigits(phoneInput.value);
+      phoneInput.value = formatPhone(digits);
+    };
+
+    if (!phoneInput.value) {
+      phoneInput.value = '+7 ';
+    } else {
+      phoneInput.value = formatPhone(onlyDigits(phoneInput.value));
+    }
+
+    phoneInput.addEventListener('focus', () => {
+      if (!phoneInput.value) phoneInput.value = '+7 ';
+      if (phoneInput.value === '+7') phoneInput.value = '+7 ';
+    });
+    phoneInput.addEventListener('input', applyFormat);
+    phoneInput.addEventListener('blur', () => {
+      if (onlyDigits(phoneInput.value).length <= 1) {
+        phoneInput.value = '';
+      }
     });
   })();
 </script>

@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Акт приемки № {{ order_id }}</title>
+  <style>
+    :root {
+      --text: #111;
+      --muted: #555;
+      --border: #000;
+      --paper: #ffffff;
+      --bg: #f1f1f1;
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: "Times New Roman", serif;
+      font-size: 13px;
+    }
+    .page {
+      max-width: 900px;
+      margin: 24px auto;
+      background: var(--paper);
+      padding: 24px 28px 32px;
+      box-shadow: 0 10px 28px rgba(0, 0, 0, 0.12);
+    }
+    .toolbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+      margin-bottom: 18px;
+    }
+    .toolbar button {
+      padding: 8px 14px;
+      border: 1px solid var(--border);
+      background: #f7f7f7;
+      cursor: pointer;
+      font-size: 14px;
+    }
+    .toolbar .hint {
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .title {
+      font-size: 16px;
+      font-weight: 700;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 6px;
+      margin-bottom: 10px;
+    }
+    .doc-lines {
+      display: grid;
+      gap: 6px;
+      margin-bottom: 12px;
+    }
+    .doc-line {
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 6px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+    }
+    th, td {
+      border: 1px solid var(--border);
+      padding: 6px 6px;
+      vertical-align: top;
+    }
+    th {
+      font-weight: 700;
+      text-align: center;
+    }
+    td.num { text-align: center; white-space: nowrap; }
+    tfoot td { font-weight: 700; }
+    @page {
+      size: A4;
+      margin: 14mm;
+    }
+    .summary-grid {
+      display: grid;
+      grid-template-columns: 120px 1fr 160px 1fr;
+      gap: 6px 14px;
+      margin-top: 18px;
+      font-size: 13px;
+      align-items: end;
+    }
+    .summary-label { white-space: nowrap; }
+    .summary-line {
+      border-bottom: 1px solid var(--border);
+      min-height: 16px;
+      padding-bottom: 2px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .summary-line.empty { border-bottom: none; }
+    .summary-line img {
+      max-height: 46px;
+      max-width: 160px;
+      display: block;
+    }
+    @media print {
+      body { background: #fff; }
+      .page {
+        box-shadow: none;
+        margin: 0;
+        max-width: 100%;
+        padding: 0;
+      }
+      .toolbar { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="toolbar screen-only">
+      <button type="button" onclick="window.print()">Распечатать</button>
+      <div class="hint">Распечатайте, подпишите и передайте менеджеру.</div>
+    </div>
+
+    <div class="title">Акт приемки № {{ order_id }} от {{ doc_date }}</div>
+    <div class="doc-lines">
+      <div class="doc-line">Поставщик: {{ agency_label }}</div>
+      <div class="doc-line">Исполнитель: {{ executor_label }}</div>
+    </div>
+
+    <table>
+      <thead>
+        <tr>
+          <th style="width:36px;">№</th>
+          <th style="width:100px;">ШК</th>
+          <th style="width:80px;">Артикул</th>
+          <th>Наименование</th>
+          <th style="width:95px;">Количество по заявке</th>
+          <th style="width:65px;">Принято</th>
+          <th style="width:85px;">Кол-во коробов (принято)</th>
+          <th style="width:80px;">Расхождения</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in items %}
+          <tr>
+            <td class="num">{{ forloop.counter }}</td>
+            <td>{{ item.barcode|default:"-" }}</td>
+            <td>{{ item.sku_code|default:"-" }}</td>
+            <td>{{ item.name|default:"-" }}</td>
+            <td class="num">{{ item.planned }}</td>
+            <td class="num">{{ item.actual }}</td>
+            <td class="num">{{ item.box_qty }}</td>
+            <td class="num">{{ item.mismatch }}</td>
+          </tr>
+        {% empty %}
+          <tr>
+            <td colspan="8">Нет данных по товарам.</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+      <tfoot>
+        <tr>
+          <td colspan="4">Итого</td>
+          <td class="num">{{ total_planned }}</td>
+          <td class="num">{{ total_actual }}</td>
+          <td class="num">{{ total_boxes }}</td>
+          <td class="num">{{ total_mismatch }}</td>
+        </tr>
+      </tfoot>
+    </table>
+
+    <div class="summary-grid">
+      <div class="summary-label">Менеджер</div>
+      <div class="summary-line">
+        {% if manager_facsimile_url %}
+          <img src="{{ manager_facsimile_url }}" alt="Факсимиле менеджера">
+        {% endif %}
+      </div>
+      <div class="summary-label"></div>
+      <div class="summary-line empty"></div>
+
+      <div class="summary-label">Кладовщик</div>
+      <div class="summary-line">
+        {% if storekeeper_facsimile_url %}
+          <img src="{{ storekeeper_facsimile_url }}" alt="Факсимиле кладовщика">
+        {% endif %}
+      </div>
+      <div class="summary-label">Короба (кол-во)</div>
+      <div class="summary-line">{{ total_boxes }}</div>
+
+      <div class="summary-label">Кол-во ед</div>
+      <div class="summary-line">{{ total_actual }}</div>
+      <div class="summary-label">Палеты (кол-во)</div>
+      <div class="summary-line">{{ total_pallets }}</div>
+    </div>
+  </div>
+</body>
+</html>

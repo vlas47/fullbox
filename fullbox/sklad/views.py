@@ -23,6 +23,17 @@ def _client_agency_for_request(request):
         return None
     return Agency.objects.filter(portal_user=request.user).first()
 
+def _parse_qty_value(raw: object | None) -> int | None:
+    if raw is None:
+        return None
+    text = str(raw).strip()
+    if not text:
+        return None
+    try:
+        return int(text)
+    except (TypeError, ValueError):
+        return None
+
 
 @role_required("storekeeper")
 def dashboard(request):
@@ -43,19 +54,40 @@ def inventory_journal(request):
         client_agency = _client_agency_for_request(request)
         if not client_agency:
             return HttpResponseForbidden("Доступ запрещен")
-    entries = (
-        OrderAuditEntry.objects.filter(order_type="receiving")
-        .select_related("agency")
-        .order_by("-created_at")
-    )
+    order_ids = None
+    client_labels = {}
+    if client_agency:
+        order_ids = list(
+            OrderAuditEntry.objects.filter(order_type="receiving", agency=client_agency)
+            .values_list("order_id", flat=True)
+            .distinct()
+        )
+        if order_ids:
+            for entry in (
+                OrderAuditEntry.objects.filter(order_type="receiving", order_id__in=order_ids)
+                .select_related("agency")
+                .order_by("-created_at")
+            ):
+                if entry.order_id in client_labels or not entry.agency:
+                    continue
+                base = entry.agency.agn_name or entry.agency.fio_agn or str(entry.agency)
+                client_labels[entry.order_id] = _shorten_ip_name(base)
+
+    entries = OrderAuditEntry.objects.filter(order_type="receiving")
+    if order_ids:
+        entries = entries.filter(order_id__in=order_ids)
+    entries = entries.select_related("agency").order_by("-created_at")
     latest_by_order = {}
+    blocked_orders = set()
     for entry in entries:
+        if entry.order_id in latest_by_order or entry.order_id in blocked_orders:
+            continue
         payload = entry.payload or {}
         if payload.get("act") != "placement":
             continue
-        if client_agency and entry.agency_id != client_agency.id:
-            continue
-        if entry.order_id in latest_by_order:
+        state = (payload.get("act_state") or "closed").lower()
+        if state != "closed":
+            blocked_orders.add(entry.order_id)
             continue
         latest_by_order[entry.order_id] = entry
 
@@ -64,13 +96,20 @@ def inventory_journal(request):
         payload = entry.payload or {}
         boxes = payload.get("act_boxes") or []
         pallets = payload.get("act_pallets") or []
-        client_name = "-"
-        if entry.agency:
+        client_name = client_labels.get(entry.order_id, "-")
+        if entry.agency and client_name == "-":
             base = entry.agency.agn_name or entry.agency.fio_agn or str(entry.agency)
             client_name = _shorten_ip_name(base)
         box_to_pallet = {}
+        pallet_locations = {}
         for pallet in pallets:
             pallet_code = (pallet or {}).get("code") or ""
+            location = (pallet or {}).get("location") or {}
+            rack = (location.get("rack") or pallet.get("rack") or "-").strip() or "-"
+            row = (location.get("row") or pallet.get("row") or "-").strip() or "-"
+            shelf = (location.get("shelf") or pallet.get("shelf") or "-").strip() or "-"
+            if pallet_code:
+                pallet_locations[pallet_code] = {"rack": rack, "row": row, "shelf": shelf}
             for box_code in (pallet or {}).get("boxes") or []:
                 if box_code and pallet_code and box_code not in box_to_pallet:
                     box_to_pallet[box_code] = pallet_code
@@ -82,6 +121,7 @@ def inventory_journal(request):
             qty = item.get("qty")
             if qty in (None, ""):
                 qty = item.get("actual_qty") or 0
+            location = pallet_locations.get(pallet_code) if pallet_code and pallet_code != "-" else None
             rows.append(
                 {
                     "created_at": entry.created_at,
@@ -93,9 +133,9 @@ def inventory_journal(request):
                     "qty": qty,
                     "box_code": box_code or "-",
                     "pallet_code": pallet_code or "-",
-                    "rack": "-",
-                    "row": "-",
-                    "shelf": "-",
+                    "rack": (location or {}).get("rack") or "-",
+                    "row": (location or {}).get("row") or "-",
+                    "shelf": (location or {}).get("shelf") or "-",
                 }
             )
 
@@ -114,10 +154,32 @@ def inventory_journal(request):
             for item in payload.get("act_items") or []:
                 append_row(item, box_code="-", pallet_code="-")
 
+    if not staff_view:
+        grouped = {}
+        for row in rows:
+            key = (row.get("order_id"), row.get("sku"), row.get("name"), row.get("size"))
+            qty_value = _parse_qty_value(row.get("qty")) or 0
+            existing = grouped.get(key)
+            if existing:
+                existing["qty"] += qty_value
+                if row.get("created_at") and row["created_at"] > existing.get("created_at"):
+                    existing["created_at"] = row["created_at"]
+            else:
+                item = dict(row)
+                item["qty"] = qty_value
+                grouped[key] = item
+        rows = list(grouped.values())
     rows.sort(key=lambda item: item["created_at"], reverse=True)
+    role = get_request_role(request)
+    if not staff_view:
+        template_name = "client_cabinet/inventory_journal.html"
+    elif role == "manager":
+        template_name = "teammanager/inventory_journal.html"
+    else:
+        template_name = "sklad/inventory_journal.html"
     return render(
         request,
-        "sklad/inventory_journal.html",
+        template_name,
         {
             "rows": rows,
             "client_agency": client_agency,
