@@ -264,3 +264,5 @@
 - 2026-01-07 12:44: deployed updated placement act view/template to server and restarted `fullbox`.
 - 2026-01-07 13:22: hid MХ-1 print link for storekeeper view on receiving act page (`fullbox/orders/views.py`).
 - 2026-01-07 13:22: deployed updated orders views to server and restarted `fullbox`.
+- 2026-01-07 13:32: added manager sign task creation on storekeeper signature and updated order status label; close sign task on manager signature (`fullbox/orders/views.py`).
+- 2026-01-07 13:32: deployed updated orders views to server and restarted `fullbox`.

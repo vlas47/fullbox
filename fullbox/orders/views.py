@@ -542,6 +542,38 @@ def _create_manager_followup_task(order_id, agency, request, submitted_at, obser
         due_date=_manager_due_date(submitted_at),
     )
 
+
+def _create_manager_sign_task(order_id, agency, request, observer=None):
+    manager = _first_active_employee_by_roles("manager", "head_manager")
+    if not manager:
+        return
+    route = f"/orders/receiving/{order_id}/act/print/"
+    description = f"Клиент: {agency.agn_name or agency.inn or agency.id}" if agency else "Клиент: -"
+    due_date = timezone.localtime()
+    existing = (
+        Task.objects.filter(route=route, assigned_to=manager)
+        .exclude(status="done")
+        .first()
+    )
+    if existing:
+        existing.description = description
+        existing.observer = observer
+        existing.due_date = due_date
+        if existing.status == "done":
+            existing.status = "in_progress"
+        existing.save()
+        return
+    Task.objects.create(
+        title=f"Подписать акт приемки по заявке №{order_id}",
+        description=description,
+        route=route,
+        assigned_to=manager,
+        observer=observer,
+        created_by=request.user if request.user.is_authenticated else None,
+        due_date=due_date,
+        status="in_progress",
+    )
+
 def _latest_payload_from_entries(entries):
     for entry in reversed(entries):
         payload = entry.payload or {}
@@ -1541,6 +1573,9 @@ def sign_receiving_act_storekeeper(request, order_id: str):
     act_payload["act_storekeeper_employee_id"] = employee.id
     if request.user.is_authenticated:
         act_payload["act_storekeeper_user_id"] = request.user.id
+    if not act_payload.get("status"):
+        act_payload["status"] = "warehouse"
+    act_payload["status_label"] = "Принято складом, акт приемки отправлен менеджеру"
     log_order_action(
         "status",
         order_id=order_id,
@@ -1549,6 +1584,12 @@ def sign_receiving_act_storekeeper(request, order_id: str):
         agency=act_entry.agency or (entries[-1].agency if entries else None),
         description="Акт приемки подписан кладовщиком и отправлен менеджеру",
         payload=act_payload,
+    )
+    _create_manager_sign_task(
+        order_id,
+        act_entry.agency or (entries[-1].agency if entries else None),
+        request,
+        observer=employee,
     )
     return redirect(f"/orders/receiving/{order_id}/act/print/?signed=storekeeper")
 
@@ -1593,6 +1634,10 @@ def sign_receiving_act_manager(request, order_id: str):
         description="Акт приемки подписан менеджером",
         payload=act_payload,
     )
+    Task.objects.filter(
+        route=f"/orders/receiving/{order_id}/act/print/",
+        assigned_to__role__in=["manager", "head_manager"],
+    ).exclude(status="done").update(status="done")
     entries = _load_order_entries(order_id)
     sent = _send_act_to_client(order_id, entries, request.user)
     if not sent:
