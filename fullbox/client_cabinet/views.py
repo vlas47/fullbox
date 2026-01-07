@@ -252,11 +252,16 @@ def dashboard(request):
         )
         latest_by_order = {}
         status_by_order = {}
+        act_info_by_order = {}
         for entry in raw_entries:
             if entry.order_id not in latest_by_order:
                 latest_by_order[entry.order_id] = entry
             if entry.order_id not in status_by_order and _is_status_entry(entry):
                 status_by_order[entry.order_id] = entry
+            if entry.order_id not in act_info_by_order and entry.order_type == "receiving":
+                payload = entry.payload or {}
+                if payload.get("act_sent"):
+                    act_info_by_order[entry.order_id] = entry
         selected_entries = [
             status_by_order.get(order_id, latest_entry)
             for order_id, latest_entry in latest_by_order.items()
@@ -289,24 +294,27 @@ def dashboard(request):
                     "detail_url": _order_detail_url(entry, selected_client.id if selected_client else None, client_view),
                 }
             )
-            payload = entry.payload or {}
+        for order_id, act_entry in act_info_by_order.items():
+            payload = act_entry.payload or {}
+            client_response = (payload.get("act_client_response") or "").lower()
+            if client_response in {"confirmed", "dispute"}:
+                continue
             act_label = payload.get("act_sent")
-            if act_label and entry.order_type == "receiving":
-                act_viewed = bool(payload.get("act_viewed"))
-                if not act_viewed:
-                    act_cards.append(
-                        {
-                            "bucket": "client",
-                            "order_id": entry.order_id,
-                            "order_type": entry.order_type,
-                            "type_label": "Акт",
-                            "title": f"{act_label} по заявке №{entry.order_id}",
-                            "status_label": "Акт отправлен клиенту",
-                            "created_at": entry.created_at,
-                            "detail_url": f"/orders/receiving/{entry.order_id}/act/?client={selected_client.id}",
-                            "attention": True,
-                        }
-                    )
+            if not act_label:
+                continue
+            act_cards.append(
+                {
+                    "bucket": "client",
+                    "order_id": order_id,
+                    "order_type": act_entry.order_type,
+                    "type_label": "Акт",
+                    "title": f"{act_label} по заявке №{order_id}",
+                    "status_label": "Акт отправлен клиенту",
+                    "created_at": act_entry.created_at,
+                    "detail_url": f"/orders/receiving/{order_id}/act/?client={selected_client.id}",
+                    "attention": True,
+                }
+            )
         for card in act_cards:
             buckets[card["bucket"]]["orders"].append(card)
         orders_panel_columns = [
