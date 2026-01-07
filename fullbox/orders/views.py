@@ -1638,14 +1638,14 @@ def sign_receiving_act_manager(request, order_id: str):
         description="Акт приемки подписан менеджером",
         payload=act_payload,
     )
-    Task.objects.filter(
-        route=f"/orders/receiving/{order_id}/act/print/",
-        assigned_to__role__in=["manager", "head_manager"],
-    ).exclude(status="done").update(status="done")
     entries = _load_order_entries(order_id)
     sent = _send_act_to_client(order_id, entries, request.user)
     if not sent:
         return redirect(f"/orders/receiving/{order_id}/act/print/?signed=manager&error=send")
+    Task.objects.filter(
+        route=f"/orders/receiving/{order_id}/act/print/",
+        assigned_to__role__in=["manager", "head_manager"],
+    ).delete()
     return redirect(f"/orders/receiving/{order_id}/act/print/?signed=manager")
 
 

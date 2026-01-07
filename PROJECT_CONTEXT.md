@@ -269,3 +269,5 @@
 - 2026-01-07 18:27: added status label override for signed receiving acts and auto-create manager sign task on print view (`fullbox/orders/views.py`).
 - 2026-01-07 18:27: deployed updated orders views to server and restarted `fullbox`.
 - 2026-01-07 18:47: backfilled manager sign task for order 5 in production DB.
+- 2026-01-07 18:49: remove manager sign task after successful manager signature to hide it from dashboard (`fullbox/orders/views.py`).
+- 2026-01-07 18:49: deployed updated orders views to server and restarted `fullbox`.
