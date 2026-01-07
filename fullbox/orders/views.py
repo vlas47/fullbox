@@ -2164,14 +2164,19 @@ class OrdersDetailView(RoleRequiredMixin, TemplateView):
         display_items = []
         if items:
             actual_map = {}
+            act_item_by_key = {}
             for act_item in act_items:
                 key = _item_key(act_item.get("sku_code"), act_item.get("name"), act_item.get("size"))
                 qty = _parse_qty_value(act_item.get("actual_qty"))
                 if qty is None:
                     qty = _parse_qty_value(act_item.get("qty")) or 0
                 actual_map[key] = (actual_map.get(key) or 0) + qty
+                if key not in act_item_by_key:
+                    act_item_by_key[key] = act_item
+            planned_keys = set()
             for item in items:
                 key = _item_key(item.get("sku_code"), item.get("name"), item.get("size"))
+                planned_keys.add(key)
                 display_items.append(
                     {
                         "sku_code": item.get("sku_code"),
@@ -2180,6 +2185,27 @@ class OrdersDetailView(RoleRequiredMixin, TemplateView):
                         "qty": item.get("qty"),
                         "comment": item.get("comment"),
                         "actual_qty": actual_map.get(key),
+                    }
+                )
+            for key, act_item in act_item_by_key.items():
+                if key in planned_keys:
+                    continue
+                planned_qty = act_item.get("planned_qty")
+                if planned_qty in (None, ""):
+                    planned_qty = act_item.get("qty")
+                actual_qty = actual_map.get(key)
+                if actual_qty is None:
+                    actual_qty = _parse_qty_value(act_item.get("actual_qty"))
+                    if actual_qty is None:
+                        actual_qty = _parse_qty_value(act_item.get("qty"))
+                display_items.append(
+                    {
+                        "sku_code": act_item.get("sku_code"),
+                        "name": act_item.get("name"),
+                        "size": act_item.get("size"),
+                        "qty": planned_qty if planned_qty not in (None, "") else None,
+                        "comment": act_item.get("comment"),
+                        "actual_qty": actual_qty,
                     }
                 )
         elif act_items:
