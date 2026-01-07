@@ -287,3 +287,4 @@
 - 2026-01-07 19:24: styled main stock row links as buttons in stockmap overview (`fullbox/stockmap/templates/stockmap/stockmap.html`).
 - 2026-01-07 19:24: deployed updated stockmap template to server; `fullbox` service active after restart.
 - 2026-01-07 20:57: switched placement act location to zone codes (default PR + suggestions), normalized legacy location values to PR/OS, and renamed inventory journal column to "Зона"; deployed and restarted `fullbox`.
+- 2026-01-07 21:05: replaced zone input with a dropdown to show PR/OS choices immediately; deployed and restarted `fullbox`.
