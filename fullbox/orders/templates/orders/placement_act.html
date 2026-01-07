@@ -68,7 +68,7 @@
     .pallet-details-card { background:#fff; border:1px dashed var(--stroke); border-radius:10px; padding:10px; }
     .pallet-details-title { font-size:11px; text-transform:uppercase; letter-spacing:1px; color:var(--muted); margin-bottom:8px; }
     .is-active-row { outline:2px solid rgba(199,154,32,0.5); outline-offset:-2px; }
-    .loc-input { min-width:90px; }
+    .loc-input { min-width:160px; }
     .is-hidden { display: none; }
     @media (max-width: 1100px) {
       .detail-layout { grid-template-columns: 1fr; }
@@ -205,9 +205,7 @@
                         <th style="width:20%;">Палета</th>
                         <th style="width:12%;">Статус</th>
                         <th style="width:16%;">Содержимое</th>
-                        <th style="width:14%;">Стеллаж</th>
-                        <th style="width:12%;">Ряд</th>
-                        <th style="width:12%;">Полка</th>
+                        <th style="width:32%;">Место хранения</th>
                         <th>Действия</th>
                       </tr>
                     </thead>
@@ -301,8 +299,10 @@
       if (actStateText) {
         actStateText.textContent = actClosed
           ? 'Акт закрыт. Для изменений откройте акт.'
-          : 'Акт открыт для редактирования. Пока открыт — товар скрыт со склада.';
+          : 'Акт открыт для редактирования. Пока открыт - товар скрыт со склада.';
       }
+
+      const DEFAULT_LOCATION = 'Поле приемки';
 
       const normalizeBox = (box, index) => {
         const code = (box || {}).code || `BOX-${index + 1}`;
@@ -313,19 +313,42 @@
         };
       };
 
+      const normalizeLocationValue = (pallet) => {
+        if (!pallet) {
+          return '';
+        }
+        const raw = pallet.location;
+        if (typeof raw === 'string') {
+          return raw.trim();
+        }
+        const obj = raw && typeof raw === 'object' ? raw : {};
+        const zone = (obj.zone || '').trim();
+        const rack = (obj.rack || pallet.rack || '').trim();
+        const row = (obj.row || pallet.row || '').trim();
+        const section = (obj.section || '').trim();
+        const tier = (obj.tier || '').trim();
+        const shelf = (obj.shelf || pallet.shelf || '').trim();
+        const cell = (obj.cell || '').trim();
+        const parts = [];
+        if (zone) parts.push(`Зона ${zone}`);
+        if (rack) parts.push(`Стеллаж ${rack}`);
+        if (row) parts.push(`Ряд ${row}`);
+        if (section) parts.push(`Секция ${section}`);
+        if (tier) parts.push(`Ярус ${tier}`);
+        if (shelf) parts.push(`Полка ${shelf}`);
+        if (cell) parts.push(`Ячейка ${cell}`);
+        return parts.join(' · ');
+      };
+
       const normalizePallet = (pallet, index) => {
         const code = (pallet || {}).code || `PALLET-${index + 1}`;
-        const location = (pallet || {}).location || {};
+        const locationValue = normalizeLocationValue(pallet);
         return {
           code,
           items: Array.isArray(pallet.items) ? pallet.items : [],
           boxes: Array.isArray(pallet.boxes) ? pallet.boxes : [],
           sealed: pallet.sealed !== undefined ? !!pallet.sealed : true,
-          location: {
-            rack: location.rack || pallet.rack || '',
-            row: location.row || pallet.row || '',
-            shelf: location.shelf || pallet.shelf || '',
-          },
+          location: locationValue || DEFAULT_LOCATION,
         };
       };
 
@@ -432,16 +455,8 @@
       };
 
       const formatLocation = (pallet) => {
-        if (!pallet || !pallet.location) {
-          return '-';
-        }
-        const rack = (pallet.location.rack || '').trim();
-        const row = (pallet.location.row || '').trim();
-        const shelf = (pallet.location.shelf || '').trim();
-        if (!rack && !row && !shelf) {
-          return '-';
-        }
-        return `Стеллаж ${rack || '-'} · Ряд ${row || '-'} · Полка ${shelf || '-'}`;
+        const value = pallet && pallet.location ? String(pallet.location).trim() : '';
+        return value || DEFAULT_LOCATION;
       };
 
       const buildPlacementSummary = () => {
@@ -612,7 +627,7 @@
 
       const addPallet = () => {
         const code = makeCode('PALLET', state.pallets);
-        const pallet = { code, items: [], boxes: [], sealed: false, location: { rack: '', row: '', shelf: '' } };
+        const pallet = { code, items: [], boxes: [], sealed: false, location: DEFAULT_LOCATION };
         state.pallets.push(pallet);
         setActiveContainer(pallet, 'pallet');
         renderAll();
@@ -931,7 +946,7 @@
         palletsBody.innerHTML = '';
         if (!state.pallets.length) {
           const row = document.createElement('tr');
-          row.innerHTML = '<td colspan="7" class="muted">Нет палет.</td>';
+          row.innerHTML = '<td colspan="5" class="muted">Нет палет.</td>';
           palletsBody.appendChild(row);
           return;
         }
@@ -948,9 +963,7 @@
             <td>${pallet.code || '-'}</td>
             <td><span class="status-pill ${pallet.sealed ? 'closed' : 'open'}">${pallet.sealed ? 'Закрыта' : 'Открыта'}</span></td>
             <td>Коробов: ${boxCount} · Товаров: ${itemCount}</td>
-            <td><input type="text" class="loc-input" data-field="rack" value="${pallet.location.rack || ''}"></td>
-            <td><input type="text" class="loc-input" data-field="row" value="${pallet.location.row || ''}"></td>
-            <td><input type="text" class="loc-input" data-field="shelf" value="${pallet.location.shelf || ''}"></td>
+            <td><input type="text" class="loc-input" data-field="location" value="${pallet.location || DEFAULT_LOCATION}" placeholder="${DEFAULT_LOCATION}"></td>
             <td>
               <div class="table-actions">
                 <button type="button" class="btn small" data-action="qr" data-code="${pallet.code}">QR</button>
@@ -966,7 +979,7 @@
             const detailsRow = document.createElement('tr');
             detailsRow.className = 'pallet-details';
             const cell = document.createElement('td');
-            cell.colSpan = 7;
+            cell.colSpan = 5;
             const grid = document.createElement('div');
             grid.className = 'pallet-details-grid';
 
@@ -1112,12 +1125,17 @@
           }
 
           row.querySelectorAll('input[data-field]').forEach((input) => {
-            const field = input.dataset.field;
             input.disabled = !isEditable;
             input.addEventListener('input', () => {
-              pallet.location = pallet.location || { rack: '', row: '', shelf: '' };
-              pallet.location[field] = input.value || '';
+              pallet.location = input.value || '';
               updateHidden();
+            });
+            input.addEventListener('blur', () => {
+              if (!input.value.trim()) {
+                input.value = DEFAULT_LOCATION;
+                pallet.location = DEFAULT_LOCATION;
+                updateHidden();
+              }
             });
           });
         });
@@ -1300,8 +1318,12 @@
           if (!hasItems) {
             return;
           }
-          const location = pallet.location || {};
-          if (!location.rack || !location.row || !location.shelf) {
+          let location = (pallet.location || '').trim();
+          if (!location) {
+            location = DEFAULT_LOCATION;
+            pallet.location = DEFAULT_LOCATION;
+          }
+          if (!location) {
             errors.push(`Укажите место хранения для палеты ${pallet.code}.`);
           }
         });
