@@ -50,6 +50,7 @@ urlpatterns = [
     path('market-sync/', include('market_sync.urls')),
     path('team-manager/', include('teammanager.urls')),
     path('sklad/', include('sklad.urls')),
+    path('stockmap/', include('stockmap.urls')),
 ]
 
 if settings.DEBUG:
