@@ -68,7 +68,11 @@
     .pallet-details-card { background:#fff; border:1px dashed var(--stroke); border-radius:10px; padding:10px; }
     .pallet-details-title { font-size:11px; text-transform:uppercase; letter-spacing:1px; color:var(--muted); margin-bottom:8px; }
     .is-active-row { outline:2px solid rgba(199,154,32,0.5); outline-offset:-2px; }
-    .loc-input { min-width:160px; }
+    .loc-input { min-width:120px; }
+    .zone-grid { display:grid; gap:6px; }
+    .zone-details { display:grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap:6px; }
+    .zone-details.is-hidden { display:none; }
+    .zone-detail.is-hidden { display:none; }
     .is-hidden { display: none; }
     @media (max-width: 1100px) {
       .detail-layout { grid-template-columns: 1fr; }
@@ -265,12 +269,16 @@
   {{ remaining_items|json_script:"remaining-data" }}
   {{ boxes_data|json_script:"boxes-data" }}
   {{ pallets_data|json_script:"pallets-data" }}
+  {{ os_config|json_script:"os-config" }}
+  {{ occupied_cells|json_script:"occupied-cells" }}
 
   <script>
     (() => {
       const remainingData = JSON.parse(document.getElementById('remaining-data').textContent || '[]');
       const boxesData = JSON.parse(document.getElementById('boxes-data').textContent || '[]');
       const palletsData = JSON.parse(document.getElementById('pallets-data').textContent || '[]');
+      const osConfig = JSON.parse(document.getElementById('os-config').textContent || '{}');
+      const occupiedCellsData = JSON.parse(document.getElementById('occupied-cells').textContent || '[]');
       const canSubmit = {{ can_submit|yesno:"true,false" }};
       const actState = "{{ act_state|escapejs }}";
       const actClosed = actState === 'closed';
@@ -303,6 +311,25 @@
       }
 
       const DEFAULT_LOCATION = 'PR';
+      const zoneLabels = {
+        PR: 'Зона приемки',
+        OTG: 'Зона отгрузки',
+        MR: 'Между рядами',
+        OS: 'Основной склад',
+      };
+      const osRowSections = osConfig.row_sections || {};
+      const osTiers = Number(osConfig.tiers || 0);
+      const osCellsPerTier = Number(osConfig.cells_per_tier || 0);
+      const mrRows = Array.isArray(osConfig.mr_rows) ? osConfig.mr_rows : [];
+      const occupiedCellKeys = new Set(
+        (occupiedCellsData || []).map((item) => {
+          const row = item && item.row ? String(item.row).trim() : '';
+          const section = item && item.section ? String(item.section).trim() : '';
+          const tier = item && item.tier ? String(item.tier).trim() : '';
+          const cell = item && item.cell ? String(item.cell).trim() : '';
+          return `${row}|${section}|${tier}|${cell}`;
+        })
+      );
 
       const normalizeBox = (box, index) => {
         const code = (box || {}).code || `BOX-${index + 1}`;
@@ -313,55 +340,56 @@
         };
       };
 
-      const normalizeLocationValue = (pallet) => {
-        if (!pallet) {
+      const normalizeZone = (value) => {
+        const text = String(value || '').trim();
+        if (!text) {
           return '';
         }
-        const raw = pallet.location;
+        if (/^pr$/i.test(text) || /зона приемки|поле приемки/i.test(text)) {
+          return 'PR';
+        }
+        if (/^otg?$/i.test(text) || /зона отгрузки|отгрузк/i.test(text)) {
+          return 'OTG';
+        }
+        if (/^mr$/i.test(text) || /между ряд/i.test(text)) {
+          return 'MR';
+        }
+        if (/^so$/i.test(text) || /^os$/i.test(text) || /основн|стеллаж|ряд|полк|секци|ярус|ячейк/i.test(text)) {
+          return 'OS';
+        }
+        return text.toUpperCase();
+      };
+
+      const normalizeLocationValue = (pallet) => {
+        const raw = pallet && pallet.location !== undefined ? pallet.location : pallet;
+        const result = { zone: DEFAULT_LOCATION, row: '', section: '', tier: '', cell: '' };
         if (typeof raw === 'string') {
-          const text = raw.trim();
-          if (!text) {
-            return '';
-          }
-          if (/^pr$/i.test(text) || /зона приемки|поле приемки/i.test(text)) {
-            return 'PR';
-          }
-          if (/^ot$/i.test(text) || /зона отгрузки|отгрузк/i.test(text)) {
-            return 'OT';
-          }
-          if (/^mr$/i.test(text) || /между ряд/i.test(text)) {
-            return 'MR';
-          }
-          if (/^os$/i.test(text) || /стеллаж|ряд|полк|секци|ярус|ячейк/i.test(text)) {
-            return 'OS';
-          }
-          return text;
+          const zone = normalizeZone(raw);
+          result.zone = zone || DEFAULT_LOCATION;
+          return result;
         }
         const obj = raw && typeof raw === 'object' ? raw : {};
-        const zone = (obj.zone || '').trim();
-        if (zone) {
-          if (/^pr$/i.test(zone) || /зона приемки|поле приемки/i.test(zone)) {
-            return 'PR';
-          }
-          if (/^ot$/i.test(zone) || /зона отгрузки|отгрузк/i.test(zone)) {
-            return 'OT';
-          }
-          if (/^mr$/i.test(zone) || /между ряд/i.test(zone)) {
-            return 'MR';
-          }
-          if (/^os$/i.test(zone) || /основн|стеллаж|ряд|полк|секци|ярус|ячейк/i.test(zone)) {
-            return 'OS';
-          }
-          return zone.toUpperCase();
+        const zone = normalizeZone(obj.zone || (pallet || {}).zone || '');
+        result.zone = zone || DEFAULT_LOCATION;
+        const row = obj.row ?? (pallet || {}).row ?? '';
+        const section = obj.section ?? (pallet || {}).section ?? '';
+        const tier = obj.tier ?? (pallet || {}).tier ?? '';
+        const cell = obj.cell ?? (pallet || {}).cell ?? '';
+        result.row = row ? String(row).trim() : '';
+        result.section = section ? String(section).trim() : '';
+        result.tier = tier ? String(tier).trim() : '';
+        result.cell = cell ? String(cell).trim() : '';
+        if (result.zone === 'PR' || result.zone === 'OTG') {
+          result.row = '';
+          result.section = '';
+          result.tier = '';
+          result.cell = '';
+        } else if (result.zone === 'MR') {
+          result.section = '';
+          result.tier = '';
+          result.cell = '';
         }
-        const rack = (obj.rack || pallet.rack || '').trim();
-        const row = (obj.row || pallet.row || '').trim();
-        const section = (obj.section || '').trim();
-        const tier = (obj.tier || '').trim();
-        const shelf = (obj.shelf || pallet.shelf || '').trim();
-        const cell = (obj.cell || '').trim();
-        const hasLegacy = rack || row || section || tier || shelf || cell;
-        return hasLegacy ? 'OS' : '';
+        return result;
       };
 
       const normalizePallet = (pallet, index) => {
@@ -372,7 +400,7 @@
           items: Array.isArray(pallet.items) ? pallet.items : [],
           boxes: Array.isArray(pallet.boxes) ? pallet.boxes : [],
           sealed: pallet.sealed !== undefined ? !!pallet.sealed : true,
-          location: locationValue || DEFAULT_LOCATION,
+          location: locationValue,
         };
       };
 
@@ -479,8 +507,22 @@
       };
 
       const formatLocation = (pallet) => {
-        const value = pallet && pallet.location ? String(pallet.location).trim() : '';
-        return value || DEFAULT_LOCATION;
+        const location = normalizeLocationValue(pallet);
+        const zone = location.zone || DEFAULT_LOCATION;
+        const label = zoneLabels[zone] || zone;
+        if (zone === 'MR') {
+          return location.row ? `${zone} · ${label} · Ряд ${location.row}` : `${zone} · ${label}`;
+        }
+        if (zone === 'OS') {
+          if (location.row && location.section && location.tier && location.cell) {
+            return `${zone} · Ряд ${location.row} · Секция ${location.section} · Ярус ${location.tier} · Ячейка ${location.cell}`;
+          }
+          if (location.row) {
+            return `${zone} · Ряд ${location.row}`;
+          }
+          return `${zone} · ${label}`;
+        }
+        return `${zone} · ${label}`;
       };
 
       const buildPlacementSummary = () => {
@@ -651,7 +693,7 @@
 
       const addPallet = () => {
         const code = makeCode('PALLET', state.pallets);
-        const pallet = { code, items: [], boxes: [], sealed: false, location: DEFAULT_LOCATION };
+        const pallet = { code, items: [], boxes: [], sealed: false, location: { zone: DEFAULT_LOCATION } };
         state.pallets.push(pallet);
         setActiveContainer(pallet, 'pallet');
         renderAll();
@@ -977,11 +1019,12 @@
         const boxMap = new Map(state.boxes.map((box) => [box.code, box]));
         state.pallets.forEach((pallet) => {
           const isActive = state.active.type === 'pallet' && state.active.code === pallet.code;
-          const locationValue = pallet.location || DEFAULT_LOCATION;
-          const locationOptions = ['PR', 'OT', 'MR', 'OS'];
-          const customLocationOption = locationOptions.includes(locationValue)
+          const locationValue = normalizeLocationValue(pallet);
+          const zoneValue = locationValue.zone || DEFAULT_LOCATION;
+          const locationOptions = ['PR', 'OTG', 'MR', 'OS'];
+          const customLocationOption = locationOptions.includes(zoneValue)
             ? ''
-            : `<option value="${locationValue}">${locationValue}</option>`;
+            : `<option value="${zoneValue}">${zoneValue}</option>`;
           const row = document.createElement('tr');
           if (isActive) {
             row.classList.add('is-active-row');
@@ -993,13 +1036,21 @@
             <td><span class="status-pill ${pallet.sealed ? 'closed' : 'open'}">${pallet.sealed ? 'Закрыта' : 'Открыта'}</span></td>
             <td>Коробов: ${boxCount} · Товаров: ${itemCount}</td>
             <td>
-              <select class="loc-input" data-field="location">
+              <div class="zone-grid">
+                <select class="loc-input" data-field="zone">
                 ${customLocationOption}
-                <option value="PR">PR · Зона приемки</option>
-                <option value="OT">OT · Зона отгрузки</option>
-                <option value="MR">MR · Между рядами</option>
-                <option value="OS">OS · Основной склад</option>
-              </select>
+                  <option value="PR">PR · Зона приемки</option>
+                  <option value="OTG">OTG · Зона отгрузки</option>
+                  <option value="MR">MR · Между рядами</option>
+                  <option value="OS">OS · Основной склад</option>
+                </select>
+                <div class="zone-details" data-zone-details>
+                  <select class="loc-input zone-detail" data-field="row"></select>
+                  <select class="loc-input zone-detail" data-field="section"></select>
+                  <select class="loc-input zone-detail" data-field="tier"></select>
+                  <select class="loc-input zone-detail" data-field="cell"></select>
+                </div>
+              </div>
             </td>
             <td>
               <div class="table-actions">
@@ -1011,10 +1062,150 @@
             </td>
           `;
           palletsBody.appendChild(row);
-          const locationSelect = row.querySelector('select[data-field="location"]');
-          if (locationSelect) {
-            locationSelect.value = locationValue;
+          const zoneSelect = row.querySelector('select[data-field="zone"]');
+          const detailsWrap = row.querySelector('[data-zone-details]');
+          const rowSelect = row.querySelector('select[data-field="row"]');
+          const sectionSelect = row.querySelector('select[data-field="section"]');
+          const tierSelect = row.querySelector('select[data-field="tier"]');
+          const cellSelect = row.querySelector('select[data-field="cell"]');
+          if (zoneSelect) {
+            zoneSelect.value = zoneValue;
           }
+          const buildSelectOptions = (select, values, placeholder) => {
+            if (!select) {
+              return;
+            }
+            select.innerHTML = '';
+            const placeholderOption = document.createElement('option');
+            placeholderOption.value = '';
+            placeholderOption.textContent = placeholder;
+            select.appendChild(placeholderOption);
+            values.forEach((value) => {
+              const option = document.createElement('option');
+              option.value = value;
+              option.textContent = value;
+              select.appendChild(option);
+            });
+          };
+          const osRows = Object.keys(osRowSections).map((value) => String(value));
+          const populateRowOptions = (zone) => {
+            if (zone === 'MR') {
+              buildSelectOptions(rowSelect, mrRows.map((value) => String(value)), 'Ряд');
+            } else if (zone === 'OS') {
+              buildSelectOptions(rowSelect, osRows, 'Ряд');
+            } else {
+              buildSelectOptions(rowSelect, [], 'Ряд');
+            }
+          };
+          const populateSectionOptions = (rowValue) => {
+            const count = Number(osRowSections[rowValue] || 0);
+            const values = count ? Array.from({ length: count }, (_, idx) => String(idx + 1)) : [];
+            buildSelectOptions(sectionSelect, values, 'Секция');
+          };
+          const populateTierOptions = () => {
+            const values = osTiers ? Array.from({ length: osTiers }, (_, idx) => String(idx + 1)) : [];
+            buildSelectOptions(tierSelect, values, 'Ярус');
+          };
+          const populateCellOptions = (rowValue, sectionValue, tierValue, cellValue) => {
+            const values = osCellsPerTier
+              ? Array.from({ length: osCellsPerTier }, (_, idx) => String(idx + 1))
+              : [];
+            buildSelectOptions(cellSelect, values, 'Ячейка');
+            const usedKeys = new Set();
+            state.pallets.forEach((item) => {
+              if (item.code === pallet.code) {
+                return;
+              }
+              const loc = normalizeLocationValue(item);
+              if (loc.zone !== 'OS') {
+                return;
+              }
+              if (!(loc.row && loc.section && loc.tier && loc.cell)) {
+                return;
+              }
+              usedKeys.add(`${loc.row}|${loc.section}|${loc.tier}|${loc.cell}`);
+            });
+            if (cellSelect) {
+              Array.from(cellSelect.options).forEach((option) => {
+                if (!option.value) {
+                  return;
+                }
+                const key = `${rowValue}|${sectionValue}|${tierValue}|${option.value}`;
+                option.disabled = (occupiedCellKeys.has(key) || usedKeys.has(key))
+                  && option.value !== String(cellValue || '');
+              });
+            }
+          };
+          const updateZoneVisibility = (zone) => {
+            if (!detailsWrap) {
+              return;
+            }
+            const showDetails = zone === 'MR' || zone === 'OS';
+            detailsWrap.classList.toggle('is-hidden', !showDetails);
+            const detailFields = detailsWrap.querySelectorAll('.zone-detail');
+            detailFields.forEach((field) => {
+              if (zone === 'OS') {
+                field.classList.remove('is-hidden');
+              } else if (zone === 'MR') {
+                field.classList.toggle('is-hidden', field.dataset.field !== 'row');
+              } else {
+                field.classList.add('is-hidden');
+              }
+            });
+          };
+          const applyLocationValues = (zone, location) => {
+            populateRowOptions(zone);
+            if (rowSelect) {
+              rowSelect.value = location.row || '';
+            }
+            if (zone === 'OS') {
+              populateSectionOptions(rowSelect ? rowSelect.value : '');
+              if (sectionSelect) {
+                sectionSelect.value = location.section || '';
+              }
+              populateTierOptions();
+              if (tierSelect) {
+                tierSelect.value = location.tier || '';
+              }
+              populateCellOptions(
+                rowSelect ? rowSelect.value : '',
+                sectionSelect ? sectionSelect.value : '',
+                tierSelect ? tierSelect.value : '',
+                location.cell || ''
+              );
+              if (cellSelect) {
+                cellSelect.value = location.cell || '';
+              }
+            } else if (zone === 'MR') {
+              if (rowSelect) {
+                rowSelect.value = location.row || '';
+              }
+            }
+          };
+          const syncLocation = () => {
+            const zone = normalizeZone(zoneSelect ? zoneSelect.value : '') || DEFAULT_LOCATION;
+            const next = {
+              zone,
+              row: rowSelect ? rowSelect.value : '',
+              section: sectionSelect ? sectionSelect.value : '',
+              tier: tierSelect ? tierSelect.value : '',
+              cell: cellSelect ? cellSelect.value : '',
+            };
+            if (zone === 'PR' || zone === 'OTG') {
+              next.row = '';
+              next.section = '';
+              next.tier = '';
+              next.cell = '';
+            } else if (zone === 'MR') {
+              next.section = '';
+              next.tier = '';
+              next.cell = '';
+            }
+            pallet.location = next;
+          };
+          updateZoneVisibility(zoneValue);
+          applyLocationValues(zoneValue, locationValue);
+          syncLocation();
 
           if (!pallet.sealed) {
             const detailsRow = document.createElement('tr');
@@ -1165,11 +1356,15 @@
             palletsBody.appendChild(detailsRow);
           }
 
-          row.querySelectorAll('[data-field]').forEach((fieldEl) => {
+          [zoneSelect, rowSelect, sectionSelect, tierSelect, cellSelect].forEach((fieldEl) => {
+            if (!fieldEl) {
+              return;
+            }
             fieldEl.disabled = !isEditable;
             fieldEl.addEventListener('change', () => {
-              pallet.location = fieldEl.value || DEFAULT_LOCATION;
+              syncLocation();
               updateHidden();
+              renderPalletsTable();
             });
           });
         });
@@ -1347,19 +1542,42 @@
         if (openBoxes.length || openPallets.length) {
           errors.push('Закройте все короба и палеты.');
         }
+        const usedCells = new Set();
         state.pallets.forEach((pallet) => {
           const hasItems = (pallet.items || []).length > 0 || (pallet.boxes || []).length > 0;
           if (!hasItems) {
             return;
           }
-          let location = (pallet.location || '').trim();
-          if (!location) {
-            location = DEFAULT_LOCATION;
-            pallet.location = DEFAULT_LOCATION;
-          }
-          if (!location) {
+          const location = normalizeLocationValue(pallet);
+          const zone = location.zone || DEFAULT_LOCATION;
+          if (!zone) {
             errors.push(`Укажите зону для палеты ${pallet.code}.`);
+            return;
           }
+          if (zone === 'MR' && !location.row) {
+            errors.push(`Укажите ряд для палеты ${pallet.code}.`);
+          }
+          if (zone === 'OS') {
+            if (!(location.row && location.section && location.tier && location.cell)) {
+              errors.push(`Укажите ряд, секцию, ярус и ячейку для палеты ${pallet.code}.`);
+            } else {
+              const key = `${location.row}|${location.section}|${location.tier}|${location.cell}`;
+              if (occupiedCellKeys.has(key)) {
+                errors.push(`Ячейка ${location.row}-${location.section}-${location.tier}-${location.cell} занята.`);
+              } else if (usedCells.has(key)) {
+                errors.push(`Ячейка ${location.row}-${location.section}-${location.tier}-${location.cell} уже выбрана.`);
+              } else {
+                usedCells.add(key);
+              }
+            }
+          }
+          pallet.location = {
+            zone,
+            row: zone === 'OS' || zone === 'MR' ? (location.row || '') : '',
+            section: zone === 'OS' ? (location.section || '') : '',
+            tier: zone === 'OS' ? (location.tier || '') : '',
+            cell: zone === 'OS' ? (location.cell || '') : '',
+          };
         });
         return errors;
       };

@@ -289,3 +289,4 @@
 - 2026-01-07 20:57: switched placement act location to zone codes (default PR + suggestions), normalized legacy location values to PR/OS, and renamed inventory journal column to "Зона"; deployed and restarted `fullbox`.
 - 2026-01-07 21:05: replaced zone input with a dropdown to show PR/OS choices immediately; deployed and restarted `fullbox`.
 - 2026-01-07 21:12: expanded placement zone options to PR/OT/MR/OS and normalized new zone names in orders/sklad views; deployed and restarted `fullbox`.
+- 2026-01-07 21:48: added MR/OS dependent fields in placement act (row/section/tier/cell) with occupied-cell blocking, and normalized OTG zone labels; deployed and restarted `fullbox`.

@@ -35,6 +35,13 @@ def _parse_qty_value(raw: object | None) -> int | None:
         return None
 
 
+def _parse_int_value(raw) -> int:
+    try:
+        return int(str(raw).strip())
+    except (TypeError, ValueError):
+        return 0
+
+
 @role_required("storekeeper")
 def dashboard(request):
     return render(request, "sklad/dashboard.html")
@@ -98,18 +105,18 @@ def inventory_journal(request):
         if not pallet:
             return default_location
         location_value = (pallet or {}).get("location")
-        if isinstance(location_value, str):
-            text = location_value.strip()
+        def normalize_zone(value: str) -> str:
+            text = (value or "").strip()
             if not text:
-                return default_location
+                return ""
             if re.search(r"^pr$", text, re.IGNORECASE) or re.search(
                 r"зона приемки|поле приемки", text, re.IGNORECASE
             ):
                 return "PR"
-            if re.search(r"^ot$", text, re.IGNORECASE) or re.search(
+            if re.search(r"^otg?$", text, re.IGNORECASE) or re.search(
                 r"зона отгрузки|отгрузк", text, re.IGNORECASE
             ):
-                return "OT"
+                return "OTG"
             if re.search(r"^mr$", text, re.IGNORECASE) or re.search(
                 r"между ряд", text, re.IGNORECASE
             ):
@@ -118,43 +125,52 @@ def inventory_journal(request):
                 r"основн|стеллаж|ряд|полк|секци|ярус|ячейк", text, re.IGNORECASE
             ):
                 return "OS"
-            return text
-        if isinstance(location_value, dict):
-            zone = (location_value.get("zone") or "").strip()
-            if zone:
-                if re.search(r"^pr$", zone, re.IGNORECASE) or re.search(
-                    r"зона приемки|поле приемки", zone, re.IGNORECASE
-                ):
-                    return "PR"
-                if re.search(r"^ot$", zone, re.IGNORECASE) or re.search(
-                    r"зона отгрузки|отгрузк", zone, re.IGNORECASE
-                ):
-                    return "OT"
-                if re.search(r"^mr$", zone, re.IGNORECASE) or re.search(
-                    r"между ряд", zone, re.IGNORECASE
-                ):
-                    return "MR"
-                if re.search(r"^os$", zone, re.IGNORECASE) or re.search(
-                    r"основн|стеллаж|ряд|полк|секци|ярус|ячейк",
-                    zone,
-                    re.IGNORECASE,
-                ):
-                    return "OS"
-                return zone.upper()
-            rack = (location_value.get("rack") or pallet.get("rack") or "").strip()
-            row = (location_value.get("row") or pallet.get("row") or "").strip()
-            section = (location_value.get("section") or "").strip()
-            tier = (location_value.get("tier") or "").strip()
-            shelf = (location_value.get("shelf") or pallet.get("shelf") or "").strip()
-            cell = (location_value.get("cell") or "").strip()
-            if rack or row or section or tier or shelf or cell:
-                return "OS"
-        rack = (pallet.get("rack") or "").strip()
-        row = (pallet.get("row") or "").strip()
-        shelf = (pallet.get("shelf") or "").strip()
-        if rack or row or shelf:
-            return "OS"
-        return default_location
+            return text.upper()
+
+        def format_label(zone, row=0, section=0, tier=0, cell=0):
+            if zone == "PR":
+                return "PR · Зона приемки"
+            if zone == "OTG":
+                return "OTG · Зона отгрузки"
+            if zone == "MR":
+                return f"MR · Между рядами · Ряд {row}" if row else "MR · Между рядами"
+            if zone == "OS":
+                if row and section and tier and cell:
+                    return f"OS · Ряд {row} · Секция {section} · Ярус {tier} · Ячейка {cell}"
+                if row:
+                    return f"OS · Ряд {row}"
+                return "OS · Основной склад"
+            return zone or default_location
+
+        zone = ""
+        row = section = tier = cell = 0
+        if isinstance(location_value, str):
+            zone = normalize_zone(location_value)
+        elif isinstance(location_value, dict):
+            zone = normalize_zone(location_value.get("zone") or "")
+            row = _parse_int_value(location_value.get("row") or pallet.get("row"))
+            section = _parse_int_value(location_value.get("section"))
+            tier = _parse_int_value(location_value.get("tier"))
+            cell = _parse_int_value(location_value.get("cell"))
+            if not zone:
+                rack = (location_value.get("rack") or pallet.get("rack") or "").strip()
+                row_text = (location_value.get("row") or pallet.get("row") or "").strip()
+                section_text = (location_value.get("section") or "").strip()
+                tier_text = (location_value.get("tier") or "").strip()
+                shelf = (location_value.get("shelf") or pallet.get("shelf") or "").strip()
+                cell_text = (location_value.get("cell") or "").strip()
+                if rack or row_text or section_text or tier_text or shelf or cell_text:
+                    zone = "OS"
+        if not zone:
+            zone = normalize_zone(pallet.get("zone") or "")
+        if not zone:
+            rack = (pallet.get("rack") or "").strip()
+            row_text = (pallet.get("row") or "").strip()
+            shelf = (pallet.get("shelf") or "").strip()
+            if rack or row_text or shelf:
+                zone = "OS"
+        zone = zone or default_location
+        return format_label(zone, row=row, section=section, tier=tier, cell=cell)
 
     for entry in latest_by_order.values():
         payload = entry.payload or {}
