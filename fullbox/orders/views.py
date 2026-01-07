@@ -415,6 +415,8 @@ def _send_act_to_client(order_id, entries, user) -> bool:
     placement_entry = _find_act_entry(entries, "placement", "акт размещения")
     if not receiving_entry or not placement_entry:
         return False
+    if not _placement_closed(entries):
+        return False
     receiving_payload = receiving_entry.payload or {}
     if not _act_storekeeper_signed_from_payload(receiving_payload):
         return False
@@ -1322,6 +1324,14 @@ def _act_access_allowed(request, entries):
     return request.user.is_staff or role in {"storekeeper", "manager", "head_manager", "director", "admin"}
 
 
+def _placement_closed(entries) -> bool:
+    placement_entry = _find_act_entry(entries, "placement", "акт размещения")
+    if not placement_entry:
+        return False
+    state = ((placement_entry.payload or {}).get("act_state") or "closed").lower()
+    return state == "closed"
+
+
 def download_receiving_act_doc(request, order_id: str):
     entries = _load_order_entries(order_id)
     if not entries:
@@ -1370,6 +1380,8 @@ def print_receiving_act(request, order_id: str):
     if not act_entry:
         raise Http404("Акт приемки не найден")
     placement_entry = _find_act_entry(entries, "placement", "акт размещения")
+    if not _placement_closed(entries):
+        return redirect(f"/orders/receiving/{order_id}/act/?error=placement_required")
     act_payload = act_entry.payload or {}
     placement_payload = placement_entry.payload if placement_entry else None
     agency = act_entry.agency or (entries[-1].agency if entries else None)
@@ -1458,6 +1470,11 @@ def print_receiving_act(request, order_id: str):
         and not client_view
     )
 
+    client_agency = _client_agency_from_request(request)
+    return_url = f"/orders/receiving/{order_id}/act/"
+    if client_agency:
+        return_url = f"/orders/receiving/{order_id}/act/?client={client_agency.id}"
+
     ctx = {
         "order_id": order_id,
         "act_label": (act_payload.get("act_label") or "Акт приемки").strip(),
@@ -1486,6 +1503,7 @@ def print_receiving_act(request, order_id: str):
         "can_manager_sign": can_manager_sign,
         "sign_status": request.GET.get("signed"),
         "sign_error": request.GET.get("error"),
+        "return_url": return_url,
     }
     return render(request, "orders/receiving_act_print.html", ctx)
 
@@ -1504,6 +1522,8 @@ def sign_receiving_act_storekeeper(request, order_id: str):
     act_entry = _find_act_entry(entries, "receiving", "акт приемки")
     if not act_entry:
         raise Http404("Акт приемки не найден")
+    if not _placement_closed(entries):
+        return redirect(f"/orders/receiving/{order_id}/act/print/?error=placement_required")
     act_payload = dict(act_entry.payload or {})
     if _act_storekeeper_signed_from_payload(act_payload):
         return redirect(f"/orders/receiving/{order_id}/act/print/")
@@ -1543,6 +1563,8 @@ def sign_receiving_act_manager(request, order_id: str):
     act_entry = _find_act_entry(entries, "receiving", "акт приемки")
     if not act_entry:
         raise Http404("Акт приемки не найден")
+    if not _placement_closed(entries):
+        return redirect(f"/orders/receiving/{order_id}/act/print/?error=placement_required")
     act_payload = dict(act_entry.payload or {})
     if not _act_storekeeper_signed_from_payload(act_payload):
         return redirect(f"/orders/receiving/{order_id}/act/print/?error=storekeeper_required")
@@ -1584,6 +1606,8 @@ def print_receiving_act_mx1(request, order_id: str):
     if not act_entry:
         raise Http404("Акт приемки не найден")
     placement_entry = _find_act_entry(entries, "placement", "акт размещения")
+    if not _placement_closed(entries):
+        return redirect(f"/orders/receiving/{order_id}/act/?error=placement_required")
     act_payload = act_entry.payload or {}
     placement_payload = placement_entry.payload if placement_entry else None
     agency = act_entry.agency or (entries[-1].agency if entries else None)
@@ -2707,12 +2731,14 @@ class ReceivingActView(RoleRequiredMixin, TemplateView):
         items = payload.get("items") or []
         act_entry = self._act_entry(entries)
         act_items = (act_entry.payload or {}).get("act_items") if act_entry else []
+        placement_entry = _find_act_entry(entries, "placement", "акт размещения")
+        placement_closed = _placement_closed(entries)
         if act_entry:
             act_label = (act_entry.payload or {}).get("act_label") or "Акт приемки"
         else:
             act_label = "Акт приемки"
         act_documents = []
-        if act_entry:
+        if act_entry and placement_entry and placement_closed:
             act_documents = [
                 {
                     "label": "Акт приемки печатная форма",

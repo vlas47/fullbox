@@ -35,6 +35,11 @@
       gap: 16px;
       margin-bottom: 18px;
     }
+    .toolbar-left {
+      display: inline-flex;
+      gap: 10px;
+      align-items: center;
+    }
     .toolbar-actions {
       display: flex;
       flex-direction: column;
@@ -42,12 +47,17 @@
       gap: 8px;
       text-align: right;
     }
-    .toolbar button {
+    .toolbar .btn {
       padding: 8px 14px;
       border: 1px solid var(--border);
       background: #f7f7f7;
       cursor: pointer;
       font-size: 14px;
+      text-decoration: none;
+      color: inherit;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
     }
     .toolbar .hint {
       color: var(--muted);
@@ -134,12 +144,17 @@
 <body>
   <div class="page">
     <div class="toolbar screen-only">
-      <button type="button" onclick="window.print()">Распечатать</button>
+      <div class="toolbar-left">
+        <a class="btn" href="{{ return_url }}">Назад</a>
+        <button class="btn" type="button" onclick="window.print()">Распечатать</button>
+      </div>
       <div class="toolbar-actions">
         {% if sign_error == "storekeeper_facsimile" %}
           <div class="hint error">У кладовщика не загружено факсимиле.</div>
         {% elif sign_error == "manager_facsimile" %}
           <div class="hint error">У менеджера не загружено факсимиле.</div>
+        {% elif sign_error == "placement_required" %}
+          <div class="hint error">Печатная форма доступна после закрытия акта размещения.</div>
         {% elif sign_error == "storekeeper_required" %}
           <div class="hint error">Сначала подпишите акт кладовщиком.</div>
         {% elif sign_error == "send" %}
