@@ -307,9 +307,7 @@
                   <th>Кол-во</th>
                   <th>Короб</th>
                   <th>Палета</th>
-                  <th>Стеллаж</th>
-                  <th>Ряд</th>
-                  <th>Полка</th>
+                  <th>Место хранения</th>
                 </tr>
                 <tr class="filter-row">
                   <th><span class="muted">-</span></th>
@@ -334,8 +332,6 @@
                   <th><span class="muted">-</span></th>
                   <th><span class="muted">-</span></th>
                   <th><span class="muted">-</span></th>
-                  <th><span class="muted">-</span></th>
-                  <th><span class="muted">-</span></th>
                 </tr>
               </thead>
               <tbody>
@@ -350,13 +346,11 @@
                     <td>{{ row.qty }}</td>
                     <td>{{ row.box_code }}</td>
                     <td>{{ row.pallet_code }}</td>
-                    <td>{{ row.rack }}</td>
-                    <td>{{ row.row }}</td>
-                    <td>{{ row.shelf }}</td>
+                    <td>{{ row.location }}</td>
                   </tr>
                 {% empty %}
                   <tr>
-                    <td colspan="12" class="orders-empty">Записей пока нет.</td>
+                    <td colspan="10" class="orders-empty">Записей пока нет.</td>
                   </tr>
                 {% endfor %}
               </tbody>

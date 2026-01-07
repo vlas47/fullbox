@@ -92,6 +92,49 @@ def inventory_journal(request):
         latest_by_order[entry.order_id] = entry
 
     rows = []
+    default_location = "Поле приемки"
+
+    def normalize_location(pallet):
+        if not pallet:
+            return default_location
+        location_value = (pallet or {}).get("location")
+        if isinstance(location_value, str):
+            return location_value.strip() or default_location
+        parts = []
+        if isinstance(location_value, dict):
+            zone = (location_value.get("zone") or "").strip()
+            rack = (location_value.get("rack") or "").strip()
+            row = (location_value.get("row") or "").strip()
+            section = (location_value.get("section") or "").strip()
+            tier = (location_value.get("tier") or "").strip()
+            shelf = (location_value.get("shelf") or "").strip()
+            cell = (location_value.get("cell") or "").strip()
+            if zone:
+                parts.append(f"Зона {zone}")
+            if rack:
+                parts.append(f"Стеллаж {rack}")
+            if row:
+                parts.append(f"Ряд {row}")
+            if section:
+                parts.append(f"Секция {section}")
+            if tier:
+                parts.append(f"Ярус {tier}")
+            if shelf:
+                parts.append(f"Полка {shelf}")
+            if cell:
+                parts.append(f"Ячейка {cell}")
+        if not parts:
+            rack = (pallet.get("rack") or "").strip()
+            row = (pallet.get("row") or "").strip()
+            shelf = (pallet.get("shelf") or "").strip()
+            if rack:
+                parts.append(f"Стеллаж {rack}")
+            if row:
+                parts.append(f"Ряд {row}")
+            if shelf:
+                parts.append(f"Полка {shelf}")
+        return " · ".join(parts) if parts else default_location
+
     for entry in latest_by_order.values():
         payload = entry.payload or {}
         boxes = payload.get("act_boxes") or []
@@ -104,12 +147,8 @@ def inventory_journal(request):
         pallet_locations = {}
         for pallet in pallets:
             pallet_code = (pallet or {}).get("code") or ""
-            location = (pallet or {}).get("location") or {}
-            rack = (location.get("rack") or pallet.get("rack") or "-").strip() or "-"
-            row = (location.get("row") or pallet.get("row") or "-").strip() or "-"
-            shelf = (location.get("shelf") or pallet.get("shelf") or "-").strip() or "-"
             if pallet_code:
-                pallet_locations[pallet_code] = {"rack": rack, "row": row, "shelf": shelf}
+                pallet_locations[pallet_code] = normalize_location(pallet)
             for box_code in (pallet or {}).get("boxes") or []:
                 if box_code and pallet_code and box_code not in box_to_pallet:
                     box_to_pallet[box_code] = pallet_code
@@ -121,7 +160,11 @@ def inventory_journal(request):
             qty = item.get("qty")
             if qty in (None, ""):
                 qty = item.get("actual_qty") or 0
-            location = pallet_locations.get(pallet_code) if pallet_code and pallet_code != "-" else None
+            location = (
+                pallet_locations.get(pallet_code)
+                if pallet_code and pallet_code != "-"
+                else default_location
+            )
             rows.append(
                 {
                     "created_at": entry.created_at,
@@ -133,9 +176,7 @@ def inventory_journal(request):
                     "qty": qty,
                     "box_code": box_code or "-",
                     "pallet_code": pallet_code or "-",
-                    "rack": (location or {}).get("rack") or "-",
-                    "row": (location or {}).get("row") or "-",
-                    "shelf": (location or {}).get("shelf") or "-",
+                    "location": location or default_location,
                 }
             )
 

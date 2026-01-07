@@ -3259,17 +3259,43 @@ class PlacementActView(RoleRequiredMixin, TemplateView):
         ]
         if unassigned_boxes:
             return redirect(f"/orders/receiving/{order_id}/placement/?error=1")
+        default_location = "Поле приемки"
         for pallet in pallets_data:
             if not isinstance(pallet, dict):
                 continue
             if not pallet.get("sealed"):
                 return redirect(f"/orders/receiving/{order_id}/placement/?error=1")
-            location = pallet.get("location") or {}
-            rack = (location.get("rack") or pallet.get("rack") or "").strip()
-            row = (location.get("row") or pallet.get("row") or "").strip()
-            shelf = (location.get("shelf") or pallet.get("shelf") or "").strip()
-            if not rack or not row or not shelf:
-                return redirect(f"/orders/receiving/{order_id}/placement/?error=1")
+            location_value = pallet.get("location")
+            location_text = ""
+            if isinstance(location_value, dict):
+                zone = (location_value.get("zone") or "").strip()
+                rack = (location_value.get("rack") or pallet.get("rack") or "").strip()
+                row = (location_value.get("row") or pallet.get("row") or "").strip()
+                section = (location_value.get("section") or "").strip()
+                tier = (location_value.get("tier") or "").strip()
+                shelf = (location_value.get("shelf") or pallet.get("shelf") or "").strip()
+                cell = (location_value.get("cell") or "").strip()
+                parts = []
+                if zone:
+                    parts.append(f"Зона {zone}")
+                if rack:
+                    parts.append(f"Стеллаж {rack}")
+                if row:
+                    parts.append(f"Ряд {row}")
+                if section:
+                    parts.append(f"Секция {section}")
+                if tier:
+                    parts.append(f"Ярус {tier}")
+                if shelf:
+                    parts.append(f"Полка {shelf}")
+                if cell:
+                    parts.append(f"Ячейка {cell}")
+                location_text = " · ".join(parts)
+            elif isinstance(location_value, str):
+                location_text = location_value.strip()
+            if not location_text:
+                location_text = default_location
+            pallet["location"] = location_text
         status_entry = _current_status_entry(entries)
         latest = entries[-1]
         act_payload = dict((status_entry.payload or {}) if status_entry else {})
