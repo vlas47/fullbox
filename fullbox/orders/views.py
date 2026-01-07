@@ -1338,6 +1338,8 @@ def download_receiving_act_doc(request, order_id: str):
         raise Http404("Заявка не найдена")
     if not _act_access_allowed(request, entries):
         return HttpResponseForbidden("Доступ запрещен")
+    if not _placement_closed(entries):
+        return redirect(f"/orders/receiving/{order_id}/act/?error=placement_required")
     act_entry = _find_act_entry(entries, "receiving", "акт приемки")
     if not act_entry:
         raise Http404("Акт приемки не найден")
@@ -1357,6 +1359,8 @@ def download_receiving_act_mx1(request, order_id: str):
         raise Http404("Заявка не найдена")
     if not _act_access_allowed(request, entries):
         return HttpResponseForbidden("Доступ запрещен")
+    if not _placement_closed(entries):
+        return redirect(f"/orders/receiving/{order_id}/act/?error=placement_required")
     act_entry = _find_act_entry(entries, "receiving", "акт приемки")
     if not act_entry:
         raise Http404("Акт приемки не найден")
@@ -2959,6 +2963,8 @@ class PlacementActView(RoleRequiredMixin, TemplateView):
         role = get_request_role(request)
         if role != "storekeeper":
             return redirect(f"/orders/receiving/{order_id}/placement/")
+        if action == "open" and _act_storekeeper_signed(entries):
+            return redirect(f"/orders/receiving/{order_id}/placement/?error=signed")
         if not self._can_create(entries):
             return redirect(f"/orders/receiving/{order_id}/placement/?error=1")
         placement_act = self._placement_act_entry(entries)
@@ -3168,6 +3174,8 @@ class PlacementActView(RoleRequiredMixin, TemplateView):
         act_state = "open"
         if placement_act:
             act_state = (placement_act.payload or {}).get("act_state") or "closed"
+        signed_by_storekeeper = _act_storekeeper_signed(entries)
+        can_open_act = can_submit and act_state == "closed" and not signed_by_storekeeper
         boxes_data = (placement_act.payload or {}).get("act_boxes") if placement_act else []
         pallets_data = (placement_act.payload or {}).get("act_pallets") if placement_act else []
         ctx.update(
@@ -3177,6 +3185,8 @@ class PlacementActView(RoleRequiredMixin, TemplateView):
                 "status_label": _status_label_from_entry(status_entry) if status_entry else "-",
                 "cabinet_url": resolve_cabinet_url(get_request_role(self.request)),
                 "can_submit": can_submit,
+                "can_open_act": can_open_act,
+                "signed_by_storekeeper": signed_by_storekeeper,
                 "act_exists": bool(placement_act),
                 "act_state": act_state,
                 "items": display_items,
