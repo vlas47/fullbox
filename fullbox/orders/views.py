@@ -2737,6 +2737,7 @@ class ReceivingActView(RoleRequiredMixin, TemplateView):
         act_items = (act_entry.payload or {}).get("act_items") if act_entry else []
         placement_entry = _find_act_entry(entries, "placement", "акт размещения")
         placement_closed = _placement_closed(entries)
+        role = get_request_role(self.request)
         if act_entry:
             act_label = (act_entry.payload or {}).get("act_label") or "Акт приемки"
         else:
@@ -2750,7 +2751,8 @@ class ReceivingActView(RoleRequiredMixin, TemplateView):
                 },
                 {"label": "МХ-1", "url": f"/orders/receiving/{order_id}/act/mx1/print/"},
             ]
-        role = get_request_role(self.request)
+            if role == "storekeeper":
+                act_documents = [act_documents[0]]
         can_submit = role == "storekeeper" and self._can_create(entries)
         if client_view:
             can_submit = False
