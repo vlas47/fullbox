@@ -163,7 +163,11 @@
               <div class="notice">Акт приемки создан.</div>
             {% endif %}
             {% if error %}
-              <div class="error">Не удалось создать акт приемки. Проверьте данные.</div>
+              {% if error == "placement_required" %}
+                <div class="error">Печатные формы доступны только после закрытия акта размещения.</div>
+              {% else %}
+                <div class="error">Не удалось создать акт приемки. Проверьте данные.</div>
+              {% endif %}
             {% endif %}
             {% if can_add_items %}
               <div class="scanner-panel">
