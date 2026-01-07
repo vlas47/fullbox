@@ -218,6 +218,11 @@ def _journal_action_label(entry, manager_label: str, storekeeper_label: str) -> 
 
 def _status_label_from_entry(entry):
     payload = entry.payload or {}
+    client_response = (payload.get("act_client_response") or "").lower()
+    if client_response == "confirmed":
+        return "Акт приемки подтвержден клиентом"
+    if client_response == "dispute":
+        return "Клиент заявил разногласия по акту приемки"
     if payload.get("act_sent"):
         return "Акт отправлен клиенту" if not payload.get("act_viewed") else "Выполнена"
     if payload.get("act_storekeeper_signed") and not payload.get("act_manager_signed"):
@@ -1511,9 +1516,27 @@ def print_receiving_act(request, order_id: str):
     )
 
     client_agency = _client_agency_from_request(request)
+    client_view = bool(client_agency)
     return_url = f"/orders/receiving/{order_id}/act/"
     if client_agency:
         return_url = f"/orders/receiving/{order_id}/act/?client={client_agency.id}"
+    status_entry = _current_status_entry(entries)
+    status_payload = status_entry.payload or {} if status_entry else {}
+    client_response = (
+        status_payload.get("act_client_response")
+        or request.GET.get("response")
+        or ""
+    ).lower()
+    sent_at_raw = status_payload.get("act_sent_at") or act_entry.created_at.isoformat()
+    client_deadline = ""
+    try:
+        sent_at = datetime.fromisoformat(str(sent_at_raw))
+        if timezone.is_naive(sent_at):
+            sent_at = timezone.make_aware(sent_at, timezone.get_current_timezone())
+        sent_at = timezone.localtime(sent_at)
+        client_deadline = (sent_at + timedelta(hours=24)).strftime("%d.%m.%Y %H:%M")
+    except (TypeError, ValueError):
+        client_deadline = ""
 
     ctx = {
         "order_id": order_id,
@@ -1544,6 +1567,10 @@ def print_receiving_act(request, order_id: str):
         "sign_status": request.GET.get("signed"),
         "sign_error": request.GET.get("error"),
         "return_url": return_url,
+        "client_view": client_view,
+        "client_param": client_agency.id if client_agency else "",
+        "client_response": client_response,
+        "client_deadline": client_deadline,
     }
     return render(request, "orders/receiving_act_print.html", ctx)
 
@@ -1647,6 +1674,82 @@ def sign_receiving_act_manager(request, order_id: str):
         assigned_to__role__in=["manager", "head_manager"],
     ).delete()
     return redirect(f"/orders/receiving/{order_id}/act/print/?signed=manager")
+
+
+def _client_print_url(order_id: str, client_agency, response: str | None = None) -> str:
+    params = []
+    if client_agency:
+        params.append(f"client={client_agency.id}")
+    if response:
+        params.append(f"response={response}")
+    suffix = f"?{'&'.join(params)}" if params else ""
+    return f"/orders/receiving/{order_id}/act/print/{suffix}"
+
+
+def _client_act_access_allowed(request, entries):
+    client_agency = _client_agency_from_request(request)
+    if not client_agency:
+        return False
+    if not any(entry.agency_id == client_agency.id for entry in entries if entry.agency_id):
+        return False
+    act_entry = _find_act_entry(entries, "receiving", "акт приемки")
+    return bool(act_entry)
+
+
+def confirm_receiving_act_client(request, order_id: str):
+    if request.method != "POST":
+        return HttpResponseForbidden("Доступ запрещен")
+    entries = _load_order_entries(order_id)
+    if not entries:
+        raise Http404("Заявка не найдена")
+    if not _client_act_access_allowed(request, entries):
+        return HttpResponseForbidden("Доступ запрещен")
+    client_agency = _client_agency_from_request(request)
+    status_entry = _current_status_entry(entries)
+    payload = dict(status_entry.payload or {}) if status_entry else {}
+    existing_response = (payload.get("act_client_response") or "").lower()
+    if existing_response in {"confirmed", "dispute"}:
+        return redirect(_client_print_url(order_id, client_agency, existing_response))
+    payload["act_client_response"] = "confirmed"
+    payload["act_client_response_at"] = timezone.localtime().isoformat()
+    log_order_action(
+        "status",
+        order_id=order_id,
+        order_type="receiving",
+        user=request.user if request.user.is_authenticated else None,
+        agency=entries[-1].agency if entries else None,
+        description="Акт приемки подтвержден клиентом",
+        payload=payload,
+    )
+    return redirect(_client_print_url(order_id, client_agency, "confirmed"))
+
+
+def dispute_receiving_act_client(request, order_id: str):
+    if request.method != "POST":
+        return HttpResponseForbidden("Доступ запрещен")
+    entries = _load_order_entries(order_id)
+    if not entries:
+        raise Http404("Заявка не найдена")
+    if not _client_act_access_allowed(request, entries):
+        return HttpResponseForbidden("Доступ запрещен")
+    client_agency = _client_agency_from_request(request)
+    status_entry = _current_status_entry(entries)
+    payload = dict(status_entry.payload or {}) if status_entry else {}
+    existing_response = (payload.get("act_client_response") or "").lower()
+    if existing_response in {"confirmed", "dispute"}:
+        return redirect(_client_print_url(order_id, client_agency, existing_response))
+    payload["act_client_response"] = "dispute"
+    payload["act_client_response_at"] = timezone.localtime().isoformat()
+    log_order_action(
+        "status",
+        order_id=order_id,
+        order_type="receiving",
+        user=request.user if request.user.is_authenticated else None,
+        agency=entries[-1].agency if entries else None,
+        description="Клиент заявил разногласия по акту приемки",
+        payload=payload,
+    )
+    return redirect(_client_print_url(order_id, client_agency, "dispute"))
 
 
 def print_receiving_act_mx1(request, order_id: str):
@@ -2622,8 +2725,8 @@ class ReceivingActView(RoleRequiredMixin, TemplateView):
                         description="Акт приемки просмотрен клиентом",
                         payload=payload,
                     )
-            request._client_agency = client_agency
-            return TemplateView.dispatch(self, request, *args, **kwargs)
+            response = request.GET.get("response")
+            return redirect(_client_print_url(order_id, client_agency, response))
         return super().dispatch(request, *args, **kwargs)
 
     def _load_entries(self, order_id):
