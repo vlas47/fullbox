@@ -256,3 +256,5 @@
 - 2026-01-07 11:58: queried production Postgres on server for Agency pref заполненность (counts).
 - 2026-01-07 12:07: updated receiving order detail items mapping to include extra act positions in `fullbox/orders/views.py`.
 - 2026-01-07 12:07: deployed updated `fullbox/orders/views.py` to server and restarted `fullbox` service.
+- 2026-01-07 12:22: added receiving act signing workflow (storekeeper/manager) and locked edits after storekeeper signature; updated `fullbox/orders/views.py`, `fullbox/orders/urls.py`, `fullbox/orders/templates/orders/receiving_act_print.html`.
+- 2026-01-07 12:22: deployed updated orders views/urls/receiving act print template to server and restarted `fullbox`.
