@@ -3270,7 +3270,26 @@ class PlacementActView(RoleRequiredMixin, TemplateView):
             if isinstance(location_value, dict):
                 zone = (location_value.get("zone") or "").strip()
                 if zone:
-                    location_text = zone.upper()
+                    if re.search(r"^pr$", zone, re.IGNORECASE) or re.search(
+                        r"зона приемки|поле приемки", zone, re.IGNORECASE
+                    ):
+                        location_text = "PR"
+                    elif re.search(r"^ot$", zone, re.IGNORECASE) or re.search(
+                        r"зона отгрузки|отгрузк", zone, re.IGNORECASE
+                    ):
+                        location_text = "OT"
+                    elif re.search(r"^mr$", zone, re.IGNORECASE) or re.search(
+                        r"между ряд", zone, re.IGNORECASE
+                    ):
+                        location_text = "MR"
+                    elif re.search(r"^os$", zone, re.IGNORECASE) or re.search(
+                        r"основн|стеллаж|ряд|полк|секци|ярус|ячейк",
+                        zone,
+                        re.IGNORECASE,
+                    ):
+                        location_text = "OS"
+                    else:
+                        location_text = zone.upper()
                 else:
                     rack = (location_value.get("rack") or pallet.get("rack") or "").strip()
                     row = (location_value.get("row") or pallet.get("row") or "").strip()
@@ -3287,8 +3306,18 @@ class PlacementActView(RoleRequiredMixin, TemplateView):
                         r"зона приемки|поле приемки", location_text, re.IGNORECASE
                     ):
                         location_text = "PR"
+                    elif re.search(r"^ot$", location_text, re.IGNORECASE) or re.search(
+                        r"зона отгрузки|отгрузк", location_text, re.IGNORECASE
+                    ):
+                        location_text = "OT"
+                    elif re.search(r"^mr$", location_text, re.IGNORECASE) or re.search(
+                        r"между ряд", location_text, re.IGNORECASE
+                    ):
+                        location_text = "MR"
                     elif re.search(r"^os$", location_text, re.IGNORECASE) or re.search(
-                        r"стеллаж|ряд|полк|секци|ярус|ячейк", location_text, re.IGNORECASE
+                        r"основн|стеллаж|ряд|полк|секци|ярус|ячейк",
+                        location_text,
+                        re.IGNORECASE,
                     ):
                         location_text = "OS"
             if not location_text:
