@@ -82,7 +82,11 @@
               <div class="task-card{% if task_panel_attention_employee_id and task.assigned_to_id == task_panel_attention_employee_id %}{% if task_panel_role == "manager" and task.status == "done" %}{% else %} attention{% endif %}{% endif %}">
                 <div class="task-title">
                   {% if task.route and "/orders/receiving/" in task.route %}
-                    <a href="{{ task.route }}">{{ task.display_title }}</a>
+                    {% if "/act/print/" in task.route %}
+                      <a href="{{ task.route }}">{{ task.title }}</a>
+                    {% else %}
+                      <a href="{{ task.route }}">{{ task.display_title }}</a>
+                    {% endif %}
                   {% else %}
                     <a href="{% url 'todo:detail' task.id %}">{{ task.display_title }}</a>
                   {% endif %}
