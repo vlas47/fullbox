@@ -292,3 +292,4 @@
 - 2026-01-07 21:48: added MR/OS dependent fields in placement act (row/section/tier/cell) with occupied-cell blocking, and normalized OTG zone labels; deployed and restarted `fullbox`.
 - 2026-01-07 21:56: wired stockmap occupancy to placement acts (OS row view + counts), including MR row occupancy totals; deployed and restarted `fullbox`.
 - 2026-01-07 22:48: cleared all order audit entries and tasks from production DB and removed act/task_files from media to reset stockmap occupancy.
+- 2026-01-08 06:25: auto-restore receiving draft when returning from SKU list to avoid form reset prompt; deployed template update.
