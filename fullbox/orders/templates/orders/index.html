@@ -750,6 +750,7 @@
       const submitted = '{{ submitted|yesno:"1,0" }}' === '1';
       const isEditMode = '{{ edit_mode|yesno:"1,0" }}' === '1';
       const draftKey = clientId ? `receiving_draft_${clientId}` : '';
+      const skuReturnKey = clientId ? `receiving_return_sku_${clientId}` : '';
       const form = tableBody.closest('form');
       const draftNotice = document.getElementById('draft-restore');
       const draftRestoreBtn = document.getElementById('draft-restore-btn');
@@ -877,7 +878,14 @@
         });
       };
       const storedDraft = (!submitted && !isEditMode) ? loadDraftPayload() : null;
-      if (storedDraft && draftNotice) {
+      const shouldAutoRestore = !!(skuReturnKey && localStorage.getItem(skuReturnKey) === '1');
+      if (storedDraft && shouldAutoRestore) {
+        applyDraft(storedDraft);
+        if (draftNotice) {
+          draftNotice.hidden = true;
+        }
+        localStorage.removeItem(skuReturnKey);
+      } else if (storedDraft && draftNotice) {
         draftNotice.hidden = false;
       }
       if (draftRestoreBtn && storedDraft) {
@@ -991,7 +999,12 @@
       }
       const skuLink = document.querySelector('.ghost-btn[href*="/client/"][href*="/sku/"]');
       if (skuLink && draftKey) {
-        skuLink.addEventListener('click', saveDraft);
+        skuLink.addEventListener('click', () => {
+          saveDraft();
+          if (skuReturnKey) {
+            localStorage.setItem(skuReturnKey, '1');
+          }
+        });
       }
       const clearButton = form.querySelector('#clear-form');
       if (clearButton) {
