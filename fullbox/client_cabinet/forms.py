@@ -171,6 +171,7 @@ class AgencyForm(forms.ModelForm):
             "archived",
         ]
         widgets = {
+            "agn_name": forms.Textarea(attrs={"rows": 2, "data-autogrow": "true"}),
             "adres": forms.Textarea(attrs={"rows": 2}),
             "fakt_adres": forms.Textarea(attrs={"rows": 2}),
         }

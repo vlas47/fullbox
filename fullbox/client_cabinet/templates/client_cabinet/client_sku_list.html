@@ -309,6 +309,13 @@
     const params = new URLSearchParams(window.location.search);
     const returnTo = params.get('return_to');
     const cartKey = clientId && returnTo ? `order_cart_${clientId}` : '';
+    const returnKey = clientId && returnTo ? `receiving_return_sku_${clientId}` : '';
+    const returnLink = document.getElementById('return-to-order');
+    if (returnLink && returnKey) {
+      returnLink.addEventListener('click', () => {
+        localStorage.setItem(returnKey, '1');
+      });
+    }
     const cartButtons = document.querySelectorAll('.cart-add');
     const cartCount = document.getElementById('cart-count');
 

@@ -267,6 +267,11 @@
     <div class="doc-lines">
       <div class="doc-line">Поставщик: {{ agency_label }}</div>
       <div class="doc-line">Исполнитель: {{ executor_label }}</div>
+      {% if client_response == "confirmed" %}
+        <div class="doc-line">Акт приемки подтвержден клиентом{% if client_response_at and client_response_at != "-" %} ({{ client_response_at }}){% endif %}.</div>
+      {% elif client_response == "dispute" %}
+        <div class="doc-line">Клиент заявил разногласия по акту приемки{% if client_response_at and client_response_at != "-" %} ({{ client_response_at }}){% endif %}.</div>
+      {% endif %}
     </div>
 
     <table>

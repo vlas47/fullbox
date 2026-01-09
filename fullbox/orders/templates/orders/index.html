@@ -877,14 +877,27 @@
           fillRow(clone, item);
         });
       };
-      const storedDraft = (!submitted && !isEditMode) ? loadDraftPayload() : null;
-      const shouldAutoRestore = !!(skuReturnKey && localStorage.getItem(skuReturnKey) === '1');
-      if (storedDraft && shouldAutoRestore) {
-        applyDraft(storedDraft);
-        if (draftNotice) {
-          draftNotice.hidden = true;
+        const storedDraft = (!submitted && !isEditMode) ? loadDraftPayload() : null;
+        const cartKey = clientId ? `order_cart_${clientId}` : '';
+        const cartStored = cartKey ? localStorage.getItem(cartKey) : '';
+        let cartItems = [];
+        if (cartStored) {
+          try {
+            cartItems = JSON.parse(cartStored);
+          } catch (err) {
+            cartItems = [];
+          }
         }
-        localStorage.removeItem(skuReturnKey);
+        const hasCartItems = cartItems.length > 0;
+        const shouldAutoRestore = !!(storedDraft && (
+          (skuReturnKey && localStorage.getItem(skuReturnKey) === '1') || hasCartItems
+        ));
+        if (storedDraft && shouldAutoRestore) {
+          applyDraft(storedDraft);
+          if (draftNotice) {
+            draftNotice.hidden = true;
+          }
+          localStorage.removeItem(skuReturnKey);
       } else if (storedDraft && draftNotice) {
         draftNotice.hidden = false;
       }
@@ -907,21 +920,14 @@
         });
       }
 
-      if (clientId) {
-        const cartKey = `order_cart_${clientId}`;
-        const stored = localStorage.getItem(cartKey);
-        if (stored) {
-          let items = [];
-          try {
-            items = JSON.parse(stored);
-          } catch (err) {
-            items = [];
-          }
-          const findExistingRow = (code, size) => {
-            return Array.from(tableBody.querySelectorAll('.item-row')).find((row) => {
-              const skuValue = row.querySelector('.sku-input').value.trim();
-              const sizeValue = row.querySelector('.size-input')?.value.trim() || '';
-              return skuValue === code && (sizeValue || '') === (size || '');
+        if (clientId && cartKey) {
+          const items = cartItems;
+          if (items.length) {
+            const findExistingRow = (code, size) => {
+              return Array.from(tableBody.querySelectorAll('.item-row')).find((row) => {
+                const skuValue = row.querySelector('.sku-input').value.trim();
+                const sizeValue = row.querySelector('.size-input')?.value.trim() || '';
+                return skuValue === code && (sizeValue || '') === (size || '');
             });
           };
           const findEmptyRow = () => {
@@ -972,10 +978,10 @@
             row.dataset.preferredSize = size || '';
             applySku(row, code);
           };
-          items.forEach((item) => addRowWithSku(item.code, item.qty, item.size));
-          localStorage.removeItem(cartKey);
+            items.forEach((item) => addRowWithSku(item.code, item.qty, item.size));
+            localStorage.removeItem(cartKey);
+          }
         }
-      }
 
       let draftTimer = null;
       const scheduleSave = () => {

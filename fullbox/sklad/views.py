@@ -235,7 +235,7 @@ def inventory_journal(request):
     if not staff_view:
         grouped = {}
         for row in rows:
-            key = (row.get("order_id"), row.get("sku"), row.get("name"), row.get("size"))
+            key = (row.get("sku"), row.get("name"), row.get("size"))
             qty_value = _parse_qty_value(row.get("qty")) or 0
             existing = grouped.get(key)
             if existing:
