@@ -229,7 +229,7 @@ def task_detail(request, pk):
                 can_create_placement_act = True
                 placement_act_url = f"/orders/receiving/{order_id}/placement/"
         if can_create_receiving_act and order_id:
-            receiving_act_url = f"/orders/receiving/{order_id}/act/"
+            receiving_act_url = f"/orders/receiving/{order_id}/flow/"
     comment_form = TaskCommentForm()
     attachment_form = TaskAttachmentForm()
     can_edit = request.user.is_authenticated and task.created_by_id == request.user.id

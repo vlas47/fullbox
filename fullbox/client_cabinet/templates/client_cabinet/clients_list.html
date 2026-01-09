@@ -58,8 +58,7 @@
         <div class="muted">Список в табличном и карточном виде</div>
       </div>
       <div class="controls">
-        <a class="btn" href="/client/dashboard/">Дашборд</a>
-        <a class="btn" href="/dev/">Dev</a>
+        <a class="btn" href="{{ cabinet_url }}">В кабинет</a>
       </div>
     </header>
 
@@ -80,7 +79,7 @@
           <option value="">Поле фильтра</option>
           <option value="agn_name" {% if filter_field == 'agn_name' %}selected{% endif %}>Название</option>
           <option value="inn" {% if filter_field == 'inn' %}selected{% endif %}>ИНН</option>
-          <option value="pref" {% if filter_field == 'pref' %}selected{% endif %}>Префикс</option>
+          <option value="pref" {% if filter_field == 'pref' %}selected{% endif %}>Префикс для кодов</option>
           <option value="email" {% if filter_field == 'email' %}selected{% endif %}>Email</option>
           <option value="phone" {% if filter_field == 'phone' %}selected{% endif %}>Телефон</option>
         </select>
@@ -111,7 +110,7 @@
                 </a>
               </th>
               <th class="sortable {% if sort_info.pref.active %}active {{ sort_info.pref.dir }}{% endif %}">
-                <a class="sort-label" href="{{ sort_info.pref.url }}">Префикс
+                <a class="sort-label" href="{{ sort_info.pref.url }}">Префикс для кодов
                   <span class="sort-icon"><span class="arrow up"></span><span class="arrow down"></span></span>
                 </a>
               </th>

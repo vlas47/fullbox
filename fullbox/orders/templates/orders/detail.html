@@ -24,9 +24,9 @@
     .detail-side { display:grid; gap:12px; }
     .detail-main { display:grid; gap:12px; height: calc(100vh - 88px); overflow:hidden; }
     .detail-chat { display:grid; gap:12px; }
-    .side-actions { display:grid; gap:8px; }
+    .side-actions { display:grid; gap:8px; text-align:center; }
     .side-actions .tab,
-    .side-actions button.tab { width:100%; display:inline-flex; justify-content:center; align-items:center; }
+    .side-actions button.tab { width:100%; display:flex; justify-content:center; align-items:center; text-align:center; white-space:normal; line-height:1.2; }
     .side-actions form { display:grid; }
     .side-card { background:var(--card); border:1px solid var(--stroke); border-radius:16px; padding:14px; box-shadow:0 16px 30px rgba(15,23,42,0.12); }
     .side-title { font-weight:600; margin:0 0 8px; }
@@ -48,6 +48,8 @@
     .chat-form button { padding:8px 12px; border-radius:10px; border:none; background:linear-gradient(120deg,var(--gold),var(--gold-soft)); font-weight:600; cursor:pointer; }
     .participants { display:grid; gap:6px; margin-top:12px; }
     .participant { border:1px dashed var(--stroke); border-radius:10px; padding:8px; font-size:13px; }
+    .meta-row { margin-top:6px; }
+    .meta-value { color: var(--gold); font-weight:600; }
     @media (max-width: 1100px) {
       .detail-layout { grid-template-columns: 1fr; min-height:auto; }
       .detail-main { height:auto; overflow:visible; }
@@ -63,6 +65,13 @@
     th:last-child, td:last-child { border-right:none; }
     th { color: var(--muted); font-weight:600; font-size:12px; text-transform:uppercase; letter-spacing:1px; background:rgba(15,23,42,0.04); }
     .history-latest td { background: rgba(31,157,85,0.08); }
+    .modal { position:fixed; inset:0; background:rgba(15,23,42,0.45); display:none; align-items:center; justify-content:center; padding:16px; z-index:2000; }
+    .modal.is-open { display:flex; }
+    .modal-card { width:min(420px, 92vw); background:var(--card); border:1px solid var(--stroke); border-radius:16px; padding:16px; box-shadow:0 20px 40px rgba(15,23,42,0.2); display:grid; gap:10px; }
+    .modal-title { font-weight:600; }
+    .modal-actions { display:grid; gap:8px; }
+    .modal-actions .tab { width:100%; }
+    .modal-note { color:var(--muted); font-size:12px; }
   </style>
 </head>
 <body>
@@ -72,7 +81,11 @@
         <div class="side-card">
           <div class="muted">FULLBOX · {% include "partials/current_user.html" %}</div>
           <h3>{{ order_title }} № {{ order_id }}</h3>
-          <div class="muted">Статус: {{ status_label }}{% if responsible %} · Текущий ответственный: {{ responsible }}{% endif %}</div>
+          <div class="muted">
+            Статус: <span class="meta-value">{{ status_label }}</span>
+            {% if goods_type_label %}<br>Тип поставки: <span class="meta-value">{{ goods_type_label }}</span>{% endif %}
+            {% if responsible %}<div class="meta-row">Текущий ответственный: <span class="meta-value">{{ responsible }}</span></div>{% endif %}
+          </div>
         </div>
 
         <div class="side-card">
@@ -102,35 +115,25 @@
                 </form>
               {% endif %}
               {% if not client_view %}
-                {% if can_create_receiving_act and not has_receiving_act %}
-                  <a class="tab" href="/orders/receiving/{{ order_id }}/act/">Взять в работу</a>
+                {% if can_open_flow %}
+                  <button class="tab{% if can_continue_flow %} primary{% endif %}" type="button" id="take-in-work-btn" data-act-url="/orders/receiving/{{ order_id }}/flow/" data-goods-type="{{ goods_type|default:'' }}">Потоковая приемка</button>
+                  <form method="post" id="take-in-work-form">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="create_receiving_act">
+                    <input type="hidden" name="goods_type" id="goods-type-input">
+                  </form>
                 {% endif %}
-                {% if has_receiving_act %}
-                  <a class="tab" href="/orders/receiving/{{ order_id }}/act/">
-                    {{ act_label|default:"Открыть акт приемки" }}
-                  </a>
+                {% if can_print_receiving_act %}
+                  <a class="tab" href="/orders/receiving/{{ order_id }}/act/print/">Акт приемки (печатная форма)</a>
                 {% endif %}
-                {% if has_placement_act %}
-                  <a class="tab" href="/orders/receiving/{{ order_id }}/placement/">
-                    {{ placement_act_label|default:"Открыть акт размещения" }}
-                  </a>
-                {% elif can_create_placement_act %}
-                  <a class="tab" href="/orders/receiving/{{ order_id }}/placement/">
-                    Создать акт размещения
-                  </a>
-                {% endif %}
-              {% endif %}
-              {% if client_view and has_receiving_act %}
-                <a class="tab" href="/orders/receiving/{{ order_id }}/act/?client={{ agency.id }}">
-                  {{ act_label|default:"Акт приемки" }}
-                </a>
               {% endif %}
             {% endif %}
             {% if client_view %}
               <a class="tab" href="/client/dashboard/?client={{ agency.id }}">В кабинет</a>
-              {% if order_type == 'receiving' %}
-                <a class="tab" href="/orders/receiving/?client={{ agency.id }}">Новая приемка</a>
-              {% elif order_type == 'packing' %}
+              {% if can_print_receiving_act %}
+                <a class="tab" href="/orders/receiving/{{ order_id }}/act/print/?client={{ agency.id }}">Акт приемки (печатная форма)</a>
+              {% endif %}
+              {% if order_type == 'packing' %}
                 <a class="tab" href="/orders/packing/?client={{ agency.id }}">Новая упаковка</a>
               {% endif %}
             {% else %}
@@ -333,6 +336,75 @@
       </aside>
     </div>
   </div>
+
+  <div class="modal" id="goods-type-modal" aria-hidden="true">
+    <div class="modal-card">
+      <div class="modal-title">Выберите тип товара</div>
+      <div class="modal-actions">
+        <button class="tab" type="button" data-goods-type="op">Оптовый (op)</button>
+        <button class="tab" type="button" data-goods-type="gv">Готовый (gv)</button>
+        <button class="tab" type="button" data-goods-type="br">Брак (br)</button>
+        <button class="tab" type="button" data-goods-type="vz">Возврат (vz)</button>
+        <button class="tab" type="button" data-goods-type="rh">Расходный (rh)</button>
+      </div>
+      <div class="modal-note">В поставке всегда один тип товара.</div>
+      <button class="tab" type="button" id="goods-type-close">Отмена</button>
+    </div>
+  </div>
+
+  <script>
+    (() => {
+      const takeBtn = document.getElementById('take-in-work-btn');
+      const modal = document.getElementById('goods-type-modal');
+      const closeBtn = document.getElementById('goods-type-close');
+      const form = document.getElementById('take-in-work-form');
+      const goodsInput = document.getElementById('goods-type-input');
+
+      if (!takeBtn || !modal || !form || !goodsInput) {
+        return;
+      }
+
+      const actUrl = takeBtn.dataset.actUrl || '';
+      const currentType = (takeBtn.dataset.goodsType || '').trim();
+      const openModal = () => {
+        modal.classList.add('is-open');
+        modal.setAttribute('aria-hidden', 'false');
+      };
+      const closeModal = () => {
+        modal.classList.remove('is-open');
+        modal.setAttribute('aria-hidden', 'true');
+      };
+
+      takeBtn.addEventListener('click', () => {
+        if (currentType && actUrl) {
+          window.location.href = actUrl;
+          return;
+        }
+        openModal();
+      });
+
+      modal.addEventListener('click', (event) => {
+        if (event.target === modal) {
+          closeModal();
+        }
+      });
+      if (closeBtn) {
+        closeBtn.addEventListener('click', closeModal);
+      }
+      document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') {
+          closeModal();
+        }
+      });
+
+      modal.querySelectorAll('[data-goods-type]')?.forEach((btn) => {
+        btn.addEventListener('click', () => {
+          goodsInput.value = btn.dataset.goodsType || '';
+          form.submit();
+        });
+      });
+    })();
+  </script>
 </body>
 </html>
 

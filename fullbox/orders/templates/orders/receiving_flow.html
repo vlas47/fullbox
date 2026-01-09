@@ -1,0 +1,1417 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Приемка потоком · заявка № {{ order_id }}</title>
+  <style>
+    :root {
+      --bg: #f6f4ed;
+      --card: #ffffff;
+      --card-soft: #f8f6f1;
+      --gold: #c79a1c;
+      --gold-soft: #f2d48c;
+      --muted: #6b7280;
+      --stroke: rgba(31,35,40,0.12);
+      --text: #1f2328;
+      --success: #1f9d55;
+      --danger: #d14343;
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: "Space Grotesk", system-ui, sans-serif;
+    }
+    a { color: inherit; text-decoration: none; }
+    .wrap { max-width: none; margin: 0; padding: 24px 18px 64px; min-height: 100vh; }
+    .detail-layout { display: grid; grid-template-columns: 280px minmax(0, 1fr); gap: 16px; align-items: start; }
+    .detail-side { display: grid; gap: 12px; }
+    .detail-main { display: grid; gap: 12px; }
+    .card { background: var(--card); border: 1px solid var(--stroke); border-radius: 16px; padding: 16px; box-shadow: 0 20px 40px rgba(15,23,42,0.12); }
+    .side-card { background: var(--card); border: 1px solid var(--stroke); border-radius: 16px; padding: 14px; box-shadow: 0 16px 30px rgba(15,23,42,0.12); }
+    .side-title { font-weight: 600; margin: 0 0 8px; }
+    .side-actions { display: grid; gap: 8px; }
+    .side-actions .tab { width: 100%; display: inline-flex; justify-content: center; align-items: center; }
+    .tab {
+      padding: 10px 14px;
+      border-radius: 10px;
+      border: 1px solid var(--stroke);
+      background: rgba(15,23,42,0.04);
+      color: var(--text);
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .tab:hover { background: rgba(15,23,42,0.1); }
+    .tab.primary { border-color: var(--gold); background: linear-gradient(120deg, var(--gold), var(--gold-soft)); }
+    .info-list { display: grid; gap: 10px; }
+    .info-item { display: grid; gap: 4px; }
+    .info-label { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); }
+    .info-value { font-weight: 600; word-break: break-word; }
+    .muted { color: var(--muted); }
+    .error { border: 1px solid rgba(209,67,67,0.35); background: rgba(209,67,67,0.12); color: #7f1d1d; border-radius: 12px; padding: 10px 12px; margin-bottom: 12px; }
+    .action-bar { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; align-items: center; }
+    .action-left { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+    .action-right { display: flex; gap: 10px; flex-wrap: wrap; }
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 8px;
+      border-radius: 999px;
+      border: 1px solid var(--stroke);
+      background: rgba(15,23,42,0.04);
+      font-size: 12px;
+      font-weight: 600;
+    }
+    .pill span { color: var(--gold); }
+    .btn {
+      padding: 10px 14px;
+      border-radius: 10px;
+      border: 1px solid var(--stroke);
+      background: rgba(15,23,42,0.04);
+      color: var(--text);
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .btn.primary { background: linear-gradient(120deg, var(--gold), var(--gold-soft)); border-color: transparent; }
+    .btn[disabled] { opacity: 0.6; cursor: not-allowed; }
+    .split-grid { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 16px; }
+    .split-col { display: grid; gap: 12px; align-content: start; }
+    .section-title { font-weight: 600; margin: 12px 0 6px; }
+    .table-wrap { overflow: auto; border-radius: 12px; border: 1px solid var(--stroke); }
+    table { width: 100%; border-collapse: collapse; min-width: 520px; table-layout: fixed; }
+    th, td { border-bottom: 1px solid var(--stroke); border-right: 1px solid var(--stroke); padding: 10px; text-align: left; vertical-align: top; word-break: break-word; }
+    th:last-child, td:last-child { border-right: none; }
+    th { color: var(--muted); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 1px; background: rgba(15,23,42,0.04); }
+    .qty-input {
+      width: 90px;
+      padding: 6px 8px;
+      border-radius: 8px;
+      border: 1px solid var(--stroke);
+      background: #fff;
+      font-size: 13px;
+    }
+    .row-actions { display: flex; gap: 6px; align-items: center; }
+    .row-actions .btn { padding: 6px 10px; font-size: 12px; }
+    .row-negative { color: var(--danger); font-weight: 600; }
+    .row-scan td { background: rgba(31,157,85,0.16); }
+    .row-scan td:first-child { box-shadow: inset 3px 0 0 rgba(31,157,85,0.8); }
+    .box-card { border: 1px dashed var(--stroke); border-radius: 14px; padding: 12px; background: var(--card-soft); }
+    .box-meta { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+    .box-code { font-weight: 600; }
+    .box-status { font-size: 12px; text-transform: uppercase; letter-spacing: 0.8px; color: var(--gold); }
+    .box-items { display: grid; gap: 8px; }
+    .box-item { display: flex; justify-content: space-between; gap: 8px; align-items: center; padding: 8px; border-radius: 10px; border: 1px solid var(--stroke); background: #fff; }
+    .box-item small { color: var(--muted); display: block; }
+    .box-item .btn { padding: 4px 8px; font-size: 11px; }
+    .pallet-board { display: grid; gap: 12px; }
+    .pallet-card { border: 1px solid var(--stroke); border-radius: 16px; padding: 12px; background: #fff; }
+    .pallet-card.is-open { border-color: var(--gold); box-shadow: 0 12px 26px rgba(199,154,32,0.2); }
+    .pallet-header { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 8px; }
+    .pallet-code { font-weight: 600; }
+    .pallet-status { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); }
+    .box-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(28px, 1fr)); gap: 6px; }
+    .box-chip {
+      width: 28px;
+      height: 28px;
+      border-radius: 8px;
+      display: grid;
+      place-items: center;
+      font-size: 11px;
+      font-weight: 600;
+      border: 1px solid var(--stroke);
+      background: #f1f0ec;
+      color: #555;
+    }
+    .box-chip.open { background: #f9e7b8; border-color: #d2a52a; color: #7a4c00; }
+    .box-chip.closed { background: #d8f2e1; border-color: #1f9d55; color: #0f5c30; }
+    .closed-boxes { display: grid; gap: 8px; }
+    .closed-box { display: flex; justify-content: space-between; gap: 8px; padding: 8px 10px; border-radius: 10px; border: 1px solid var(--stroke); background: #fff; font-size: 13px; }
+    .summary-line { font-weight: 600; }
+    @media (max-width: 1100px) {
+      .detail-layout { grid-template-columns: 1fr; }
+      .split-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="detail-layout">
+      <aside class="detail-side">
+        <div class="side-card">
+          <div class="muted">FULLBOX · {% include "partials/current_user.html" %}</div>
+          <h3>Приемка потоком · заявка № {{ order_id }}</h3>
+          <div class="muted">Статус: {{ status_label }}</div>
+          <div class="muted">Тип поставки: {{ goods_type_label|default:"-" }}</div>
+        </div>
+
+        <div class="side-card">
+          <h4 class="side-title">Действия</h4>
+          <div class="side-actions">
+            <a class="tab" href="/orders/receiving/{{ order_id }}/">К заявке</a>
+            <a class="tab" href="{{ cabinet_url }}">В кабинет</a>
+            <a class="tab" href="/logout/">Выход</a>
+          </div>
+        </div>
+
+        <div class="side-card">
+          <h4 class="side-title">Информация</h4>
+          <div class="info-list">
+            <div class="info-item">
+              <div class="info-label">Клиент</div>
+              <div class="info-value">{{ client_label }}</div>
+            </div>
+            <div class="info-item">
+              <div class="info-label">Итог</div>
+              <div class="info-value summary-line" id="summary-line">-</div>
+            </div>
+          </div>
+        </div>
+      </aside>
+
+      <main class="detail-main">
+        <div class="card">
+          {% if error %}
+            <div class="error">Не удалось завершить приемку. Проверьте данные.</div>
+          {% endif %}
+
+          <div class="action-bar">
+            <div class="action-left">
+              <div class="pill">Палета: <span id="active-pallet-code">-</span></div>
+              <div class="pill">Короб: <span id="active-box-code">-</span></div>
+            </div>
+            <div class="action-right">
+              <button class="btn" type="button" id="close-box-btn">Закрыть короб</button>
+              <button class="btn" type="button" id="close-pallet-btn">Закрыть палету</button>
+              <button class="btn primary" type="submit" id="finish-btn" form="flow-form">Завершить приемку</button>
+            </div>
+          </div>
+
+          <form method="post" id="flow-form">
+            {% csrf_token %}
+            <input type="hidden" name="boxes_json" id="boxes-json">
+            <input type="hidden" name="pallets_json" id="pallets-json">
+          </form>
+
+          <div class="split-grid">
+            <div class="split-col">
+              <div class="section-title">Неразмещенные товары</div>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>SKU</th>
+                      <th>Наименование</th>
+                      <th>Размер</th>
+                      <th>По заявке</th>
+                      <th>Факт</th>
+                      <th>В короб</th>
+                    </tr>
+                  </thead>
+                  <tbody id="remaining-items"></tbody>
+                </table>
+              </div>
+
+              <div class="section-title">Текущий короб</div>
+              <div class="box-card">
+                <div class="box-meta">
+                  <div class="box-code" id="current-box-code">-</div>
+                  <div class="box-status" id="current-box-status">Открыт</div>
+                </div>
+                <div class="box-items" id="current-box-items"></div>
+              </div>
+            </div>
+
+            <div class="split-col">
+              <div class="section-title">Сканер</div>
+              <div class="box-card">
+                <div class="box-meta">
+                  <div class="box-code">Сканирование</div>
+                  <div class="box-status" id="scanner-status">Ожидаю штрихкод</div>
+                </div>
+                <input type="text" id="barcode-input" class="qty-input" placeholder="Сканируйте ШК" inputmode="numeric" autocomplete="off">
+                <div class="muted" style="margin-top:6px;">Сканер вводит и отправляет Enter. Фокус держится в поле.</div>
+              </div>
+
+              <div class="section-title">Палеты</div>
+              <div class="pallet-board" id="pallet-board"></div>
+
+              <div class="section-title">Закрытые короба</div>
+              <div class="closed-boxes" id="closed-boxes"></div>
+            </div>
+          </div>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  {{ items|json_script:"items-data" }}
+  {{ barcode_map|json_script:"barcode-map" }}
+  {{ flow_state|json_script:"flow-state" }}
+  <script>window.__flowLocked = {{ flow_locked|yesno:"true,false" }};</script>
+
+  <script>
+    (() => {
+      const itemsData = JSON.parse(document.getElementById('items-data').textContent || '[]');
+      const barcodeMap = JSON.parse(document.getElementById('barcode-map').textContent || '{}');
+      const flowStateEl = document.getElementById('flow-state');
+      const flowState = flowStateEl ? JSON.parse(flowStateEl.textContent || '{}') : {};
+      const flowLocked = Boolean(window.__flowLocked);
+      const goodsType = String("{{ goods_type|escapejs }}").trim().toLowerCase();
+      const goodsTypeSuffix = goodsType ? `-${goodsType}` : '';
+      const clientPrefixRaw = String("{{ client_prefix|escapejs }}").trim();
+
+      const remainingBody = document.getElementById('remaining-items');
+      const currentBoxItems = document.getElementById('current-box-items');
+      const currentBoxCode = document.getElementById('current-box-code');
+      const currentBoxStatus = document.getElementById('current-box-status');
+      const activePalletCode = document.getElementById('active-pallet-code');
+      const activeBoxCode = document.getElementById('active-box-code');
+      const palletBoard = document.getElementById('pallet-board');
+      const closedBoxesEl = document.getElementById('closed-boxes');
+      const summaryLine = document.getElementById('summary-line');
+      const closeBoxBtn = document.getElementById('close-box-btn');
+      const closePalletBtn = document.getElementById('close-pallet-btn');
+      const finishBtn = document.getElementById('finish-btn');
+      const barcodeInput = document.getElementById('barcode-input');
+      const scannerStatus = document.getElementById('scanner-status');
+      const boxesInput = document.getElementById('boxes-json');
+      const palletsInput = document.getElementById('pallets-json');
+      const formEl = document.getElementById('flow-form');
+
+      const state = {
+        pallets: [],
+        boxes: [],
+        activePallet: '',
+        activeBox: '',
+      };
+
+      const applyFlowState = (rawState) => {
+        if (!rawState || typeof rawState !== 'object') {
+          return;
+        }
+        if (Array.isArray(rawState.boxes)) {
+          state.boxes = rawState.boxes;
+        }
+        if (Array.isArray(rawState.pallets)) {
+          state.pallets = rawState.pallets;
+        }
+        if (rawState.activeBox) {
+          state.activeBox = String(rawState.activeBox);
+        }
+        if (rawState.activePallet) {
+          state.activePallet = String(rawState.activePallet);
+        }
+      };
+
+      applyFlowState(flowState);
+
+      const normalizeText = (value) => String(value || '').trim();
+      const makeKey = (item) => {
+        const sku = normalizeText(item.sku_code || item.sku || '');
+        const name = normalizeText(item.name || '');
+        const size = normalizeText(item.size || '');
+        return `${sku}|${name}|${size}`.toLowerCase();
+      };
+
+      const plannedItems = itemsData.map((item) => ({
+        sku_code: normalizeText(item.sku_code),
+        name: normalizeText(item.name),
+        size: normalizeText(item.size),
+        qty: Number(item.qty || 0),
+      }));
+      const plannedByKey = new Map(plannedItems.map((item) => [makeKey(item), item]));
+      const plannedBySku = new Map();
+      plannedItems.forEach((item) => {
+        if (!item.sku_code) {
+          return;
+        }
+        plannedBySku.set(item.sku_code.toLowerCase(), item);
+      });
+      const normalizeMappedItem = (mapped) => ({
+        sku_code: normalizeText(mapped.sku_code || mapped.sku || ''),
+        name: normalizeText(mapped.name || ''),
+        size: normalizeText(mapped.size || ''),
+        qty: 0,
+      });
+      const ensurePlannedItem = (mapped) => {
+        const normalized = normalizeMappedItem(mapped);
+        if (!normalized.sku_code && !normalized.name && !normalized.size) {
+          return null;
+        }
+        const key = makeKey(normalized);
+        if (plannedByKey.has(key)) {
+          return plannedByKey.get(key);
+        }
+        const entry = {
+          sku_code: normalized.sku_code,
+          name: normalized.name || normalized.sku_code,
+          size: normalized.size,
+          qty: 0,
+        };
+        plannedItems.push(entry);
+        plannedByKey.set(key, entry);
+        if (entry.sku_code) {
+          plannedBySku.set(entry.sku_code.toLowerCase(), entry);
+        }
+        return entry;
+      };
+      let highlightedKey = '';
+      let pendingFocusKey = '';
+      let pendingFocusEl = null;
+      let suppressBlurApply = false;
+      const manualInputByKey = new Map();
+      const boxAdjustByKey = new Map();
+      let draftSaveTimer = null;
+      let draftEnabled = false;
+      let isSubmitting = false;
+
+      const normalizePrefix = (value) => {
+        const raw = String(value || '').trim().toUpperCase();
+        const cleaned = raw.replace(/[^\p{L}\p{N}]/gu, '');
+        return cleaned;
+      };
+
+      const buildDatePart = () => {
+        const now = new Date();
+        const day = String(now.getDate()).padStart(2, '0');
+        const month = String(now.getMonth() + 1).padStart(2, '0');
+        return `${day}${month}`;
+      };
+
+      const buildDigitsPart = () => {
+        return String(Math.floor(Math.random() * 1000000)).padStart(6, '0');
+      };
+
+      const makeCode = () => {
+        const prefix = normalizePrefix(clientPrefixRaw) || 'CL';
+        const type = goodsType || 'na';
+        const datePart = buildDatePart();
+        const existing = new Set([
+          ...state.boxes.map((box) => box.code),
+          ...state.pallets.map((pallet) => pallet.code),
+        ]);
+        for (let attempt = 0; attempt < 1000; attempt += 1) {
+          const digits = buildDigitsPart();
+          const code = `${prefix}-${datePart}-${digits}-${type}`;
+          if (!existing.has(code)) {
+            return code;
+          }
+        }
+        const fallback = `${prefix}-${datePart}-${Date.now() % 1000000}-${type}`;
+        return existing.has(fallback) ? `${fallback}-${state.boxes.length + state.pallets.length}` : fallback;
+      };
+
+      const getBox = (code) => state.boxes.find((box) => box.code === code) || null;
+      const getPallet = (code) => state.pallets.find((pallet) => pallet.code === code) || null;
+      const getBoxItemQty = (key) => {
+        const box = getBox(state.activeBox);
+        if (!box || !Array.isArray(box.items)) {
+          return 0;
+        }
+        const existing = box.items.find((entry) => makeKey(entry) === key);
+        return existing ? Number(existing.qty || 0) : 0;
+      };
+
+      const createBox = () => {
+        const code = makeCode();
+        const box = { code, items: [], sealed: false };
+        state.boxes.push(box);
+        return box;
+      };
+
+      const createPallet = () => {
+        const code = makeCode();
+        const pallet = {
+          code,
+          boxes: [],
+          items: [],
+          sealed: false,
+          location: { zone: 'PR', row: '', section: '', tier: '', cell: '' },
+        };
+        state.pallets.push(pallet);
+        return pallet;
+      };
+
+      const attachBoxToPallet = (pallet, box) => {
+        if (!pallet || !box) {
+          return;
+        }
+        if (!(pallet.boxes || []).includes(box.code)) {
+          pallet.boxes = pallet.boxes || [];
+          pallet.boxes.push(box.code);
+        }
+      };
+
+      const hasRemaining = () => {
+        return getRemaining().some((item) => item.remaining > 0);
+      };
+
+      const openNewPallet = () => {
+        const pallet = createPallet();
+        const box = createBox();
+        attachBoxToPallet(pallet, box);
+        state.activePallet = pallet.code;
+        state.activeBox = box.code;
+      };
+
+      const openNewBox = (pallet) => {
+        if (!pallet || pallet.sealed) {
+          return;
+        }
+        const box = createBox();
+        attachBoxToPallet(pallet, box);
+        state.activeBox = box.code;
+      };
+
+      const ensureOpenContainers = () => {
+        let activePallet = getPallet(state.activePallet);
+        if (!activePallet || activePallet.sealed) {
+          activePallet = state.pallets.find((pallet) => !pallet.sealed) || null;
+          if (!activePallet && hasRemaining()) {
+            openNewPallet();
+            return;
+          }
+          if (activePallet) {
+            state.activePallet = activePallet.code;
+          }
+        }
+        let activeBox = getBox(state.activeBox);
+        if (!activeBox || activeBox.sealed) {
+          const pallet = getPallet(state.activePallet);
+          let openBox = null;
+          if (pallet) {
+            openBox = (pallet.boxes || [])
+              .map((code) => getBox(code))
+              .find((box) => box && !box.sealed);
+          }
+          if (!openBox && pallet && hasRemaining()) {
+            openNewBox(pallet);
+            return;
+          }
+          if (openBox) {
+            state.activeBox = openBox.code;
+          }
+        }
+      };
+
+      const getPlacedMap = () => {
+        const map = new Map();
+        state.boxes.forEach((box) => {
+          (box.items || []).forEach((item) => {
+            const key = makeKey(item);
+            const current = map.get(key) || 0;
+            map.set(key, current + Number(item.qty || 0));
+          });
+        });
+        return map;
+      };
+
+      const getRemaining = () => {
+        const placedMap = getPlacedMap();
+        return plannedItems.map((item) => {
+          const key = makeKey(item);
+          const placed = placedMap.get(key) || 0;
+          return {
+            ...item,
+            key,
+            placed,
+            remaining: item.qty - placed,
+          };
+        });
+      };
+
+      const addToBox = (item, qty) => {
+        if (flowLocked) {
+          return false;
+        }
+        const box = getBox(state.activeBox);
+        if (!box || box.sealed) {
+          return false;
+        }
+        if (!Array.isArray(box.items)) {
+          box.items = [];
+        }
+        const existing = (box.items || []).find((entry) => makeKey(entry) === item.key);
+        if (existing) {
+          existing.qty = Number(existing.qty || 0) + qty;
+        } else {
+          box.items.push({
+            sku_code: item.sku_code,
+            sku: item.sku_code,
+            name: item.name,
+            size: item.size,
+            qty,
+          });
+        }
+        markDraftDirty();
+        return true;
+      };
+
+      const setBoxItemQty = (item, qty) => {
+        if (flowLocked) {
+          return false;
+        }
+        const box = getBox(state.activeBox);
+        if (!box || box.sealed) {
+          return false;
+        }
+        if (!Array.isArray(box.items)) {
+          box.items = [];
+        }
+        const existing = (box.items || []).find((entry) => makeKey(entry) === item.key);
+        if (qty <= 0) {
+          if (existing) {
+            box.items = (box.items || []).filter((entry) => makeKey(entry) !== item.key);
+          }
+          return true;
+        }
+        if (existing) {
+          existing.qty = qty;
+        } else {
+          box.items.push({
+            sku_code: item.sku_code,
+            sku: item.sku_code,
+            name: item.name,
+            size: item.size,
+            qty,
+          });
+        }
+        markDraftDirty();
+        return true;
+      };
+
+      const removeFromBox = (key) => {
+        if (flowLocked) {
+          return;
+        }
+        const box = getBox(state.activeBox);
+        if (!box || box.sealed) {
+          return;
+        }
+        const beforeCount = (box.items || []).length;
+        box.items = (box.items || []).filter((item) => makeKey(item) !== key);
+        if ((box.items || []).length !== beforeCount) {
+          markDraftDirty();
+        }
+      };
+
+      const decreaseBoxItemQty = (key, qty) => {
+        if (flowLocked) {
+          return false;
+        }
+        if (!Number.isFinite(qty) || qty <= 0) {
+          return false;
+        }
+        const box = getBox(state.activeBox);
+        if (!box || box.sealed) {
+          return false;
+        }
+        if (!Array.isArray(box.items)) {
+          box.items = [];
+        }
+        const existing = (box.items || []).find((entry) => makeKey(entry) === key);
+        if (!existing) {
+          return false;
+        }
+        const current = Number(existing.qty || 0);
+        const next = current - qty;
+        if (next <= 0) {
+          box.items = (box.items || []).filter((entry) => makeKey(entry) !== key);
+        } else {
+          existing.qty = next;
+        }
+        markDraftDirty();
+        return true;
+      };
+
+      const closeBox = (autoNext = true) => {
+        if (flowLocked) {
+          return;
+        }
+        const box = getBox(state.activeBox);
+        if (!box || box.sealed) {
+          return;
+        }
+        if (!(box.items || []).length) {
+          return;
+        }
+        box.sealed = true;
+        markDraftDirty();
+        if (autoNext && hasRemaining()) {
+          const pallet = getPallet(state.activePallet);
+          openNewBox(pallet);
+        }
+      };
+
+      const closePallet = () => {
+        if (flowLocked) {
+          return;
+        }
+        const pallet = getPallet(state.activePallet);
+        if (!pallet || pallet.sealed) {
+          return;
+        }
+        const currentBox = getBox(state.activeBox);
+        if (currentBox && !currentBox.sealed && (currentBox.items || []).length) {
+          currentBox.sealed = true;
+        }
+        pallet.sealed = true;
+        markDraftDirty();
+        if (hasRemaining()) {
+          openNewPallet();
+        }
+      };
+
+      const cleanupEmpty = () => {
+        const validBoxes = new Set();
+        state.boxes = state.boxes.filter((box) => {
+          const hasItems = (box.items || []).length > 0;
+          if (hasItems || !box.sealed) {
+            validBoxes.add(box.code);
+          }
+          return hasItems || !box.sealed;
+        });
+        state.pallets.forEach((pallet) => {
+          pallet.boxes = (pallet.boxes || []).filter((code) => validBoxes.has(code));
+        });
+        state.pallets = state.pallets.filter((pallet) => {
+          if (!pallet.sealed) {
+            return true;
+          }
+          return (pallet.items || []).length > 0 || (pallet.boxes || []).length > 0;
+        });
+      };
+
+      const updateHidden = () => {
+        cleanupEmpty();
+        if (boxesInput) {
+          boxesInput.value = JSON.stringify(state.boxes);
+        }
+        if (palletsInput) {
+          palletsInput.value = JSON.stringify(state.pallets);
+        }
+      };
+
+      const getCsrfToken = () => {
+        if (!formEl) {
+          return '';
+        }
+        const tokenInput = formEl.querySelector('input[name="csrfmiddlewaretoken"]');
+        return tokenInput ? tokenInput.value : '';
+      };
+
+      const saveDraft = () => {
+        if (!formEl || !boxesInput || !palletsInput || isSubmitting) {
+          return;
+        }
+        updateHidden();
+        const data = new FormData();
+        data.append('flow_action', 'draft');
+        data.append('boxes_json', boxesInput.value || '[]');
+        data.append('pallets_json', palletsInput.value || '[]');
+        data.append('active_box', state.activeBox || '');
+        data.append('active_pallet', state.activePallet || '');
+        const csrfToken = getCsrfToken();
+        const headers = csrfToken ? { 'X-CSRFToken': csrfToken } : {};
+        fetch(window.location.pathname, {
+          method: 'POST',
+          headers,
+          body: data,
+          credentials: 'same-origin',
+        }).catch(() => {});
+      };
+
+      const scheduleDraftSave = () => {
+        if (!draftEnabled || isSubmitting) {
+          return;
+        }
+        if (draftSaveTimer) {
+          clearTimeout(draftSaveTimer);
+        }
+        draftSaveTimer = setTimeout(saveDraft, 400);
+      };
+
+      const markDraftDirty = () => {
+        if (flowLocked) {
+          return;
+        }
+        draftEnabled = true;
+        scheduleDraftSave();
+      };
+
+      const updateSummary = () => {
+        const remaining = getRemaining();
+        const totalPlanned = remaining.reduce((sum, item) => sum + Number(item.qty || 0), 0);
+        const totalPlaced = remaining.reduce((sum, item) => sum + Number(item.placed || 0), 0);
+        const totalBoxes = state.boxes.filter((box) => (box.items || []).length > 0).length;
+        const totalPallets = state.pallets.filter((pallet) => (pallet.boxes || []).length > 0).length;
+        if (summaryLine) {
+          summaryLine.textContent = `Принято ${totalPlaced} из ${totalPlanned}. Коробов: ${totalBoxes}. Палет: ${totalPallets}.`;
+        }
+      };
+
+      const updateButtons = () => {
+        const box = getBox(state.activeBox);
+        const pallet = getPallet(state.activePallet);
+        if (flowLocked) {
+          if (closeBoxBtn) {
+            closeBoxBtn.disabled = true;
+          }
+          if (closePalletBtn) {
+            closePalletBtn.disabled = true;
+          }
+          if (finishBtn) {
+            finishBtn.disabled = true;
+          }
+          return;
+        }
+        const canCloseBox = box && !box.sealed && (box.items || []).length > 0;
+        const canClosePallet = pallet && !pallet.sealed && (pallet.boxes || []).length > 0;
+        if (closeBoxBtn) {
+          closeBoxBtn.disabled = !canCloseBox;
+        }
+        if (closePalletBtn) {
+          closePalletBtn.disabled = !canClosePallet;
+        }
+        const remaining = getRemaining();
+        const allDone = remaining.every((item) => item.remaining <= 0);
+        if (finishBtn) {
+          finishBtn.disabled = !allDone;
+        }
+      };
+
+      const renderRemaining = () => {
+        if (!remainingBody) {
+          return;
+        }
+        pendingFocusEl = null;
+        remainingBody.innerHTML = '';
+        const remaining = getRemaining();
+        if (!remaining.length) {
+          const row = document.createElement('tr');
+          row.innerHTML = '<td colspan="6" class="muted">Нет данных.</td>';
+          remainingBody.appendChild(row);
+          return;
+        }
+        remaining.forEach((item) => {
+          const row = document.createElement('tr');
+          const remainingValue = item.remaining;
+          const factValue = item.placed || 0;
+          row.innerHTML = `
+            <td>${item.sku_code || '-'}</td>
+            <td>${item.name || '-'}</td>
+            <td>${item.size || '-'}</td>
+            <td>${item.qty}</td>
+            <td>${factValue}</td>
+            <td></td>
+          `;
+          row.dataset.key = item.key;
+          if (highlightedKey && item.key === highlightedKey) {
+            row.classList.add('row-scan');
+          }
+          const cell = row.querySelector('td:last-child');
+          const actions = document.createElement('div');
+          actions.className = 'row-actions';
+          const input = document.createElement('input');
+          input.type = 'number';
+          input.min = '0';
+          input.step = '1';
+          input.className = 'qty-input';
+          if (flowLocked) {
+            input.disabled = true;
+          }
+          const manualValue = manualInputByKey.get(item.key) || '';
+          input.value = manualValue;
+          input.addEventListener('input', () => {
+            const raw = String(input.value || '');
+            const cleaned = raw.replace(/[^\d]/g, '');
+            input.value = cleaned;
+            manualInputByKey.set(item.key, cleaned);
+          });
+          const applyInputValue = (keepFocus) => {
+            const storedValue = manualInputByKey.get(item.key);
+            if (storedValue == null || storedValue === '') {
+              return;
+            }
+            const raw = parseInt(storedValue, 10);
+            if (!Number.isFinite(raw) || raw < 0) {
+              return;
+            }
+            addToBox(item, raw);
+            manualInputByKey.set(item.key, '');
+            renderAll();
+            if (keepFocus) {
+              focusRowInput(item.key);
+            }
+          };
+          input.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter') {
+              event.preventDefault();
+              applyInputValue(true);
+            }
+          });
+          input.addEventListener('blur', () => {
+            if (suppressBlurApply) {
+              return;
+            }
+            applyInputValue(false);
+          });
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = 'btn';
+          btn.textContent = 'В короб';
+          btn.disabled = flowLocked || remainingValue <= 0;
+          btn.addEventListener('click', () => {
+            applyInputValue(true);
+          });
+          actions.appendChild(input);
+          actions.appendChild(btn);
+          cell.appendChild(actions);
+          remainingBody.appendChild(row);
+          if (pendingFocusKey && item.key === pendingFocusKey) {
+            pendingFocusEl = input;
+          }
+        });
+      };
+
+      const renderCurrentBox = () => {
+        const box = getBox(state.activeBox);
+        if (currentBoxCode) {
+          currentBoxCode.textContent = box ? box.code : '-';
+        }
+        if (currentBoxStatus) {
+          currentBoxStatus.textContent = box && !box.sealed ? 'Открыт' : 'Закрыт';
+        }
+        if (!currentBoxItems) {
+          return;
+        }
+        currentBoxItems.innerHTML = '';
+        if (!box || !(box.items || []).length) {
+          const empty = document.createElement('div');
+          empty.className = 'muted';
+          empty.textContent = 'Товаров в коробе пока нет.';
+          currentBoxItems.appendChild(empty);
+          return;
+        }
+        (box.items || []).forEach((item) => {
+          const itemKey = makeKey(item);
+          const row = document.createElement('div');
+          row.className = 'box-item';
+          row.innerHTML = `
+            <div>
+              <strong>${item.name || item.sku_code || '-'}</strong>
+              <small>${item.size || '-'} · ${item.qty} шт.</small>
+            </div>
+          `;
+          const actions = document.createElement('div');
+          actions.className = 'row-actions';
+          const input = document.createElement('input');
+          input.type = 'number';
+          input.min = '0';
+          input.step = '1';
+          input.className = 'qty-input';
+          input.dataset.adjustKey = itemKey;
+          if (flowLocked) {
+            input.disabled = true;
+          }
+          const manualValue = boxAdjustByKey.get(itemKey) || '';
+          input.value = manualValue;
+          input.addEventListener('input', () => {
+            const raw = String(input.value || '');
+            const cleaned = raw.replace(/[^\d]/g, '');
+            input.value = cleaned;
+            boxAdjustByKey.set(itemKey, cleaned);
+          });
+          const applyAdjust = () => {
+            const storedValue = boxAdjustByKey.get(itemKey);
+            if (storedValue == null || storedValue === '') {
+              return;
+            }
+            const raw = parseInt(storedValue, 10);
+            if (!Number.isFinite(raw) || raw <= 0) {
+              return;
+            }
+            decreaseBoxItemQty(itemKey, raw);
+            boxAdjustByKey.set(itemKey, '');
+            renderAll();
+          };
+          input.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter') {
+              event.preventDefault();
+              applyAdjust();
+            }
+          });
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = 'btn';
+          btn.textContent = 'Убрать лишнее';
+          if (flowLocked) {
+            btn.disabled = true;
+          }
+          btn.addEventListener('click', () => {
+            applyAdjust();
+          });
+          actions.appendChild(input);
+          actions.appendChild(btn);
+          row.appendChild(actions);
+          currentBoxItems.appendChild(row);
+        });
+      };
+
+      const renderPallets = () => {
+        if (!palletBoard) {
+          return;
+        }
+        palletBoard.innerHTML = '';
+        if (!state.pallets.length) {
+          const empty = document.createElement('div');
+          empty.className = 'muted';
+          empty.textContent = 'Палеты не созданы.';
+          palletBoard.appendChild(empty);
+          return;
+        }
+        state.pallets.forEach((pallet) => {
+          const card = document.createElement('div');
+          card.className = `pallet-card${pallet.sealed ? '' : ' is-open'}`;
+          const header = document.createElement('div');
+          header.className = 'pallet-header';
+          header.innerHTML = `
+            <div class="pallet-code">${pallet.code}</div>
+            <div class="pallet-status">${pallet.sealed ? 'Закрыта' : 'Открыта'}</div>
+          `;
+          card.appendChild(header);
+          const grid = document.createElement('div');
+          grid.className = 'box-grid';
+          (pallet.boxes || []).forEach((code, index) => {
+            const box = getBox(code);
+            const chip = document.createElement('div');
+            const label = index + 1;
+            chip.className = `box-chip ${box && box.sealed ? 'closed' : 'open'}`;
+            chip.textContent = label;
+            grid.appendChild(chip);
+          });
+          card.appendChild(grid);
+          palletBoard.appendChild(card);
+        });
+      };
+
+      const renderClosedBoxes = () => {
+        if (!closedBoxesEl) {
+          return;
+        }
+        closedBoxesEl.innerHTML = '';
+        const closedBoxes = state.boxes.filter((box) => box.sealed);
+        if (!closedBoxes.length) {
+          const empty = document.createElement('div');
+          empty.className = 'muted';
+          empty.textContent = 'Закрытых коробов пока нет.';
+          closedBoxesEl.appendChild(empty);
+          return;
+        }
+        closedBoxes.forEach((box) => {
+          const total = (box.items || []).reduce((sum, item) => sum + Number(item.qty || 0), 0);
+          const row = document.createElement('div');
+          row.className = 'closed-box';
+          row.innerHTML = `<span>${box.code}</span><span>${total} шт.</span>`;
+          closedBoxesEl.appendChild(row);
+        });
+      };
+
+      const renderAll = () => {
+        ensureOpenContainers();
+        renderRemaining();
+        renderCurrentBox();
+        renderPallets();
+        renderClosedBoxes();
+        updateSummary();
+        updateButtons();
+        updateHidden();
+        if (activePalletCode) {
+          activePalletCode.textContent = state.activePallet || '-';
+        }
+        if (activeBoxCode) {
+          activeBoxCode.textContent = state.activeBox || '-';
+        }
+        applyPendingFocus();
+      };
+
+      const flashScan = (key) => {
+        highlightedKey = key || '';
+      };
+
+      const focusRowInput = (key) => {
+        if (!remainingBody || !key) {
+          return false;
+        }
+        const row = remainingBody.querySelector(`tr[data-key="${key}"]`);
+        if (!row) {
+          return false;
+        }
+        const input = row.querySelector('input.qty-input');
+        if (input) {
+          input.focus();
+          input.select();
+          return true;
+        }
+        return false;
+      };
+
+      const applyPendingFocus = () => {
+        if (!pendingFocusKey) {
+          return;
+        }
+        const key = pendingFocusKey;
+        const target = pendingFocusEl;
+        let attempts = 0;
+        const finalize = () => {
+          pendingFocusKey = '';
+          pendingFocusEl = null;
+          setTimeout(() => {
+            suppressBlurApply = false;
+          }, 0);
+        };
+        const focusTarget = () => {
+          if (target && document.body.contains(target)) {
+            target.focus();
+            target.select();
+            return true;
+          }
+          return focusRowInput(key);
+        };
+        const tryFocus = () => {
+          if (focusTarget()) {
+            finalize();
+            return;
+          }
+          attempts += 1;
+          if (attempts < 3) {
+            requestAnimationFrame(tryFocus);
+          } else {
+            finalize();
+          }
+        };
+        requestAnimationFrame(tryFocus);
+      };
+
+      const setScannerStatus = (text, isError) => {
+        if (!scannerStatus) {
+          return;
+        }
+        scannerStatus.textContent = text;
+        scannerStatus.style.color = isError ? 'var(--danger)' : '';
+      };
+
+      const handleBarcode = (rawValue) => {
+        if (flowLocked) {
+          setScannerStatus('Приемка закрыта', true);
+          return;
+        }
+        const value = String(rawValue || '').trim();
+        if (!value) {
+          return;
+        }
+        const mapped = barcodeMap[value];
+        if (!mapped) {
+          setScannerStatus(`ШК ${value} не найден в номенклатуре клиента`, true);
+          return;
+        }
+        let planned = plannedByKey.get(makeKey(mapped));
+        const skuKey = (mapped.sku_code || mapped.sku || '').toLowerCase();
+        if (!planned && skuKey) {
+          planned = plannedBySku.get(skuKey);
+        }
+        const addedFromCatalog = !planned;
+        if (!planned) {
+          planned = ensurePlannedItem(mapped);
+        }
+        if (!planned) {
+          setScannerStatus(`ШК ${value} не найден в номенклатуре клиента`, true);
+          return;
+        }
+        ensureOpenContainers();
+        const plannedKey = makeKey(planned);
+        const added = addToBox({ ...planned, key: plannedKey }, 1);
+        if (!added) {
+          setScannerStatus('Нет открытого короба', true);
+          return;
+        }
+        const title = planned.name || planned.sku_code || mapped.name || mapped.sku_code || value;
+        setScannerStatus(
+          addedFromCatalog ? `Добавлено из номенклатуры: ${title}` : `Добавлено: ${title}`,
+          false
+        );
+        flashScan(plannedKey);
+        manualInputByKey.set(plannedKey, '');
+        suppressBlurApply = true;
+        pendingFocusKey = plannedKey;
+        renderAll();
+      };
+
+      if (barcodeInput) {
+        let barcodeInputTimer = null;
+        let lastHandled = '';
+        const triggerHandle = (value) => {
+          const trimmed = String(value || '').trim();
+          if (!trimmed) {
+            return;
+          }
+          lastHandled = trimmed;
+          handleBarcode(trimmed);
+          barcodeInput.value = '';
+        };
+        barcodeInput.addEventListener('keydown', (event) => {
+          if (event.key === 'Enter') {
+            event.preventDefault();
+            if (barcodeInputTimer) {
+              clearTimeout(barcodeInputTimer);
+              barcodeInputTimer = null;
+            }
+            triggerHandle(barcodeInput.value);
+          }
+        });
+        barcodeInput.addEventListener('input', () => {
+          const value = String(barcodeInput.value || '').trim();
+          if (!value) {
+            return;
+          }
+          if (barcodeInputTimer) {
+            clearTimeout(barcodeInputTimer);
+          }
+          const snapshot = value;
+          barcodeInputTimer = setTimeout(() => {
+            if (String(barcodeInput.value || '').trim() !== snapshot) {
+              return;
+            }
+            if (snapshot === lastHandled) {
+              return;
+            }
+            triggerHandle(snapshot);
+          }, 120);
+        });
+        barcodeInput.addEventListener('blur', () => {
+          setTimeout(() => {
+            const active = document.activeElement;
+            if (!active || active === document.body) {
+              barcodeInput.focus();
+              return;
+            }
+            const tag = (active.tagName || '').toLowerCase();
+            if (active.classList && active.classList.contains('qty-input')) {
+              return;
+            }
+            if (tag === 'input' || tag === 'textarea' || tag === 'select') {
+              return;
+            }
+            barcodeInput.focus();
+          }, 0);
+        });
+        setTimeout(() => barcodeInput.focus(), 0);
+      }
+
+      const scanConfig = {
+        maxGap: 220,
+        idleGap: 120,
+        minLength: 6,
+        maxTotal: 3000,
+        avgMax: 85,
+      };
+      let scanBuffer = '';
+      let scanStart = 0;
+      let scanLast = 0;
+      let scanTimer = null;
+      let scanIdleTimer = null;
+      let scanSourceEl = null;
+      let scanSourceValue = '';
+      let scanSourceKey = '';
+      let scanSourceManualValue = null;
+      let scanSourceAdjustKey = '';
+      let scanSourceAdjustValue = null;
+
+      const resetScanBuffer = () => {
+        scanBuffer = '';
+        scanStart = 0;
+        scanLast = 0;
+        scanSourceEl = null;
+        scanSourceValue = '';
+        scanSourceKey = '';
+        scanSourceManualValue = null;
+        scanSourceAdjustKey = '';
+        scanSourceAdjustValue = null;
+        if (scanTimer) {
+          clearTimeout(scanTimer);
+          scanTimer = null;
+        }
+        if (scanIdleTimer) {
+          clearTimeout(scanIdleTimer);
+          scanIdleTimer = null;
+        }
+      };
+
+      const isQtyInput = (el) => !!(el && el.classList && el.classList.contains('qty-input'));
+      const getRowKeyFromInput = (el) => {
+        if (!isQtyInput(el)) {
+          return '';
+        }
+        const row = el.closest('tr');
+        return row && row.dataset ? row.dataset.key || '' : '';
+      };
+
+      const computeScan = () => {
+        if (!scanBuffer) {
+          return { isScan: false, total: 0, avg: 0 };
+        }
+        const total = scanLast && scanStart ? scanLast - scanStart : 0;
+        const avg = scanBuffer.length ? total / scanBuffer.length : total;
+        let isScan =
+          scanBuffer.length >= scanConfig.minLength &&
+          total <= scanConfig.maxTotal &&
+          avg <= scanConfig.avgMax;
+        if (!isScan && isQtyInput(scanSourceEl)) {
+          isScan = scanBuffer.length >= scanConfig.minLength && total <= scanConfig.maxTotal;
+        }
+        return { isScan, total, avg };
+      };
+
+      const finalizeScan = () => {
+        const result = computeScan();
+        if (result.isScan) {
+          if (scanSourceKey) {
+            if (scanSourceManualValue == null) {
+              manualInputByKey.delete(scanSourceKey);
+            } else {
+              manualInputByKey.set(scanSourceKey, scanSourceManualValue);
+            }
+          }
+          if (scanSourceAdjustKey) {
+            if (scanSourceAdjustValue == null) {
+              boxAdjustByKey.delete(scanSourceAdjustKey);
+            } else {
+              boxAdjustByKey.set(scanSourceAdjustKey, scanSourceAdjustValue);
+            }
+          }
+          if (scanSourceEl && scanSourceEl !== barcodeInput && typeof scanSourceEl.value === 'string') {
+            scanSourceEl.value = scanSourceValue;
+          }
+          handleBarcode(scanBuffer);
+        }
+        resetScanBuffer();
+        return result.isScan;
+      };
+
+      document.addEventListener(
+        'keydown',
+        (event) => {
+          if (event.defaultPrevented) {
+            resetScanBuffer();
+            return;
+          }
+          if (event.ctrlKey || event.altKey || event.metaKey) {
+            resetScanBuffer();
+            return;
+          }
+          const target = event.target;
+          if (barcodeInput && target === barcodeInput) {
+            return;
+          }
+          const key = event.key;
+          const isChar = key.length === 1;
+          const isTerminator = key === 'Enter' || key === 'Tab';
+          if (!isChar && !isTerminator) {
+            if (!scanBuffer) {
+              resetScanBuffer();
+            }
+            return;
+          }
+          const now = Date.now();
+          if (!scanStart || target !== scanSourceEl || now - scanLast > scanConfig.maxGap) {
+            scanBuffer = '';
+            scanStart = now;
+            scanSourceEl = target;
+            scanSourceValue = target && typeof target.value === 'string' ? target.value : '';
+            scanSourceKey = getRowKeyFromInput(target);
+            if (scanSourceKey) {
+              scanSourceManualValue = manualInputByKey.has(scanSourceKey)
+                ? manualInputByKey.get(scanSourceKey)
+                : null;
+            } else {
+              scanSourceManualValue = null;
+            }
+            scanSourceAdjustKey = target && target.dataset ? target.dataset.adjustKey || '' : '';
+            if (scanSourceAdjustKey) {
+              scanSourceAdjustValue = boxAdjustByKey.has(scanSourceAdjustKey)
+                ? boxAdjustByKey.get(scanSourceAdjustKey)
+                : null;
+            } else {
+              scanSourceAdjustValue = null;
+            }
+          }
+          scanLast = now;
+          if (isChar) {
+            scanBuffer += key;
+            if (scanTimer) {
+              clearTimeout(scanTimer);
+            }
+            scanTimer = setTimeout(resetScanBuffer, scanConfig.maxTotal);
+            if (scanIdleTimer) {
+              clearTimeout(scanIdleTimer);
+            }
+            scanIdleTimer = setTimeout(() => {
+              finalizeScan();
+            }, scanConfig.idleGap);
+            return;
+          }
+          if (isTerminator) {
+            const isScan = finalizeScan();
+            if (isScan) {
+              event.preventDefault();
+            }
+          }
+        },
+        true,
+      );
+      if (closeBoxBtn) {
+        closeBoxBtn.addEventListener('click', () => {
+          closeBox(true);
+          renderAll();
+        });
+      }
+      if (closePalletBtn) {
+        closePalletBtn.addEventListener('click', () => {
+          closePallet();
+          renderAll();
+        });
+      }
+
+      if (formEl) {
+        formEl.addEventListener('submit', (event) => {
+          const remaining = getRemaining();
+          const allDone = remaining.every((item) => item.remaining <= 0);
+          if (!allDone) {
+            event.preventDefault();
+            return;
+          }
+          isSubmitting = true;
+          const currentBox = getBox(state.activeBox);
+          if (currentBox && !currentBox.sealed && (currentBox.items || []).length) {
+            currentBox.sealed = true;
+          }
+          const currentPallet = getPallet(state.activePallet);
+          if (currentPallet && !currentPallet.sealed) {
+            currentPallet.sealed = true;
+          }
+          updateHidden();
+        });
+      }
+
+      if (!state.pallets.length && itemsData.length) {
+        openNewPallet();
+      }
+      renderAll();
+    })();
+  </script>
+</body>
+</html>

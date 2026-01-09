@@ -17,6 +17,7 @@
     .tab { padding:10px 14px; border-radius:10px; border:1px solid var(--stroke); background:rgba(15,23,42,0.04); color:var(--text); font-weight:600; }
     .tab:hover { background:rgba(15,23,42,0.1); }
     .tab:focus-visible { outline:2px solid rgba(199,154,32,0.6); outline-offset:2px; }
+    .tab[disabled], .tab.is-disabled { opacity:0.5; cursor:not-allowed; pointer-events:none; }
     .tab.primary { border-color: var(--gold); color:#1f2328; background: linear-gradient(120deg,var(--gold),var(--gold-soft)); box-shadow:0 10px 30px rgba(199,154,32,0.2); }
     .card { background:var(--card); border:1px solid var(--stroke); border-radius:16px; padding:16px; box-shadow:0 20px 40px rgba(15,23,42,0.12); }
     h1 { margin:0 0 6px; letter-spacing:-0.5px; }
@@ -63,6 +64,14 @@
     .status-pill.closed { border-color: rgba(209,67,67,0.3); color:#7f1d1d; background:rgba(209,67,67,0.08); }
     .table-actions { display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end; }
     .table-actions .btn { white-space:nowrap; }
+    .scanner-panel { display:grid; gap:8px; margin:12px 0 4px; padding:12px; border:1px dashed var(--stroke); border-radius:12px; background:var(--card-soft); }
+    .scanner-field { display:grid; gap:6px; }
+    .scanner-label { font-size:12px; text-transform:uppercase; letter-spacing:1px; color:var(--muted); }
+    .scanner-input { width:100%; padding:10px; border-radius:10px; border:1px solid var(--stroke); background:#fff; color:var(--text); font-size:14px; }
+    .scanner-status { font-size:12px; color:var(--muted); }
+    .scanner-status.ok { color:#166534; }
+    .scanner-status.warn { color:#7f1d1d; }
+    .scan-highlight td { background: rgba(242,183,71,0.25); }
     .pallet-details td { background: #fbf6e3; }
     .pallet-details-grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap:12px; }
     .pallet-details-card { background:#fff; border:1px dashed var(--stroke); border-radius:10px; padding:10px; }
@@ -146,6 +155,14 @@
                 {% endif %}
               {% endif %}
             </div>
+          </div>
+
+          <div class="scanner-panel">
+            <div class="scanner-field">
+              <div class="scanner-label">Сканер</div>
+              <input id="scan-input" class="scanner-input" placeholder="Сканируйте штрихкод (Enter в конце)">
+            </div>
+            <div class="scanner-status" id="scan-status">Готов к сканированию. По штрихкоду добавляется 1 шт. в короб.</div>
           </div>
 
           <form method="post" id="placement-form">
@@ -267,6 +284,7 @@
   </div>
 
   {{ remaining_items|json_script:"remaining-data" }}
+  {{ barcode_map|json_script:"barcode-map" }}
   {{ boxes_data|json_script:"boxes-data" }}
   {{ pallets_data|json_script:"pallets-data" }}
   {{ os_config|json_script:"os-config" }}
@@ -283,6 +301,9 @@
       const actState = "{{ act_state|escapejs }}";
       const actClosed = actState === 'closed';
       const orderId = "{{ order_id|escapejs }}";
+      const goodsType = String("{{ goods_type|escapejs }}").trim().toLowerCase();
+      const goodsTypeSuffix = goodsType ? `-${goodsType}` : '';
+      const clientPrefixRaw = String("{{ client_prefix|escapejs }}").trim();
 
       const remainingBody = document.getElementById('remaining-items');
       const boxesBody = document.getElementById('boxes-table');
@@ -302,6 +323,10 @@
       const placedSummaryBody = document.getElementById('placed-summary-body');
       const togglePlacedBtn = document.getElementById('toggle-placed-btn');
       const placedFilterInputs = placedSummary ? placedSummary.querySelectorAll('select[data-filter-col]') : [];
+      const scanInput = document.getElementById('scan-input');
+      const scanStatus = document.getElementById('scan-status');
+      const barcodeMapEl = document.getElementById('barcode-map');
+      const barcodeMap = barcodeMapEl ? JSON.parse(barcodeMapEl.textContent || '{}') : {};
 
       const isEditable = canSubmit && !actClosed;
       if (actStateText) {
@@ -358,6 +383,23 @@
           return 'OS';
         }
         return text.toUpperCase();
+      };
+
+      const normalizePrefix = (value) => {
+        const raw = String(value || '').trim().toUpperCase();
+        const cleaned = raw.replace(/[^\p{L}\p{N}]/gu, '');
+        return cleaned;
+      };
+
+      const buildDatePart = () => {
+        const now = new Date();
+        const day = String(now.getDate()).padStart(2, '0');
+        const month = String(now.getMonth() + 1).padStart(2, '0');
+        return `${day}${month}`;
+      };
+
+      const buildDigitsPart = () => {
+        return String(Math.floor(Math.random() * 1000000)).padStart(6, '0');
       };
 
       const normalizeLocationValue = (pallet) => {
@@ -678,13 +720,27 @@
         activeTargetStatus.classList.add(isOpen ? 'open' : 'closed');
       };
 
-      const makeCode = (prefix, list) => {
-        const rand = Math.random().toString(36).slice(2, 6).toUpperCase();
-        return `${prefix}-${list.length + 1}-${Date.now().toString(36).slice(-4)}${rand}`;
+      const makeCode = () => {
+        const prefix = normalizePrefix(clientPrefixRaw) || 'CL';
+        const type = goodsType || 'na';
+        const datePart = buildDatePart();
+        const existing = new Set([
+          ...state.boxes.map((box) => box.code),
+          ...state.pallets.map((pallet) => pallet.code),
+        ]);
+        for (let attempt = 0; attempt < 1000; attempt += 1) {
+          const digits = buildDigitsPart();
+          const code = `${prefix}-${datePart}-${digits}-${type}`;
+          if (!existing.has(code)) {
+            return code;
+          }
+        }
+        const fallback = `${prefix}-${datePart}-${Date.now() % 1000000}-${type}`;
+        return existing.has(fallback) ? `${fallback}-${state.boxes.length + state.pallets.length}` : fallback;
       };
 
       const addBox = () => {
-        const code = makeCode('BOX', state.boxes);
+        const code = makeCode();
         const box = { code, items: [], sealed: false };
         state.boxes.push(box);
         setActiveContainer(box, 'box');
@@ -692,7 +748,7 @@
       };
 
       const addPallet = () => {
-        const code = makeCode('PALLET', state.pallets);
+        const code = makeCode();
         const pallet = { code, items: [], boxes: [], sealed: false, location: { zone: DEFAULT_LOCATION } };
         state.pallets.push(pallet);
         setActiveContainer(pallet, 'pallet');
@@ -720,6 +776,29 @@
           const allocated = totals[key] || 0;
           return { ...item, key, remaining: Math.max(0, item.qty - allocated) };
         });
+      };
+
+      const updateAddBoxAvailability = (rows) => {
+        if (!addBoxBtn) {
+          return;
+        }
+        const source = Array.isArray(rows) ? rows : getRemainingRows();
+        const hasRemaining = source.some((row) => row.remaining > 0);
+        let visibleRemaining = false;
+        if (remainingBody) {
+          remainingBody.querySelectorAll('tr[data-key]').forEach((row) => {
+            if (row.style.display === 'none') {
+              return;
+            }
+            const cell = row.querySelector('.remaining-cell');
+            if (cell && Number(cell.textContent || 0) > 0) {
+              visibleRemaining = true;
+            }
+          });
+        }
+        const shouldDisable = !isEditable || (!hasRemaining && !visibleRemaining);
+        addBoxBtn.disabled = shouldDisable;
+        addBoxBtn.classList.toggle('is-disabled', shouldDisable);
       };
 
       const updateRemainingDisplay = (activeContainer) => {
@@ -757,6 +836,7 @@
           const row = document.createElement('tr');
           row.innerHTML = '<td colspan="5" class="muted">Нет данных.</td>';
           remainingBody.appendChild(row);
+          updateAddBoxAvailability(rows);
           return;
         }
         rows.forEach((item) => {
@@ -816,18 +896,20 @@
                 qty: nextValue,
               });
             }
-            updateRemainingDisplay(activeContainer);
-            renderBoxesTable();
-            renderPalletsTable();
-            renderOpenContainers();
-            updateHidden();
+              updateRemainingDisplay(activeContainer);
+              renderBoxesTable();
+              renderPalletsTable();
+              renderOpenContainers();
+              updateHidden();
+              updateAddBoxAvailability();
+            });
+            inputCell.appendChild(input);
+            row.appendChild(inputCell);
+            remainingBody.appendChild(row);
           });
-          inputCell.appendChild(input);
-          row.appendChild(inputCell);
-          remainingBody.appendChild(row);
-        });
-        updateRemainingDisplay(activeContainer);
-      };
+          updateRemainingDisplay(activeContainer);
+          updateAddBoxAvailability(rows);
+        };
 
       const openContainer = (container) => {
         if (!container) {
@@ -1508,6 +1590,170 @@
         }
       };
 
+      const normalizeBarcode = (value) => (value || '').toString().trim();
+
+      const setScanStatus = (message, tone) => {
+        if (!scanStatus) {
+          return;
+        }
+        scanStatus.textContent = message;
+        scanStatus.classList.remove('ok', 'warn');
+        if (tone) {
+          scanStatus.classList.add(tone);
+        }
+      };
+
+      const highlightRemainingRow = (key) => {
+        if (!remainingBody || !key) {
+          return;
+        }
+        const rows = remainingBody.querySelectorAll('tr[data-key]');
+        for (const row of rows) {
+          if (row.dataset.key !== key) {
+            continue;
+          }
+          row.classList.add('scan-highlight');
+          setTimeout(() => row.classList.remove('scan-highlight'), 900);
+          break;
+        }
+      };
+
+      const findItemKeyByValue = (skuValue, nameValue, sizeValue) => {
+        const sku = (skuValue || '').trim().toLowerCase();
+        const name = (nameValue || '').trim().toLowerCase();
+        const size = (sizeValue || '').trim().toLowerCase();
+        const directKey = makeKey(sku, name, size);
+        if (directKey && baseByKey[directKey]) {
+          return directKey;
+        }
+        const entries = Object.entries(baseByKey);
+        const skuMatches = sku ? entries.filter(([, item]) => (item.sku || '').trim().toLowerCase() === sku) : [];
+        const sizedSkuMatches = size
+          ? skuMatches.filter(([, item]) => (item.size || '').trim().toLowerCase() === size)
+          : skuMatches;
+        if (sizedSkuMatches.length === 1) {
+          return sizedSkuMatches[0][0];
+        }
+        if (skuMatches.length === 1) {
+          return skuMatches[0][0];
+        }
+        const nameMatches = name ? entries.filter(([, item]) => (item.name || '').trim().toLowerCase() === name) : [];
+        if (nameMatches.length === 1) {
+          return nameMatches[0][0];
+        }
+        return '';
+      };
+
+      const resolveScanItem = (barcode) => {
+        const normalized = normalizeBarcode(barcode);
+        if (!normalized) {
+          return null;
+        }
+        const data = barcodeMap[normalized];
+        if (data) {
+          const key = findItemKeyByValue(data.sku, data.name, data.size);
+          if (key && baseByKey[key]) {
+            return {
+              key,
+              item: baseByKey[key],
+              label: data.name || data.sku || normalized,
+            };
+          }
+        }
+        const directKey = findItemKeyByValue(normalized, '', '');
+        if (directKey && baseByKey[directKey]) {
+          return {
+            key: directKey,
+            item: baseByKey[directKey],
+            label: baseByKey[directKey].name || baseByKey[directKey].sku || normalized,
+          };
+        }
+        return null;
+      };
+
+      const ensureActiveBoxForScan = () => {
+        if (!isEditable) {
+          return null;
+        }
+        const active = getActiveContainer();
+        if (active && state.active.type === 'box' && !active.sealed) {
+          return active;
+        }
+        const openBox = state.boxes.find((box) => !box.sealed);
+        if (openBox) {
+          state.active = { type: 'box', code: openBox.code || '' };
+          return openBox;
+        }
+        const remaining = getRemainingRows();
+        if (!remaining.some((row) => row.remaining > 0)) {
+          return null;
+        }
+        const code = makeCode();
+        const box = { code, items: [], sealed: false };
+        state.boxes.push(box);
+        state.active = { type: 'box', code };
+        return box;
+      };
+
+      const incrementBoxItem = (box, itemKey, item) => {
+        if (!box || !itemKey || !item) {
+          return { added: false, reason: 'invalid' };
+        }
+        const totals = allocationTotals();
+        const currentEntry = (box.items || []).find((entry) => makeKey(entry.sku, entry.name, entry.size) === itemKey);
+        const currentQty = currentEntry ? Number(currentEntry.qty || 0) : 0;
+        const usedElsewhere = Math.max(0, (totals[itemKey] || 0) - currentQty);
+        const baseQty = Number(item.qty || 0);
+        const maxQty = Math.max(0, baseQty - usedElsewhere);
+        if (maxQty <= currentQty) {
+          return { added: false, reason: 'limit' };
+        }
+        const nextQty = Math.min(currentQty + 1, maxQty);
+        box.items = Array.isArray(box.items) ? box.items : [];
+        if (currentEntry) {
+          currentEntry.qty = nextQty;
+        } else {
+          box.items.push({
+            sku: item.sku || '',
+            name: item.name || '',
+            size: item.size || '',
+            qty: nextQty,
+          });
+        }
+        return { added: true, qty: nextQty, max: maxQty };
+      };
+
+      const handleScan = (raw) => {
+        const barcode = normalizeBarcode(raw);
+        if (!barcode) {
+          return;
+        }
+        if (!isEditable) {
+          setScanStatus('Акт закрыт. Сканирование недоступно.', 'warn');
+          return;
+        }
+        const match = resolveScanItem(barcode);
+        if (!match) {
+          setScanStatus(`ШК ${barcode} не найден в заявке.`, 'warn');
+          return;
+        }
+        const targetBox = ensureActiveBoxForScan();
+        if (!targetBox) {
+          setScanStatus('Откройте короб или создайте новый для сканирования.', 'warn');
+          return;
+        }
+        const result = incrementBoxItem(targetBox, match.key, match.item);
+        if (!result.added) {
+          setScanStatus(`По позиции ${match.label} остаток исчерпан.`, 'warn');
+          return;
+        }
+        state.active = { type: 'box', code: targetBox.code || '' };
+        renderAll();
+        highlightRemainingRow(match.key);
+        focusRemainingItem(match.key);
+        setScanStatus(`Добавлено: ${match.label} (+1) в короб ${targetBox.code}.`, 'ok');
+      };
+
 
       const cleanupEmptyContainers = () => {
         const removedBoxes = new Set();
@@ -1636,15 +1882,17 @@
         renderOpenContainers();
         updateInfoTotals();
         updateHidden();
+        updateAddBoxAvailability();
       };
 
       const printQr = (code) => {
         if (!code) {
           return;
         }
+        const qrCode = goodsTypeSuffix && !code.endsWith(goodsTypeSuffix) ? `${code}${goodsTypeSuffix}` : code;
         const widthMm = 58 * 0.95;
         const heightMm = 60 * 0.95;
-        const url = `https://api.qrserver.com/v1/create-qr-code/?size=360x360&data=${encodeURIComponent(code)}`;
+        const url = `https://api.qrserver.com/v1/create-qr-code/?size=360x360&data=${encodeURIComponent(qrCode)}`;
         const win = window.open('', '_blank', 'width=520,height=640');
         if (!win) {
           return;
@@ -1652,7 +1900,7 @@
         win.document.write(`
           <html>
             <head>
-              <title>QR ${code}</title>
+              <title>QR ${qrCode}</title>
               <style>
                 body { margin:0; display:flex; align-items:center; justify-content:center; height:100vh; }
                 img { width:${widthMm}mm; height:${heightMm}mm; }
@@ -1717,9 +1965,9 @@
       }
 
       if (addBoxBtn) {
-        addBoxBtn.disabled = !isEditable;
+        updateAddBoxAvailability();
         addBoxBtn.addEventListener('click', () => {
-          if (!isEditable) {
+          if (!isEditable || addBoxBtn.disabled) {
             return;
           }
           addBox();
@@ -1757,6 +2005,111 @@
 
       loadDraft();
       renderAll();
+
+      const scanConfig = {
+        maxGap: 250,
+        minLength: 6,
+        maxTotal: 3500,
+        avgMax: 90,
+      };
+      let scanBuffer = '';
+      let scanStart = 0;
+      let scanLast = 0;
+      let scanSourceEl = null;
+      let scanSourceValue = '';
+
+      const resetScanBuffer = () => {
+        scanBuffer = '';
+        scanStart = 0;
+        scanLast = 0;
+        scanSourceEl = null;
+        scanSourceValue = '';
+      };
+
+      const handleManualScanInput = () => {
+        if (!scanInput) {
+          return;
+        }
+        const value = scanInput.value;
+        if (!value) {
+          return;
+        }
+        handleScan(value);
+        scanInput.value = '';
+        scanInput.focus();
+      };
+
+      document.addEventListener(
+        'keydown',
+        (event) => {
+          if (!scanInput) {
+            return;
+          }
+          if (event.ctrlKey || event.altKey || event.metaKey) {
+            resetScanBuffer();
+            return;
+          }
+          const key = event.key;
+          const target = event.target;
+          if (target === scanInput) {
+            return;
+          }
+          const isScanInput = target === scanInput;
+          const isChar = key.length === 1;
+          const isTerminator = key === 'Enter' || key === 'Tab';
+          if (isScanInput && key === 'Enter') {
+            event.preventDefault();
+            handleManualScanInput();
+            resetScanBuffer();
+            return;
+          }
+          if (!isChar && !isTerminator) {
+            if (!scanBuffer) {
+              resetScanBuffer();
+            }
+            return;
+          }
+          const now = Date.now();
+          if (!scanStart || target !== scanSourceEl || now - scanLast > scanConfig.maxGap) {
+            scanBuffer = '';
+            scanStart = now;
+            scanSourceEl = target;
+            scanSourceValue = target && typeof target.value === 'string' ? target.value : '';
+          }
+          scanLast = now;
+
+          if (isChar) {
+            scanBuffer += key;
+            return;
+          }
+
+          if (isTerminator) {
+            const total = now - scanStart;
+            const avg = scanBuffer.length ? total / scanBuffer.length : total;
+            const isScan = scanBuffer.length >= scanConfig.minLength && total <= scanConfig.maxTotal && avg <= scanConfig.avgMax;
+            if (isScan) {
+              event.preventDefault();
+              if (scanSourceEl && scanSourceEl !== scanInput && typeof scanSourceEl.value === 'string') {
+                scanSourceEl.value = scanSourceValue;
+              }
+              scanInput.value = scanBuffer;
+              handleManualScanInput();
+            }
+            resetScanBuffer();
+          }
+        },
+        true,
+      );
+
+      if (scanInput) {
+        scanInput.addEventListener('keydown', (event) => {
+          if (event.key !== 'Enter') {
+            return;
+          }
+          event.preventDefault();
+          handleManualScanInput();
+        });
+      }
 
       if (togglePlacedBtn && placedSummary) {
         togglePlacedBtn.addEventListener('click', () => {

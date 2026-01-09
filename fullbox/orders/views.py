@@ -6,7 +6,7 @@ from urllib.parse import urlencode
 
 from django.conf import settings
 from django.db import transaction
-from django.http import FileResponse, Http404, HttpResponseForbidden
+from django.http import FileResponse, Http404, HttpResponseForbidden, JsonResponse
 from django.shortcuts import redirect, render
 from django.utils import timezone
 from django.utils.http import url_has_allowed_host_and_scheme
@@ -195,6 +195,15 @@ def _storekeeper_label() -> str:
     return _short_name(storekeeper.full_name) if storekeeper else "-"
 
 
+def _storekeeper_full_name() -> str:
+    storekeeper = (
+        Employee.objects.filter(role="storekeeper", is_active=True)
+        .order_by("full_name")
+        .first()
+    )
+    return storekeeper.full_name.strip() if storekeeper and storekeeper.full_name else ""
+
+
 def _manager_full_name() -> str:
     manager = (
         Employee.objects.filter(role="manager", is_active=True)
@@ -235,6 +244,8 @@ def _status_label_from_entry(entry):
         return "Размещение на складе" if state == "open" else "Товар принят и размещен на складе"
     status_value = (payload.get("status") or payload.get("submit_action") or "").lower()
     status_label = (payload.get("status_label") or "").lower()
+    if "взята в работу" in status_label:
+        return "Взята в работу"
     if status_value in {"sent_unconfirmed", "send", "submitted"} or "подтверждени" in status_label:
         return "Ждет подтверждения"
     if status_value in {"warehouse", "on_warehouse"} or "ожидании поставки" in status_label or "на складе" in status_label:
@@ -263,7 +274,17 @@ def _current_responsible_label(entry):
     if status_value in {"done", "completed", "closed", "finished"} or "выполн" in status_label:
         return "Выполнено"
     if status_value in {"warehouse", "on_warehouse"} or any(token in status_label for token in ("склад", "прием", "приём", "ожидании поставки")):
-        return "Склад"
+        stored_name = (payload.get("storekeeper_name") or "").strip()
+        storekeeper = (
+            _signed_employee_from_payload(payload, "storekeeper_employee_id")
+            or _signed_employee_from_payload(payload, "act_storekeeper_employee_id")
+        )
+        if storekeeper and storekeeper.full_name:
+            return f"Кладовщик {storekeeper.full_name.strip()}"
+        if stored_name:
+            return f"Кладовщик {stored_name}"
+        storekeeper_full = _storekeeper_full_name()
+        return f"Кладовщик {storekeeper_full}" if storekeeper_full else "Кладовщик"
     manager = _manager_full_name()
     return f"Менеджер {manager}" if manager else "Менеджер"
 
@@ -647,23 +668,99 @@ def _create_manager_sign_task(order_id, agency, request, observer=None):
         status="in_progress",
     )
 
+
+def _create_manager_client_response_task(order_id, agency, request, response: str):
+    manager = _first_active_employee_by_roles("manager", "head_manager")
+    if not manager:
+        return
+    response_label = "подтвердил акт приемки" if response == "confirmed" else "заявил разногласия по акту приемки"
+    title = f"Клиент {response_label} по заявке №{order_id}"
+    route = f"/orders/receiving/{order_id}/act/print/"
+    description = f"Клиент: {agency.agn_name or agency.inn or agency.id}" if agency else "Клиент: -"
+    existing = (
+        Task.objects.filter(route=route, assigned_to=manager, title=title)
+        .exclude(status="done")
+        .first()
+    )
+    if existing:
+        existing.description = description
+        existing.due_date = timezone.localtime()
+        if existing.status == "done":
+            existing.status = "in_progress"
+        existing.save()
+        return
+    Task.objects.create(
+        title=title,
+        description=description,
+        route=route,
+        assigned_to=manager,
+        created_by=request.user if request.user.is_authenticated else None,
+        due_date=timezone.localtime(),
+        status="in_progress",
+    )
 def _latest_payload_from_entries(entries):
+    fallback_payload = {}
+    ignored_keys = {
+        "comment",
+        "message",
+        "status",
+        "status_label",
+        "submit_action",
+        "flow_state",
+        "flow_boxes",
+        "flow_pallets",
+        "flow_active_box",
+        "flow_active_pallet",
+    }
+    fallback_ignored = {
+        "comment",
+        "message",
+        "flow_state",
+        "flow_boxes",
+        "flow_pallets",
+        "flow_active_box",
+        "flow_active_pallet",
+    }
     for entry in reversed(entries):
         payload = entry.payload or {}
         if not payload:
             continue
-        significant_keys = set(payload.keys()) - {
-            "comment",
-            "message",
-            "status",
-            "status_label",
-            "submit_action",
-        }
+        if not fallback_payload:
+            fallback_keys = set(payload.keys()) - fallback_ignored
+            if fallback_keys:
+                fallback_payload = payload
+        significant_keys = set(payload.keys()) - ignored_keys
         if significant_keys:
             return payload
-    return entries[-1].payload or {} if entries else {}
+    return fallback_payload or (entries[-1].payload or {} if entries else {})
 
 
+
+
+def _flow_state_from_entries(entries):
+    for entry in reversed(entries or []):
+        payload = entry.payload or {}
+        flow_state = payload.get("flow_state")
+        if isinstance(flow_state, dict):
+            return flow_state
+        boxes = payload.get("flow_boxes")
+        pallets = payload.get("flow_pallets")
+        if boxes or pallets:
+            return {
+                "boxes": boxes or [],
+                "pallets": pallets or [],
+                "activeBox": payload.get("flow_active_box") or "",
+                "activePallet": payload.get("flow_active_pallet") or "",
+            }
+    return {}
+
+
+def _flow_closed_from_entries(entries):
+    for entry in reversed(entries or []):
+        payload = entry.payload or {}
+        if payload.get("flow_closed"):
+            return True
+    return False
 def _client_agency_from_request(request):
     if not request.user.is_authenticated:
         return None
@@ -1595,6 +1692,24 @@ def print_receiving_act(request, order_id: str):
         or request.GET.get("response")
         or ""
     ).lower()
+    if (
+        not client_view
+        and role in {"manager", "head_manager", "director", "admin"}
+        and client_response == "confirmed"
+    ):
+        Task.objects.filter(
+            route=f"/orders/receiving/{order_id}/act/print/",
+            assigned_to__role__in=["manager", "head_manager"],
+            title__startswith="Клиент ",
+        ).delete()
+        Task.objects.filter(
+            route=f"/orders/receiving/{order_id}/",
+            assigned_to__role__in=["manager", "head_manager"],
+        ).exclude(status="done").update(
+            status="done",
+            updated_at=timezone.localtime(),
+        )
+    client_response_at = _format_datetime_value(status_payload.get("act_client_response_at"))
     sent_at_raw = status_payload.get("act_sent_at") or act_entry.created_at.isoformat()
     client_deadline = ""
     try:
@@ -1638,6 +1753,7 @@ def print_receiving_act(request, order_id: str):
         "client_view": client_view,
         "client_param": client_agency.id if client_agency else "",
         "client_response": client_response,
+        "client_response_at": client_response_at,
         "client_deadline": client_deadline,
     }
     return render(request, "orders/receiving_act_print.html", ctx)
@@ -1814,6 +1930,12 @@ def confirm_receiving_act_client(request, order_id: str):
         description="Акт приемки подтвержден клиентом",
         payload=payload,
     )
+    _create_manager_client_response_task(
+        order_id,
+        entries[-1].agency if entries else None,
+        request,
+        "confirmed",
+    )
     return redirect(_client_print_url(order_id, client_agency, "confirmed", return_url))
 
 
@@ -1843,6 +1965,12 @@ def dispute_receiving_act_client(request, order_id: str):
         agency=entries[-1].agency if entries else None,
         description="Клиент заявил разногласия по акту приемки",
         payload=payload,
+    )
+    _create_manager_client_response_task(
+        order_id,
+        entries[-1].agency if entries else None,
+        request,
+        "dispute",
     )
     return redirect(_client_print_url(order_id, client_agency, "dispute", return_url))
 
@@ -1960,18 +2088,28 @@ class OrdersHomeView(RoleRequiredMixin, TemplateView):
 
     @staticmethod
     def _next_order_number(order_type: str = "receiving") -> str:
-        last = (
+        order_ids = (
             OrderAuditEntry.objects.filter(order_type=order_type)
-            .order_by("-created_at")
-            .first()
+            .values_list("order_id", flat=True)
+            .distinct()
         )
-        if not last or not last.order_id:
-            return "1"
-        match = re.search(r"(\d+)$", last.order_id)
-        if not match:
-            count = OrderAuditEntry.objects.filter(order_type=order_type).count()
-            return str(count + 1)
-        return str(int(match.group(1)) + 1)
+        max_number = 0
+        for order_id in order_ids:
+            if not order_id:
+                continue
+            candidate = str(order_id).strip()
+            if not re.fullmatch(r"\d+", candidate):
+                continue
+            try:
+                number = int(candidate)
+            except (TypeError, ValueError):
+                continue
+            if number > max_number:
+                max_number = number
+        next_number = max_number + 1
+        while OrderAuditEntry.objects.filter(order_type=order_type, order_id=str(next_number)).exists():
+            next_number += 1
+        return str(next_number)
 
     def get(self, request, *args, **kwargs):
         status = (request.GET.get("status") or "").lower()
@@ -2147,6 +2285,7 @@ class OrdersHomeView(RoleRequiredMixin, TemplateView):
             )
             if submit_action == "send" and self.request.GET.get("client"):
                 _create_manager_task(edit_order_id, agency, request, timezone.localtime())
+                return redirect(f"/client/dashboard/?client={agency.id}")
             return redirect(f"/orders/receiving/{edit_order_id}/")
 
         action_label = "черновик" if submit_action == "draft" else "заявка"
@@ -2162,6 +2301,7 @@ class OrdersHomeView(RoleRequiredMixin, TemplateView):
         )
         if submit_action != "draft" and self.request.GET.get("client"):
             _create_manager_task(order_id, agency, request, timezone.localtime())
+            return redirect(f"/client/dashboard/?client={agency.id}")
         return redirect(
             f"/orders/receiving/?client={agency.id}&ok=1&status={status_value}&order={order_id}"
         )
@@ -2494,7 +2634,38 @@ class OrdersDetailView(RoleRequiredMixin, TemplateView):
             suffix = f"?client={client_param}" if client_param else ""
             return redirect(f"/orders/{self.order_type}/{order_id}/{suffix}")
         if action == "create_receiving_act":
-            return redirect(f"/orders/{self.order_type}/{order_id}/act/")
+            goods_type = (request.POST.get("goods_type") or "").strip().lower()
+            allowed_types = {
+                "op": "Оптовый",
+                "gv": "Готовый",
+                "br": "Брак",
+                "vz": "Возврат",
+                "rh": "Расходный",
+            }
+            role = get_request_role(request)
+            if goods_type and goods_type in allowed_types and role == "storekeeper":
+                entries = list(
+                    OrderAuditEntry.objects.filter(order_id=order_id, order_type=self.order_type)
+                    .select_related("agency")
+                    .order_by("created_at")
+                )
+                status_entry = _current_status_entry(entries)
+                payload = dict(status_entry.payload or {}) if status_entry else {}
+                existing_type = (payload.get("goods_type") or "").strip().lower()
+                if not existing_type:
+                    payload["goods_type"] = goods_type
+                    payload["goods_type_label"] = allowed_types[goods_type]
+                    latest = entries[-1] if entries else None
+                    log_order_action(
+                        "status",
+                        order_id=order_id,
+                        order_type=self.order_type,
+                        user=request.user if request.user.is_authenticated else None,
+                        agency=latest.agency if latest else None,
+                        description=f"Тип товара: {allowed_types[goods_type]}",
+                        payload=payload,
+                    )
+            return redirect(f"/orders/{self.order_type}/{order_id}/flow/")
         comment = (request.POST.get("comment") or "").strip()
         if comment:
             latest = (
@@ -2539,6 +2710,17 @@ class OrdersDetailView(RoleRequiredMixin, TemplateView):
         ctx["status_label"] = status_text
         ctx["responsible"] = _current_responsible_label(status_entry)
         ctx["cabinet_url"] = resolve_cabinet_url(get_request_role(self.request))
+        status_payload = status_entry.payload or {} if status_entry else {}
+        goods_type = (status_payload.get("goods_type") or "").strip().lower()
+        goods_type_labels = {
+            "op": "Оптовый",
+            "gv": "Готовый",
+            "br": "Брак",
+            "vz": "Возврат",
+            "rh": "Расходный",
+        }
+        ctx["goods_type"] = goods_type
+        ctx["goods_type_label"] = goods_type_labels.get(goods_type, "")
         can_send_to_warehouse = False
         role = get_request_role(self.request)
         signed_by_storekeeper = _act_storekeeper_signed(entries_list)
@@ -2574,10 +2756,19 @@ class OrdersDetailView(RoleRequiredMixin, TemplateView):
                 can_create_receiving_act = True
         ctx["can_send_to_warehouse"] = can_send_to_warehouse
         ctx["can_create_receiving_act"] = can_create_receiving_act
+        flow_state = _flow_state_from_entries(entries_list)
+        flow_closed = _flow_closed_from_entries(entries_list)
+        flow_has_data = bool(flow_state and (flow_state.get("boxes") or flow_state.get("pallets")))
+        ctx["can_continue_flow"] = bool(role == "storekeeper" and flow_has_data and not flow_closed)
+        ctx["can_open_flow"] = bool(role == "storekeeper" and not client_view)
+        ctx["flow_closed"] = flow_closed
         client_label = "-"
         if latest and latest.agency:
             name = latest.agency.agn_name or latest.agency.fio_agn or str(latest.agency)
             client_label = _shorten_ip_name(name)
+        client_prefix = ""
+        if latest and latest.agency:
+            client_prefix = (latest.agency.pref or "").strip()
         ctx["client_label"] = client_label
         ctx["meta"] = {
             "eta_at": _format_datetime_value(payload.get("eta_at")),
@@ -2695,6 +2886,7 @@ class OrdersDetailView(RoleRequiredMixin, TemplateView):
         ctx["placement_act_entry"] = placement_entry
         ctx["has_receiving_act"] = bool(act_entry)
         ctx["has_placement_act"] = bool(placement_entry)
+        ctx["can_print_receiving_act"] = bool(act_entry)
         if act_entry:
             ctx["act_label"] = (act_entry.payload or {}).get("act_label") or "Акт приемки"
         else:
@@ -2842,9 +3034,45 @@ class ReceivingActView(RoleRequiredMixin, TemplateView):
         if self._act_entry(entries):
             return False
         status_entry = _current_status_entry(entries)
+        status_payload = status_entry.payload or {} if status_entry else {}
         return _warehouse_status_from_entry(status_entry)
 
+    def _mark_in_progress(self, request, order_id: str | None):
+        if not order_id:
+            return
+        entries = self._load_entries(order_id)
+        if not entries or self._act_entry(entries):
+            return
+        status_entry = _current_status_entry(entries)
+        if not _warehouse_status_from_entry(status_entry):
+            return
+        payload = dict(status_entry.payload or {}) if status_entry else {}
+        if "взята в работу" in (payload.get("status_label") or "").lower():
+            return
+        payload["status"] = payload.get("status") or "warehouse"
+        payload["status_label"] = "Взята в работу"
+        employee = Employee.objects.filter(
+            user=request.user, role="storekeeper", is_active=True
+        ).first()
+        if not employee:
+            employee = _first_active_employee_by_roles("storekeeper")
+        if employee:
+            payload["storekeeper_employee_id"] = employee.id
+            payload["storekeeper_name"] = employee.full_name or ""
+        latest = entries[-1]
+        log_order_action(
+            "status",
+            order_id=order_id,
+            order_type=self.order_type,
+            user=request.user if request.user.is_authenticated else None,
+            agency=latest.agency,
+            description="Заявка взята в работу кладовщиком",
+            payload=payload,
+        )
+
     def get(self, request, *args, **kwargs):
+        if get_request_role(request) == "storekeeper":
+            self._mark_in_progress(request, kwargs.get("order_id"))
         ok = request.GET.get("ok") == "1"
         error = request.GET.get("error")
         ctx = self.get_context_data(ok=ok, error=error, **kwargs)
@@ -2960,6 +3188,8 @@ class ReceivingActView(RoleRequiredMixin, TemplateView):
         )
         act_payload["act_mismatch"] = has_mismatch
         act_payload["act_items"] = act_items
+        act_payload["flow_closed"] = True
+        act_payload["flow_closed_at"] = timezone.localtime().isoformat()
         log_order_action(
             "status",
             order_id=order_id,
@@ -2992,7 +3222,8 @@ class ReceivingActView(RoleRequiredMixin, TemplateView):
         else:
             act_label = "Акт приемки"
         act_documents = []
-        if act_entry and placement_entry and placement_closed:
+        flow_closed = _flow_closed_from_entries(entries)
+        if act_entry and flow_closed:
             act_documents = [
                 {
                     "label": "Акт приемки печатная форма",
@@ -3065,6 +3296,9 @@ class ReceivingActView(RoleRequiredMixin, TemplateView):
         if latest and latest.agency:
             name = latest.agency.agn_name or latest.agency.fio_agn or str(latest.agency)
             client_label = _shorten_ip_name(name)
+        client_prefix = ""
+        if latest and latest.agency:
+            client_prefix = (latest.agency.pref or "").strip()
         sku_options = []
         sku_name_options = []
         barcode_options = []
@@ -3146,6 +3380,7 @@ class ReceivingActView(RoleRequiredMixin, TemplateView):
                 "order_id": order_id,
                 "order_title": order_title,
                 "client_label": client_label,
+                "client_prefix": client_prefix,
                 "status_label": _status_label_from_entry(status_entry) if status_entry else "-",
                 "cabinet_url": cabinet_url,
                 "client_view": client_view,
@@ -3167,6 +3402,626 @@ class ReceivingActView(RoleRequiredMixin, TemplateView):
                 "barcode_options": barcode_options,
                 "barcode_map": barcode_map,
                 "agency_id": latest.agency_id if latest else "",
+                "ok": kwargs.get("ok", False),
+                "error": kwargs.get("error"),
+            }
+        )
+        return ctx
+
+
+class ReceivingFlowView(RoleRequiredMixin, TemplateView):
+    template_name = "orders/receiving_flow.html"
+    order_type = "receiving"
+    allowed_roles = ("storekeeper", "manager", "head_manager", "director", "admin")
+
+    def _load_entries(self, order_id):
+        return list(
+            OrderAuditEntry.objects.filter(order_id=order_id, order_type=self.order_type)
+            .select_related("user", "agency")
+            .order_by("created_at")
+        )
+
+    def _receiving_act_entry(self, entries):
+        return _act_entry_from_entries(entries, "receiving")
+
+    def _placement_act_entry(self, entries):
+        return _act_entry_from_entries(entries, "placement")
+
+    def _can_start(self, entries):
+        if not entries:
+            return False
+        if _flow_closed_from_entries(entries):
+            return False
+        status_entry = _current_status_entry(entries)
+        return _warehouse_status_from_entry(status_entry)
+
+    def _mark_in_progress(self, request, order_id: str | None):
+        if not order_id:
+            return
+        entries = self._load_entries(order_id)
+        if not entries or _flow_closed_from_entries(entries):
+            return
+        status_entry = _current_status_entry(entries)
+        if not _warehouse_status_from_entry(status_entry):
+            return
+        payload = dict(status_entry.payload or {}) if status_entry else {}
+        if "взята в работу" in (payload.get("status_label") or "").lower():
+            return
+        payload["status"] = payload.get("status") or "warehouse"
+        payload["status_label"] = "Взята в работу"
+        employee = Employee.objects.filter(
+            user=request.user, role="storekeeper", is_active=True
+        ).first()
+        if not employee:
+            employee = _first_active_employee_by_roles("storekeeper")
+        if employee:
+            payload["storekeeper_employee_id"] = employee.id
+            payload["storekeeper_name"] = employee.full_name or ""
+        latest = entries[-1]
+        log_order_action(
+            "status",
+            order_id=order_id,
+            order_type=self.order_type,
+            user=request.user if request.user.is_authenticated else None,
+            agency=latest.agency,
+            description="Заявка взята в работу кладовщиком",
+            payload=payload,
+        )
+
+
+    def _find_flow_state(self, entries):
+        for entry in reversed(entries):
+            payload = entry.payload or {}
+            flow_state = payload.get("flow_state")
+            if isinstance(flow_state, dict):
+                return flow_state
+            boxes = payload.get("flow_boxes")
+            pallets = payload.get("flow_pallets")
+            if boxes or pallets:
+                return {
+                    "boxes": boxes or [],
+                    "pallets": pallets or [],
+                    "activeBox": payload.get("flow_active_box") or "",
+                    "activePallet": payload.get("flow_active_pallet") or "",
+                }
+        return {}
+
+    def _normalize_flow_state(self, boxes_data, pallets_data, active_box, active_pallet):
+        def normalize_items(raw_items):
+            items = []
+            for raw in raw_items or []:
+                if not isinstance(raw, dict):
+                    continue
+                qty = _parse_qty_value(raw.get("qty")) or 0
+                if qty <= 0:
+                    continue
+                sku_code = (raw.get("sku_code") or raw.get("sku") or "").strip()
+                name = (raw.get("name") or "").strip()
+                size = (raw.get("size") or "").strip()
+                if not (sku_code or name or size):
+                    continue
+                items.append(
+                    {
+                        "sku_code": sku_code,
+                        "sku": sku_code,
+                        "name": name,
+                        "size": size,
+                        "qty": qty,
+                    }
+                )
+            return items
+
+        cleaned_boxes = []
+        seen_box_codes = set()
+        for idx, box in enumerate(boxes_data or []):
+            if not isinstance(box, dict):
+                continue
+            items = normalize_items(box.get("items") or [])
+            sealed = bool(box.get("sealed"))
+            if not items and sealed:
+                continue
+            code = str(box.get("code") or "").strip() or f"BOX-{idx + 1}"
+            if code in seen_box_codes:
+                code = f"{code}-{idx + 1}"
+            seen_box_codes.add(code)
+            cleaned_boxes.append(
+                {
+                    "code": code,
+                    "items": items,
+                    "sealed": sealed,
+                }
+            )
+
+        cleaned_pallets = []
+        seen_pallet_codes = set()
+        for idx, pallet in enumerate(pallets_data or []):
+            if not isinstance(pallet, dict):
+                continue
+            code = str(pallet.get("code") or "").strip() or f"PALLET-{idx + 1}"
+            if code in seen_pallet_codes:
+                code = f"{code}-{idx + 1}"
+            sealed = bool(pallet.get("sealed"))
+            boxes = [
+                str(box_code).strip()
+                for box_code in (pallet.get("boxes") or [])
+                if str(box_code or "").strip()
+            ]
+            boxes = [box_code for box_code in boxes if box_code in seen_box_codes]
+            items = normalize_items(pallet.get("items") or [])
+            if not boxes and not items and sealed:
+                continue
+            seen_pallet_codes.add(code)
+            location = pallet.get("location")
+            if isinstance(location, dict):
+                location = dict(location)
+            elif isinstance(location, str):
+                location = {"zone": location}
+            else:
+                location = {}
+            location.setdefault("zone", "PR")
+            cleaned_pallets.append(
+                {
+                    "code": code,
+                    "boxes": boxes,
+                    "items": items,
+                    "sealed": sealed,
+                    "location": location,
+                }
+            )
+
+        active_box_code = str(active_box or "").strip()
+        if active_box_code not in seen_box_codes:
+            open_boxes = [box for box in cleaned_boxes if not box.get("sealed")]
+            if open_boxes:
+                active_box_code = open_boxes[0].get("code") or ""
+            elif cleaned_boxes:
+                active_box_code = cleaned_boxes[0].get("code") or ""
+            else:
+                active_box_code = ""
+
+        active_pallet_code = str(active_pallet or "").strip()
+        if active_pallet_code not in seen_pallet_codes:
+            open_pallets = [pallet for pallet in cleaned_pallets if not pallet.get("sealed")]
+            if open_pallets:
+                active_pallet_code = open_pallets[0].get("code") or ""
+            elif cleaned_pallets:
+                active_pallet_code = cleaned_pallets[0].get("code") or ""
+            else:
+                active_pallet_code = ""
+
+        return {
+            "boxes": cleaned_boxes,
+            "pallets": cleaned_pallets,
+            "activeBox": active_box_code,
+            "activePallet": active_pallet_code,
+        }
+
+    def _save_flow_draft(self, request, order_id, entries):
+        role = get_request_role(request)
+        if role != "storekeeper":
+            return JsonResponse({"ok": False, "error": "forbidden"}, status=403)
+        if _flow_closed_from_entries(entries):
+            return JsonResponse({"ok": False, "error": "closed"}, status=400)
+        if not self._can_start(entries):
+            return JsonResponse({"ok": False, "error": "not_allowed"}, status=400)
+
+        boxes_raw = request.POST.get("boxes_json") or "[]"
+        pallets_raw = request.POST.get("pallets_json") or "[]"
+        active_box = request.POST.get("active_box") or ""
+        active_pallet = request.POST.get("active_pallet") or ""
+        try:
+            boxes_data = json.loads(boxes_raw)
+            pallets_data = json.loads(pallets_raw)
+        except json.JSONDecodeError:
+            return JsonResponse({"ok": False, "error": "invalid_json"}, status=400)
+        if not isinstance(boxes_data, list):
+            boxes_data = []
+        if not isinstance(pallets_data, list):
+            pallets_data = []
+
+        flow_state = self._normalize_flow_state(boxes_data, pallets_data, active_box, active_pallet)
+        payload = {"flow_state": flow_state}
+        latest = entries[-1] if entries else None
+        draft_entry = None
+        for entry in reversed(entries):
+            if entry.action == "update" and (entry.payload or {}).get("flow_state"):
+                draft_entry = entry
+                break
+        if draft_entry:
+            draft_entry.payload = payload
+            draft_entry.description = "Черновик приемки потоком"
+            draft_entry.save(update_fields=["payload", "description"])
+        else:
+            log_order_action(
+                "update",
+                order_id=order_id,
+                order_type=self.order_type,
+                user=request.user if request.user.is_authenticated else None,
+                agency=latest.agency if latest else None,
+                description="Черновик приемки потоком",
+                payload=payload,
+            )
+        return JsonResponse({"ok": True})
+
+    def get(self, request, *args, **kwargs):
+        order_id = kwargs.get("order_id")
+        if get_request_role(request) == "storekeeper":
+            self._mark_in_progress(request, order_id)
+        entries = self._load_entries(order_id)
+        if not entries:
+            return redirect("/orders/")
+        ok = request.GET.get("ok") == "1"
+        error = request.GET.get("error")
+        ctx = self.get_context_data(ok=ok, error=error, **kwargs)
+        return self.render_to_response(ctx)
+
+    def post(self, request, *args, **kwargs):
+        order_id = kwargs.get("order_id")
+        entries = self._load_entries(order_id)
+        if not entries:
+            return redirect("/orders/")
+        if request.POST.get("flow_action") == "draft":
+            return self._save_flow_draft(request, order_id, entries)
+        role = get_request_role(request)
+        if role != "storekeeper":
+            return HttpResponseForbidden("Доступ запрещен")
+        if _flow_closed_from_entries(entries):
+            return redirect(f"/orders/receiving/{order_id}/flow/")
+        if not self._can_start(entries):
+            return redirect(f"/orders/receiving/{order_id}/flow/?error=1")
+
+        payload = _latest_payload_from_entries(entries)
+        planned_items = payload.get("items") or []
+        plan_map = {}
+        for item in planned_items:
+            key = _item_key(item.get("sku_code"), item.get("name"), item.get("size"))
+            planned_qty = _parse_qty_value(item.get("qty")) or 0
+            entry = plan_map.setdefault(
+                key,
+                {
+                    "sku_code": item.get("sku_code"),
+                    "name": item.get("name"),
+                    "size": item.get("size"),
+                    "planned_qty": 0,
+                    "comment": item.get("comment"),
+                },
+            )
+            entry["planned_qty"] += planned_qty
+
+        boxes_raw = request.POST.get("boxes_json") or "[]"
+        pallets_raw = request.POST.get("pallets_json") or "[]"
+        try:
+            boxes_data = json.loads(boxes_raw)
+            pallets_data = json.loads(pallets_raw)
+        except json.JSONDecodeError:
+            return redirect(f"/orders/receiving/{order_id}/flow/?error=1")
+
+        if not isinstance(boxes_data, list):
+            boxes_data = []
+        if not isinstance(pallets_data, list):
+            pallets_data = []
+
+        def normalize_items(raw_items):
+            items = []
+            for raw in raw_items or []:
+                if not isinstance(raw, dict):
+                    continue
+                qty = _parse_qty_value(raw.get("qty")) or 0
+                if qty <= 0:
+                    continue
+                sku_code = (raw.get("sku_code") or raw.get("sku") or "").strip()
+                name = (raw.get("name") or "").strip()
+                size = (raw.get("size") or "").strip()
+                if not (sku_code or name or size):
+                    continue
+                items.append(
+                    {
+                        "sku_code": sku_code,
+                        "sku": sku_code,
+                        "name": name,
+                        "size": size,
+                        "qty": qty,
+                    }
+                )
+            return items
+
+        cleaned_boxes = []
+        seen_box_codes = set()
+        for idx, box in enumerate(boxes_data):
+            if not isinstance(box, dict):
+                continue
+            items = normalize_items(box.get("items") or [])
+            if not items:
+                continue
+            code = str(box.get("code") or "").strip() or f"BOX-{idx + 1}"
+            if code in seen_box_codes:
+                code = f"{code}-{idx + 1}"
+            seen_box_codes.add(code)
+            cleaned_boxes.append(
+                {
+                    "code": code,
+                    "items": items,
+                    "sealed": True,
+                }
+            )
+
+        cleaned_pallets = []
+        seen_pallet_codes = set()
+        for idx, pallet in enumerate(pallets_data):
+            if not isinstance(pallet, dict):
+                continue
+            code = str(pallet.get("code") or "").strip() or f"PALLET-{idx + 1}"
+            if code in seen_pallet_codes:
+                code = f"{code}-{idx + 1}"
+            seen_pallet_codes.add(code)
+            boxes = [
+                str(box_code).strip()
+                for box_code in (pallet.get("boxes") or [])
+                if str(box_code or "").strip()
+            ]
+            boxes = [box_code for box_code in boxes if box_code in seen_box_codes]
+            items = normalize_items(pallet.get("items") or [])
+            if not boxes and not items:
+                continue
+            location = pallet.get("location")
+            if isinstance(location, dict):
+                location = dict(location)
+            elif isinstance(location, str):
+                location = {"zone": location}
+            else:
+                location = {}
+            location.setdefault("zone", "PR")
+            cleaned_pallets.append(
+                {
+                    "code": code,
+                    "boxes": boxes,
+                    "items": items,
+                    "sealed": True,
+                    "location": location,
+                }
+            )
+
+        if not cleaned_boxes or not cleaned_pallets:
+            return redirect(f"/orders/receiving/{order_id}/flow/?error=1")
+
+        pallet_box_codes = set()
+        for pallet in cleaned_pallets:
+            for box_code in pallet.get("boxes") or []:
+                if box_code:
+                    pallet_box_codes.add(box_code)
+        unassigned_boxes = [box for box in cleaned_boxes if box["code"] not in pallet_box_codes]
+        if unassigned_boxes:
+            return redirect(f"/orders/receiving/{order_id}/flow/?error=1")
+
+        totals = {}
+        def add_total(item, qty, field):
+            key = _item_key(item.get("sku_code"), item.get("name"), item.get("size"))
+            entry = totals.setdefault(key, {"box": 0, "pallet": 0, "total": 0})
+            entry[field] += qty
+            entry["total"] += qty
+
+        for box in cleaned_boxes:
+            for item in box.get("items") or []:
+                qty = _parse_qty_value(item.get("qty")) or 0
+                add_total(item, qty, "box")
+        for pallet in cleaned_pallets:
+            for item in pallet.get("items") or []:
+                qty = _parse_qty_value(item.get("qty")) or 0
+                add_total(item, qty, "pallet")
+
+        act_items = []
+        has_mismatch = False
+        for key, plan in plan_map.items():
+            entry = totals.get(key, {"box": 0, "pallet": 0, "total": 0})
+            actual_qty = entry["total"]
+            if actual_qty != plan["planned_qty"]:
+                has_mismatch = True
+            act_items.append(
+                {
+                    "sku_code": plan.get("sku_code"),
+                    "name": plan.get("name"),
+                    "size": plan.get("size"),
+                    "planned_qty": plan.get("planned_qty"),
+                    "actual_qty": actual_qty,
+                    "comment": plan.get("comment"),
+                }
+            )
+
+        extra_keys = set(totals.keys()) - set(plan_map.keys())
+        for key in extra_keys:
+            entry = totals.get(key)
+            if not entry or entry["total"] <= 0:
+                continue
+            parts = key.split("|")
+            sku_code = parts[0] if len(parts) > 0 else ""
+            name = parts[1] if len(parts) > 1 else ""
+            size = parts[2] if len(parts) > 2 else ""
+            has_mismatch = True
+            act_items.append(
+                {
+                    "sku_code": sku_code,
+                    "name": name,
+                    "size": size,
+                    "planned_qty": 0,
+                    "actual_qty": entry["total"],
+                    "comment": "",
+                    "extra": True,
+                }
+            )
+
+        if not act_items:
+            return redirect(f"/orders/receiving/{order_id}/flow/?error=1")
+
+        status_entry = _current_status_entry(entries)
+        latest = entries[-1]
+        act_payload = dict((status_entry.payload or {}) if status_entry else {})
+        if not act_payload.get("status"):
+            act_payload["status"] = "warehouse"
+        act_payload["status_label"] = (
+            "Товар принят на склад с расхождениями" if has_mismatch else "Товар принят на склад"
+        )
+        eta_raw = (payload.get("eta_at") or "").strip()
+        if eta_raw:
+            try:
+                eta_value = datetime.fromisoformat(eta_raw)
+                if timezone.is_naive(eta_value):
+                    eta_value = timezone.make_aware(eta_value, timezone.get_current_timezone())
+                act_payload["eta_at"] = timezone.localtime(eta_value).isoformat()
+            except ValueError:
+                act_payload["eta_at"] = eta_raw
+        act_payload["vehicle_number"] = (payload.get("vehicle_number") or "").strip()
+        act_payload["act"] = "receiving"
+        act_payload["act_label"] = (
+            "Акт приемки с расхождениями" if has_mismatch else "Акт приемки"
+        )
+        act_payload["act_mismatch"] = has_mismatch
+        act_payload["act_items"] = act_items
+        log_order_action(
+            "status",
+            order_id=order_id,
+            order_type=self.order_type,
+            user=request.user if request.user.is_authenticated else None,
+            agency=latest.agency,
+            description="Создан акт приемки",
+            payload=act_payload,
+        )
+
+        placement_items = []
+        for item in act_items:
+            key = _item_key(item.get("sku_code"), item.get("name"), item.get("size"))
+            entry = totals.get(key, {"box": 0, "pallet": 0, "total": 0})
+            placement_items.append(
+                {
+                    "sku_code": item.get("sku_code"),
+                    "name": item.get("name"),
+                    "size": item.get("size"),
+                    "actual_qty": item.get("actual_qty") or 0,
+                    "box_qty": entry["box"],
+                    "pallet_qty": entry["pallet"],
+                    "comment": item.get("comment"),
+                }
+            )
+
+        placement_payload = dict(act_payload)
+        placement_payload["status_label"] = "Товар принят и размещен на складе"
+        placement_payload["act"] = "placement"
+        placement_payload["act_label"] = "Акт размещения"
+        placement_payload["act_state"] = "closed"
+        placement_payload["act_items"] = placement_items
+        placement_payload["act_boxes"] = cleaned_boxes
+        placement_payload["act_pallets"] = cleaned_pallets
+
+        has_closed_act = any(
+            (entry.payload or {}).get("act") == "placement"
+            and ((entry.payload or {}).get("act_state") or "closed") == "closed"
+            for entry in entries
+        )
+        log_order_action(
+            "status",
+            order_id=order_id,
+            order_type=self.order_type,
+            user=request.user if request.user.is_authenticated else None,
+            agency=latest.agency,
+            description="Обновлен акт размещения" if has_closed_act else "Создан акт размещения",
+            payload=placement_payload,
+        )
+        if not has_closed_act:
+            Task.objects.filter(
+                route=f"/orders/receiving/{order_id}/",
+                assigned_to__role="storekeeper",
+            ).exclude(status="done").update(status="done")
+        observer = Employee.objects.filter(user=request.user, is_active=True).first()
+        _create_manager_followup_task(
+            order_id,
+            latest.agency,
+            request,
+            timezone.localtime(),
+            observer=observer,
+        )
+        return redirect(f"/orders/receiving/{order_id}/placement/?ok=1")
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        order_id = kwargs.get("order_id")
+        entries = self._load_entries(order_id)
+        latest = entries[-1] if entries else None
+        status_entry = _current_status_entry(entries)
+        payload = _latest_payload_from_entries(entries)
+        items = payload.get("items") or []
+        display_items = []
+        for item in items:
+            display_items.append(
+                {
+                    "sku_code": item.get("sku_code") or "",
+                    "name": item.get("name") or "",
+                    "size": item.get("size") or "",
+                    "qty": item.get("qty") or 0,
+                    "comment": item.get("comment") or "",
+                }
+            )
+        client_label = "-"
+        if latest and latest.agency:
+            name = latest.agency.agn_name or latest.agency.fio_agn or str(latest.agency)
+            client_label = _shorten_ip_name(name)
+        client_prefix = ""
+        if latest and latest.agency:
+            client_prefix = (latest.agency.pref or "").strip()
+        status_payload = status_entry.payload or {} if status_entry else {}
+        goods_type = (status_payload.get("goods_type") or "").strip().lower()
+        goods_type_labels = {
+            "op": "Оптовый",
+            "gv": "Готовый",
+            "br": "Брак",
+            "vz": "Возврат",
+            "rh": "Расходный",
+        }
+        barcode_map = {}
+        if latest and latest.agency_id:
+            for barcode in (
+                SKUBarcode.objects.select_related("sku")
+                .filter(sku__agency_id=latest.agency_id, sku__deleted=False)
+            ):
+                value = (barcode.value or "").strip()
+                if not value:
+                    continue
+                sku = barcode.sku
+                barcode_map[value] = {
+                    "sku_code": sku.sku_code,
+                    "name": sku.name,
+                    "size": (barcode.size or sku.size or "").strip(),
+                }
+        flow_state = self._find_flow_state(entries)
+        if not flow_state or not (flow_state.get("boxes") or flow_state.get("pallets")):
+            placement_entry = self._placement_act_entry(entries)
+            if placement_entry:
+                placement_payload = placement_entry.payload or {}
+                placement_boxes = placement_payload.get("act_boxes") or []
+                placement_pallets = placement_payload.get("act_pallets") or []
+                if placement_boxes or placement_pallets:
+                    active_box = next((box.get("code") for box in placement_boxes if not box.get("sealed")), "")
+                    active_pallet = next(
+                        (pallet.get("code") for pallet in placement_pallets if not pallet.get("sealed")), ""
+                    )
+                    flow_state = {
+                        "boxes": placement_boxes,
+                        "pallets": placement_pallets,
+                        "activeBox": active_box or "",
+                        "activePallet": active_pallet or "",
+                    }
+        flow_locked = _flow_closed_from_entries(entries)
+        ctx.update(
+            {
+                "order_id": order_id,
+                "client_label": client_label,
+                "client_prefix": client_prefix,
+                "status_label": _status_label_from_entry(status_entry) if status_entry else "-",
+                "cabinet_url": resolve_cabinet_url(get_request_role(self.request)),
+                "goods_type": goods_type,
+                "goods_type_label": goods_type_labels.get(goods_type, ""),
+                "items": display_items,
+                "barcode_map": barcode_map,
+                "flow_state": flow_state,
+                "flow_locked": flow_locked,
                 "ok": kwargs.get("ok", False),
                 "error": kwargs.get("error"),
             }
@@ -3210,6 +4065,8 @@ class PlacementActView(RoleRequiredMixin, TemplateView):
         entries = self._load_entries(order_id)
         if not entries:
             return redirect("/orders/")
+        if request.POST.get("flow_action") == "draft":
+            return self._save_flow_draft(request, order_id, entries)
         action = (request.POST.get("action") or "close").lower()
         role = get_request_role(request)
         if role != "storekeeper":
@@ -3432,6 +4289,7 @@ class PlacementActView(RoleRequiredMixin, TemplateView):
         status_entry = _current_status_entry(entries)
         receiving_act = self._receiving_act_entry(entries)
         placement_act = self._placement_act_entry(entries)
+        status_payload = status_entry.payload or {} if status_entry else {}
         receiving_items = (receiving_act.payload or {}).get("act_items") if receiving_act else []
         placement_items = (placement_act.payload or {}).get("act_items") if placement_act else []
         display_items = []
@@ -3465,6 +4323,44 @@ class PlacementActView(RoleRequiredMixin, TemplateView):
                     "actual_qty": item.get("actual_qty") or 0,
                 }
             )
+        barcode_map = {}
+        if latest and latest.agency_id and receiving_items:
+            sku_codes = {
+                (item.get("sku_code") or "").strip()
+                for item in receiving_items
+                if (item.get("sku_code") or "").strip()
+            }
+            if sku_codes:
+                for sku in (
+                    SKU.objects.filter(
+                        agency_id=latest.agency_id,
+                        sku_code__in=sku_codes,
+                        deleted=False,
+                    )
+                    .prefetch_related("barcodes")
+                ):
+                    for barcode in sku.barcodes.all():
+                        value = (barcode.value or "").strip()
+                        if not value:
+                            continue
+                        barcode_map.setdefault(
+                            value,
+                            {
+                                "sku": sku.sku_code,
+                                "name": sku.name,
+                                "size": (barcode.size or sku.size or "").strip(),
+                            },
+                        )
+                    sku_code_barcode = (sku.code or "").strip()
+                    if sku_code_barcode:
+                        barcode_map.setdefault(
+                            sku_code_barcode,
+                            {
+                                "sku": sku.sku_code,
+                                "name": sku.name,
+                                "size": (sku.size or "").strip(),
+                            },
+                        )
         client_label = "-"
         if latest and latest.agency:
             name = latest.agency.agn_name or latest.agency.fio_agn or str(latest.agency)
@@ -3525,6 +4421,7 @@ class PlacementActView(RoleRequiredMixin, TemplateView):
                 "client_label": client_label,
                 "status_label": _status_label_from_entry(status_entry) if status_entry else "-",
                 "cabinet_url": resolve_cabinet_url(get_request_role(self.request)),
+                "goods_type": (status_payload.get("goods_type") or "").strip().lower(),
                 "can_submit": can_submit,
                 "can_open_act": can_open_act,
                 "signed_by_storekeeper": signed_by_storekeeper,
@@ -3533,6 +4430,7 @@ class PlacementActView(RoleRequiredMixin, TemplateView):
                 "items": display_items,
                 "catalog_items": catalog_items,
                 "remaining_items": remaining_items,
+                "barcode_map": barcode_map,
                 "boxes_data": boxes_data,
                 "pallets_data": pallets_data,
                 "os_config": os_config,

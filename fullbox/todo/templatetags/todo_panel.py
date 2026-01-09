@@ -110,6 +110,8 @@ def _status_label_from_entry(entry) -> str:
         return "Размещение на складе" if state == "open" else "Товар принят и размещен на складе"
     status_value = (payload.get("status") or payload.get("submit_action") or "").lower()
     status_label = (payload.get("status_label") or "").lower()
+    if "взята в работу" in status_label:
+        return "Взята в работу"
     if status_value in {"sent_unconfirmed", "send", "submitted"} or "подтверждени" in status_label:
         return "Ждет подтверждения"
     if status_value in {"warehouse", "on_warehouse"} or "ожидании поставки" in status_label or "на складе" in status_label:

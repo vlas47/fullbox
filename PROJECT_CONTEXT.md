@@ -56,6 +56,19 @@
 - If no: test in incognito or disable extensions; share pending requests if any.
 
 ## AI Action Log
+- 2026-01-09 10:14: keep in-box inputs empty unless user types manually; scan only updates box counts.
+- 2026-01-09 10:07: show active box qty in the in-box input when no manual value and clear only the scanned row's manual input.
+- 2026-01-09 10:01: focus scanned row using pending element after render to prevent cursor staying in the previous in-box input.
+- 2026-01-09 09:54: move focus to scanned row input during table render to avoid losing focus on the first scan.
+- 2026-01-09 09:48: defer focus transfer to scanned row with requestAnimationFrame so cursor reliably moves to the new in-box cell.
+- 2026-01-09 09:44: move focus to scanned row input after scan while suppressing blur side effects.
+- 2026-01-09 09:39: keep in-box inputs empty during scans and preserve manual entry values separately in receiving flow.
+- 2026-01-09 09:27: relax scan detection when focus is in qty inputs so repeated scans increment counts reliably.
+- 2026-01-09 09:13: keep last scanned row highlighted and avoid rerender timeout so focus stays in the in-box input.
+- 2026-01-09 09:06: add idle-based scan detection to receiving flow so barcodes are captured even without Enter and restore focused input values.
+- 2026-01-09 09:00: improved receiving flow scanner capture to work regardless of focus and add scanned SKU from client catalog when missing in the table, with clear status messages.
+- 2026-01-09 08:47: remove client-confirmed response tasks after manager views the act print page and close manager receiving tasks so confirmed orders move to done.
+- 2026-01-09 08:37: mark client-confirmed receiving act response tasks as done when manager opens the act print page so they move to the done column.
 - 2026-01-04 09:40: prepared guidance on Windows Terminal settings locations (Russian UI).
 - 2026-01-04 09:45: reviewed core Django config (`settings.py`, `urls.py`, `manage.py`).
 - 2026-01-04 09:45: reviewed key models (`sku`, `todo`, `employees`, `audit`).
@@ -293,3 +306,13 @@
 - 2026-01-07 21:56: wired stockmap occupancy to placement acts (OS row view + counts), including MR row occupancy totals; deployed and restarted `fullbox`.
 - 2026-01-07 22:48: cleared all order audit entries and tasks from production DB and removed act/task_files from media to reset stockmap occupancy.
 - 2026-01-08 06:25: auto-restore receiving draft when returning from SKU list to avoid form reset prompt; deployed template update.
+- 2026-01-08 06:44: fixed client receiving draft restore after SKU list by auto-restoring when cart items exist and setting return flag on SKU list; deployed templates and restarted `fullbox`.
+- 2026-01-08 15:50: reviewed README/description and core Django settings/urls plus key app models/views (orders, audit, sku, todo) to understand project structure.
+- 2026-01-08 15:55: replaced "Дашборд/Dev" buttons with "В кабинет" on clients list and wired cabinet URL into view context.
+- 2026-01-08 15:57: uploaded updated client list template/view to server and restarted `fullbox` service.
+- 2026-01-08 22:09: added placement act barcode scan support (barcode map + scan UI/logic to add item into active box).
+- 2026-01-08 22:09: uploaded placement act scan updates to server and restarted `fullbox` service.
+- 2026-01-09 08:23: listed repo root and searched for AGENTS.md (not found).
+- 2026-01-09 08:23: reviewed `README.md`, `PROJECT_CONTEXT.md`, and `description.md` to refresh project context.
+- 2026-01-09 08:24: located team manager routing and access, reviewed `teammanager` view/urls and dashboard template.
+- 2026-01-09 10:28: adjusted receiving flow scan/manual input handling to ignore scanner digits in "В короб" field and preserve manual values; deployed template and restarted `fullbox`.

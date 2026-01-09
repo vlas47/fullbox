@@ -12,7 +12,7 @@ import uuid
 from urllib.parse import urlencode
 
 from employees.models import Employee
-from employees.access import get_request_role, is_staff_role
+from employees.access import get_request_role, is_staff_role, resolve_cabinet_url
 from sku.models import Agency, SKU, SKUBarcode
 from sku.views import SKUCreateView, SKUUpdateView, SKUDuplicateView
 from todo.models import Task
@@ -70,7 +70,7 @@ def _format_agency_value(value):
 def _describe_agency_changes(old_snapshot: dict, new_snapshot: dict) -> str:
     fields = [
         ("agn_name", "Название"),
-        ("pref", "Префикс"),
+        ("pref", "Префикс для кодов"),
         ("inn", "ИНН"),
         ("kpp", "КПП"),
         ("ogrn", "ОГРН"),
@@ -165,6 +165,8 @@ def _order_status_label(entry) -> str:
         state = (payload.get("act_state") or "closed").lower()
         return "Размещение на складе" if state == "open" else "Товар принят и размещен на складе"
     status_label = (payload.get("status_label") or "").lower()
+    if "взята в работу" in status_label:
+        return "Взята в работу"
     if "товар принят" in status_label:
         return "Товар принят и размещен на складе"
     if status_value in {"sent_unconfirmed", "send", "submitted"} or "подтверж" in status_label:
@@ -490,6 +492,7 @@ class ClientListView(ListView):
         ctx["filter_field"] = self.request.GET.get("filter_field") or ""
         ctx["filter_value"] = self.request.GET.get("filter_value") or ""
         ctx["archived_param"] = self.request.GET.get("archived") or ""
+        ctx["cabinet_url"] = resolve_cabinet_url(get_request_role(self.request))
         return ctx
 
     def dispatch(self, request, *args, **kwargs):
@@ -1061,6 +1064,8 @@ class ClientReceivingCreateView(TemplateView):
         )
         if submit_action != "draft":
             _create_manager_task(order_id, self.agency, request, timezone.localtime())
+        if submit_action != "draft":
+            return redirect(f"/client/dashboard/?client={self.agency.id}")
         return self.get(request, submitted=True)
 
     def get(self, request, *args, **kwargs):

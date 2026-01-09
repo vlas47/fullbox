@@ -23,6 +23,7 @@
     .card { background:var(--card); border:1px solid var(--stroke); border-radius:16px; padding:16px; box-shadow:0 18px 45px rgba(15,23,42,0.08); }
     form { display:grid; gap:12px; }
     .grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap:12px; }
+    textarea[data-autogrow] { overflow:hidden; }
     label { display:block; font-weight:600; margin-bottom:6px; color:var(--muted); }
     input, select, textarea { width:100%; padding:10px; border-radius:10px; border:1px solid var(--stroke); background:#fff; color:var(--text); }
     textarea { resize:vertical; }
@@ -58,7 +59,7 @@
             {{ form.agn_name.errors }}{% if form.agn_name.errors %}{% render_field form.agn_name class+="field-error" %}{% else %}{% render_field form.agn_name %}{% endif %}
           </div>
           <div>
-            <label>Префикс</label>
+            <label>Префикс для кодов</label>
             {{ form.pref.errors }}{% if form.pref.errors %}{% render_field form.pref class+="field-error" %}{% else %}{% render_field form.pref %}{% endif %}
           </div>
           <div>
@@ -128,6 +129,19 @@
       </form>
     </div>
   </div>
+  <script>
+    (() => {
+      const areas = document.querySelectorAll('textarea[data-autogrow]');
+      const resize = (el) => {
+        el.style.height = 'auto';
+        el.style.height = `${el.scrollHeight}px`;
+      };
+      areas.forEach((el) => {
+        resize(el);
+        el.addEventListener('input', () => resize(el));
+      });
+    })();
+  </script>
 </body>
 <script>
   (function(){

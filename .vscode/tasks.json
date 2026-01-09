@@ -4,7 +4,7 @@
     {
       "label": "run codex",
       "type": "shell",
-      "command": "C:\\\\Users\\\\user\\\\.vscode\\\\extensions\\\\openai.chatgpt-0.5.56\\\\bin\\\\windows-x86_64\\\\codex.exe",
+      "command": "C:\\\\Users\\\\user\\\\.vscode\\\\extensions\\\\openai.chatgpt-0.5.58\\\\bin\\\\windows-x86_64\\\\codex.exe",
       "args": [
         "--sandbox", "danger-full-access",
         "--ask-for-approval", "on-request"

@@ -47,12 +47,18 @@ class StockMapView(RoleRequiredMixin, TemplateView):
             )
         occupied_os = set()
         occupied_mr = {}
+        occupied_pr = 0
+        occupied_otg = 0
         for entry in _latest_closed_placement_entries():
             payload = entry.payload or {}
             for pallet in payload.get("act_pallets") or []:
                 zone, row_num, section_num, tier_num, cell_num = _location_parts(pallet)
                 if zone == "OS" and row_num and section_num and tier_num and cell_num:
                     occupied_os.add((row_num, section_num, tier_num, cell_num))
+                elif zone == "PR":
+                    occupied_pr += 1
+                elif zone == "OTG":
+                    occupied_otg += 1
                 elif zone == "MR" and row_num:
                     occupied_mr[row_num] = occupied_mr.get(row_num, 0) + 1
 
@@ -69,6 +75,12 @@ class StockMapView(RoleRequiredMixin, TemplateView):
                 occupied = os_row_counts.get(_int_value(row.get("row")), 0)
                 row["occupied"] = occupied
                 row["free"] = max(0, total - occupied)
+            elif row.get("zone") == "PR":
+                row["occupied"] = occupied_pr
+                row["free"] = max(0, total - occupied_pr)
+            elif row.get("zone") == "OTG":
+                row["occupied"] = occupied_otg
+                row["free"] = max(0, total - occupied_otg)
             elif row.get("zone") == "MR" and row.get("row"):
                 occupied = occupied_mr.get(_int_value(row.get("row")), 0)
                 row["occupied"] = occupied
