@@ -120,7 +120,7 @@ def _create_manager_task(order_id, agency, request, submitted_at):
 def _order_type_label(order_type: str) -> str:
     if not order_type:
         return "-"
-    labels = {"receiving": "ЗП"}
+    labels = {"receiving": "ЗП", "packing": "ЗУ", "processing": "ЗО"}
     return labels.get(order_type, order_type)
 
 
@@ -149,6 +149,8 @@ def _order_title_label(order_type: str, order_id: str, payload: dict | None = No
         return f"{title} №{order_id}"
     if order_type == "packing":
         return f"Заявка на упаковку №{order_id}"
+    if order_type == "processing":
+        return f"Заявка на обработку №{order_id}"
     return f"Заявка №{order_id}"
 
 

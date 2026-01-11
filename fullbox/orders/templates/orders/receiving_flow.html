@@ -78,6 +78,14 @@
     }
     .btn.primary { background: linear-gradient(120deg, var(--gold), var(--gold-soft)); border-color: transparent; }
     .btn[disabled] { opacity: 0.6; cursor: not-allowed; }
+    .btn.box-close {
+      width: 100%;
+      height: 100%;
+      min-height: 110px;
+      font-size: 16px;
+      font-weight: 700;
+      border-radius: 14px;
+    }
     .split-grid { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 16px; }
     .split-col { display: grid; gap: 12px; align-content: start; }
     .section-title { font-weight: 600; margin: 12px 0 6px; }
@@ -94,18 +102,73 @@
       background: #fff;
       font-size: 13px;
     }
+    .catalog-input {
+      width: 100%;
+      padding: 6px 8px;
+      border-radius: 8px;
+      border: 1px solid var(--stroke);
+      background: #fff;
+      font-size: 13px;
+    }
     .row-actions { display: flex; gap: 6px; align-items: center; }
     .row-actions .btn { padding: 6px 10px; font-size: 12px; }
     .row-negative { color: var(--danger); font-weight: 600; }
-    .row-scan td { background: rgba(31,157,85,0.16); }
-    .row-scan td:first-child { box-shadow: inset 3px 0 0 rgba(31,157,85,0.8); }
+    .row-done td { background: rgba(31,157,85,0.12); }
+    .row-done td:first-child { box-shadow: inset 3px 0 0 rgba(31,157,85,0.55); }
+    .row-scan td { background: rgba(242,212,140,0.45); }
+    .row-scan td:first-child { box-shadow: inset 3px 0 0 rgba(199,154,28,0.9); }
     .box-card { border: 1px dashed var(--stroke); border-radius: 14px; padding: 12px; background: var(--card-soft); }
     .box-meta { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
     .box-code { font-weight: 600; }
     .box-status { font-size: 12px; text-transform: uppercase; letter-spacing: 0.8px; color: var(--gold); }
+    .current-box-grid { display: grid; grid-template-columns: 140px minmax(0, 1fr) 220px; gap: 12px; align-items: stretch; }
+    .current-box-qr { display: grid; gap: 8px; align-content: start; }
+    .qr-preview {
+      width: 120px;
+      height: 120px;
+      border-radius: 12px;
+      border: 1px dashed var(--stroke);
+      background: #fff;
+      display: grid;
+      place-items: center;
+      position: relative;
+      overflow: hidden;
+    }
+    .qr-preview .qr-box {
+      position: absolute;
+      inset: 0;
+      display: grid;
+      place-items: center;
+    }
+    .qr-preview canvas,
+    .qr-preview img,
+    .qr-preview svg {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+    .qr-preview .qr-placeholder {
+      position: absolute;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      font-size: 12px;
+      color: var(--muted);
+      text-align: center;
+      padding: 8px;
+    }
+    .current-box-main { display: grid; gap: 8px; align-content: start; }
+    .current-box-action { display: flex; align-items: stretch; }
     .box-items { display: grid; gap: 8px; }
     .box-item { display: flex; justify-content: space-between; gap: 8px; align-items: center; padding: 8px; border-radius: 10px; border: 1px solid var(--stroke); background: #fff; }
     .box-item small { color: var(--muted); display: block; }
+    .box-qty {
+      font-weight: 700;
+      color: #7a4c00;
+      background: rgba(199,154,32,0.2);
+      padding: 2px 6px;
+      border-radius: 999px;
+    }
     .box-item .btn { padding: 4px 8px; font-size: 11px; }
     .pallet-board { display: grid; gap: 12px; }
     .pallet-card { border: 1px solid var(--stroke); border-radius: 16px; padding: 12px; background: #fff; }
@@ -128,12 +191,124 @@
     }
     .box-chip.open { background: #f9e7b8; border-color: #d2a52a; color: #7a4c00; }
     .box-chip.closed { background: #d8f2e1; border-color: #1f9d55; color: #0f5c30; }
-    .closed-boxes { display: grid; gap: 8px; }
+    .pallet-closed-title {
+      grid-column: 1 / -1;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: var(--muted);
+    }
+    .pallet-closed-grid {
+      grid-column: 1 / -1;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(34px, 1fr));
+      gap: 6px;
+    }
+    .pallet-chip {
+      width: 34px;
+      height: 34px;
+      border-radius: 10px;
+      display: grid;
+      place-items: center;
+      font-size: 12px;
+      font-weight: 700;
+      border: 1px solid var(--stroke);
+      background: #f1f0ec;
+      color: #555;
+    }
+    .closed-boxes {
+      display: grid;
+      gap: 8px;
+      max-height: clamp(160px, 28vh, 320px);
+      overflow: auto;
+      padding-right: 4px;
+    }
     .closed-box { display: flex; justify-content: space-between; gap: 8px; padding: 8px 10px; border-radius: 10px; border: 1px solid var(--stroke); background: #fff; font-size: 13px; }
     .summary-line { font-weight: 600; }
+    .context-menu {
+      position: fixed;
+      z-index: 3000;
+      min-width: 220px;
+      padding: 6px;
+      border-radius: 12px;
+      border: 1px solid var(--stroke);
+      background: #fff;
+      box-shadow: 0 18px 30px rgba(15,23,42,0.18);
+      display: none;
+    }
+    .context-menu.is-open { display: block; }
+    .context-menu button {
+      width: 100%;
+      text-align: left;
+      border: none;
+      background: transparent;
+      padding: 8px 10px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-weight: 600;
+      color: var(--text);
+    }
+    .context-menu button:hover { background: rgba(15,23,42,0.06); }
+    .context-menu button[disabled] { opacity: 0.5; cursor: not-allowed; }
+    .is-hidden { display: none !important; }
+    .context-menu .danger { color: var(--danger); }
+    .scanner-block {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
+    }
+    .box-modal {
+      position: fixed;
+      inset: 0;
+      z-index: 2500;
+      background: rgba(15,23,42,0.4);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+    }
+    .box-modal.is-open { display: flex; }
+    .box-modal-card {
+      width: min(520px, 92vw);
+      background: var(--card);
+      border: 1px solid var(--stroke);
+      border-radius: 16px;
+      padding: 16px;
+      box-shadow: 0 22px 36px rgba(15,23,42,0.2);
+      display: grid;
+      gap: 12px;
+    }
+    .box-modal-header {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: center;
+    }
+    .box-modal-title { font-weight: 700; }
+    .box-modal-list { display: grid; gap: 8px; }
+    .box-modal-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 8px 10px;
+      border-radius: 10px;
+      border: 1px solid var(--stroke);
+      background: #fff;
+      font-size: 13px;
+    }
     @media (max-width: 1100px) {
       .detail-layout { grid-template-columns: 1fr; }
       .split-grid { grid-template-columns: 1fr; }
+      .current-box-grid { grid-template-columns: 1fr; }
+      .current-box-qr { justify-items: center; }
+      .qr-preview { width: 140px; height: 140px; }
+      .btn.box-close { min-height: 64px; }
     }
   </style>
 </head>
@@ -152,6 +327,9 @@
           <h4 class="side-title">Действия</h4>
           <div class="side-actions">
             <a class="tab" href="/orders/receiving/{{ order_id }}/">К заявке</a>
+            {% if act_print_url %}
+              <a class="tab" href="{{ act_print_url }}">Акт приемки (печатная форма)</a>
+            {% endif %}
             <a class="tab" href="{{ cabinet_url }}">В кабинет</a>
             <a class="tab" href="/logout/">Выход</a>
           </div>
@@ -178,18 +356,6 @@
             <div class="error">Не удалось завершить приемку. Проверьте данные.</div>
           {% endif %}
 
-          <div class="action-bar">
-            <div class="action-left">
-              <div class="pill">Палета: <span id="active-pallet-code">-</span></div>
-              <div class="pill">Короб: <span id="active-box-code">-</span></div>
-            </div>
-            <div class="action-right">
-              <button class="btn" type="button" id="close-box-btn">Закрыть короб</button>
-              <button class="btn" type="button" id="close-pallet-btn">Закрыть палету</button>
-              <button class="btn primary" type="submit" id="finish-btn" form="flow-form">Завершить приемку</button>
-            </div>
-          </div>
-
           <form method="post" id="flow-form">
             {% csrf_token %}
             <input type="hidden" name="boxes_json" id="boxes-json">
@@ -213,30 +379,63 @@
                   </thead>
                   <tbody id="remaining-items"></tbody>
                 </table>
+                <datalist id="catalog-sku-list"></datalist>
+                <datalist id="catalog-name-list"></datalist>
+                <datalist id="catalog-size-list"></datalist>
               </div>
 
-              <div class="section-title">Текущий короб</div>
-              <div class="box-card">
-                <div class="box-meta">
-                  <div class="box-code" id="current-box-code">-</div>
-                  <div class="box-status" id="current-box-status">Открыт</div>
+              <div id="current-box-section">
+                <div class="section-title">Текущий короб</div>
+                <div class="box-card">
+                  <div class="current-box-grid">
+                    <div class="current-box-qr">
+                      <div class="qr-preview" id="current-box-qr">
+                        <div class="qr-placeholder">QR...</div>
+                      </div>
+                    </div>
+                    <div class="current-box-main">
+                      <div class="box-meta">
+                        <div class="box-code" id="current-box-code">-</div>
+                        <div class="box-status" id="current-box-status">Открыт</div>
+                      </div>
+                      <div class="box-items" id="current-box-items"></div>
+                    </div>
+                    <div class="current-box-action">
+                      <button class="btn primary box-close" type="button" id="close-box-btn">Закрыть короб</button>
+                    </div>
+                  </div>
                 </div>
-                <div class="box-items" id="current-box-items"></div>
               </div>
             </div>
 
             <div class="split-col">
-              <div class="section-title">Сканер</div>
-              <div class="box-card">
-                <div class="box-meta">
-                  <div class="box-code">Сканирование</div>
-                  <div class="box-status" id="scanner-status">Ожидаю штрихкод</div>
+              <div class="scanner-block" aria-hidden="true">
+                <div class="section-title">Сканер</div>
+                <div class="box-card">
+                  <div class="box-meta">
+                    <div class="box-code">Сканирование</div>
+                    <div class="box-status" id="scanner-status">Ожидаю штрихкод</div>
+                  </div>
+                  <input type="text" id="barcode-input" class="qty-input" placeholder="Сканируйте ШК" inputmode="numeric" autocomplete="off">
+                  <div class="muted" style="margin-top:6px;">Сканер вводит и отправляет Enter. Фокус держится в поле.</div>
                 </div>
-                <input type="text" id="barcode-input" class="qty-input" placeholder="Сканируйте ШК" inputmode="numeric" autocomplete="off">
-                <div class="muted" style="margin-top:6px;">Сканер вводит и отправляет Enter. Фокус держится в поле.</div>
               </div>
 
               <div class="section-title">Палеты</div>
+              {% if flow_locked %}
+                <form method="post" id="flow-reopen-form">
+                  {% csrf_token %}
+                  <input type="hidden" name="flow_action" value="reopen">
+                </form>
+              {% endif %}
+              <div class="action-right" style="margin-bottom: 8px;">
+                <button class="btn" type="button" id="close-pallet-btn">Закрыть палету</button>
+                {% if flow_locked %}
+                  <button class="btn" type="submit" id="reopen-flow-btn" form="flow-reopen-form">Внести изменения в приемку?</button>
+                {% else %}
+                  <button class="btn primary" type="submit" id="finish-btn" form="flow-form">Завершить приемку</button>
+                {% endif %}
+              </div>
               <div class="pallet-board" id="pallet-board"></div>
 
               <div class="section-title">Закрытые короба</div>
@@ -248,15 +447,38 @@
     </div>
   </div>
 
+  <div class="context-menu" id="box-context-menu" aria-hidden="true">
+    <button type="button" data-action="view">Просмотр короба</button>
+    <button type="button" data-action="edit">Редактирование короба</button>
+    <button type="button" data-action="delete" class="danger">Удаление короба</button>
+  </div>
+  <div class="context-menu" id="pallet-context-menu" aria-hidden="true">
+    <button type="button" data-action="open">Открыть палету</button>
+    <button type="button" data-action="print">Печать QR (75×120)</button>
+  </div>
+
+  <div class="box-modal" id="box-view-modal" aria-hidden="true">
+    <div class="box-modal-card">
+      <div class="box-modal-header">
+        <div class="box-modal-title">Короб <span id="box-view-code">-</span></div>
+        <button type="button" class="btn" id="box-view-close">Закрыть</button>
+      </div>
+      <div class="box-modal-list" id="box-view-body"></div>
+    </div>
+  </div>
+
   {{ items|json_script:"items-data" }}
   {{ barcode_map|json_script:"barcode-map" }}
+  {{ catalog_items|json_script:"catalog-items" }}
   {{ flow_state|json_script:"flow-state" }}
+  <script src="/static/vendor/qrcode.min.js"></script>
   <script>window.__flowLocked = {{ flow_locked|yesno:"true,false" }};</script>
 
   <script>
     (() => {
       const itemsData = JSON.parse(document.getElementById('items-data').textContent || '[]');
       const barcodeMap = JSON.parse(document.getElementById('barcode-map').textContent || '{}');
+      const catalogItems = JSON.parse(document.getElementById('catalog-items')?.textContent || '[]');
       const flowStateEl = document.getElementById('flow-state');
       const flowState = flowStateEl ? JSON.parse(flowStateEl.textContent || '{}') : {};
       const flowLocked = Boolean(window.__flowLocked);
@@ -265,9 +487,14 @@
       const clientPrefixRaw = String("{{ client_prefix|escapejs }}").trim();
 
       const remainingBody = document.getElementById('remaining-items');
+      const catalogSkuList = document.getElementById('catalog-sku-list');
+      const catalogNameList = document.getElementById('catalog-name-list');
+      const catalogSizeList = document.getElementById('catalog-size-list');
+      const currentBoxSection = document.getElementById('current-box-section');
       const currentBoxItems = document.getElementById('current-box-items');
       const currentBoxCode = document.getElementById('current-box-code');
       const currentBoxStatus = document.getElementById('current-box-status');
+      const currentBoxQr = document.getElementById('current-box-qr');
       const activePalletCode = document.getElementById('active-pallet-code');
       const activeBoxCode = document.getElementById('active-box-code');
       const palletBoard = document.getElementById('pallet-board');
@@ -281,6 +508,15 @@
       const boxesInput = document.getElementById('boxes-json');
       const palletsInput = document.getElementById('pallets-json');
       const formEl = document.getElementById('flow-form');
+      const orderId = String("{{ order_id|escapejs }}").trim();
+      const csrfToken =
+        document.querySelector('input[name="csrfmiddlewaretoken"]')?.value || '';
+      const contextMenu = document.getElementById('box-context-menu');
+      const palletContextMenu = document.getElementById('pallet-context-menu');
+      const boxViewModal = document.getElementById('box-view-modal');
+      const boxViewCode = document.getElementById('box-view-code');
+      const boxViewBody = document.getElementById('box-view-body');
+      const boxViewClose = document.getElementById('box-view-close');
 
       const state = {
         pallets: [],
@@ -323,6 +559,9 @@
         size: normalizeText(item.size),
         qty: Number(item.qty || 0),
       }));
+      const plannedKeys = new Set(plannedItems.map((item) => makeKey(item)));
+      const extraItems = [];
+      const extraKeys = new Set();
       const plannedByKey = new Map(plannedItems.map((item) => [makeKey(item), item]));
       const plannedBySku = new Map();
       plannedItems.forEach((item) => {
@@ -354,20 +593,180 @@
         };
         plannedItems.push(entry);
         plannedByKey.set(key, entry);
+        if (!plannedKeys.has(key) && !extraKeys.has(key)) {
+          extraItems.push(entry);
+          extraKeys.add(key);
+        }
         if (entry.sku_code) {
           plannedBySku.set(entry.sku_code.toLowerCase(), entry);
         }
         return entry;
       };
+      const seedPlannedFromBoxes = () => {
+        state.boxes.forEach((box) => {
+          (box.items || []).forEach((item) => {
+            ensurePlannedItem(item);
+          });
+        });
+      };
+      seedPlannedFromBoxes();
+      const catalogOptions = [];
+      const catalogKeySet = new Set();
+      const catalogBySku = new Map();
+      const catalogByName = new Map();
+      const catalogBySize = new Map();
+      const catalogSkuValues = [];
+      const catalogSkuSet = new Set();
+      const catalogNameValues = [];
+      const catalogNameSet = new Set();
+      const catalogSizeValues = [];
+      const catalogSizeSet = new Set();
+      const addCatalogValue = (value, set, list) => {
+        const normalized = normalizeText(value);
+        if (!normalized) {
+          return;
+        }
+        const key = normalized.toLowerCase();
+        if (set.has(key)) {
+          return;
+        }
+        set.add(key);
+        list.push(normalized);
+      };
+      const addCatalogItem = (raw) => {
+        const normalized = normalizeMappedItem(raw);
+        if (!normalized.sku_code && !normalized.name && !normalized.size) {
+          return;
+        }
+        const key = makeKey(normalized);
+        if (!catalogKeySet.has(key)) {
+          catalogKeySet.add(key);
+          catalogOptions.push({
+            ...normalized,
+            key,
+          });
+        }
+        addCatalogValue(normalized.sku_code, catalogSkuSet, catalogSkuValues);
+        addCatalogValue(normalized.name, catalogNameSet, catalogNameValues);
+        addCatalogValue(normalized.size, catalogSizeSet, catalogSizeValues);
+      };
+      (catalogItems || []).forEach(addCatalogItem);
+      itemsData.forEach(addCatalogItem);
+      Object.values(barcodeMap || {}).forEach(addCatalogItem);
+      const addToCatalogIndex = (map, rawValue, item) => {
+        const key = normalizeText(rawValue).toLowerCase();
+        if (!key) {
+          return;
+        }
+        const list = map.get(key) || [];
+        if (!list.some((entry) => makeKey(entry) === makeKey(item))) {
+          list.push(item);
+          map.set(key, list);
+        }
+      };
+      catalogOptions.forEach((item) => {
+        addToCatalogIndex(catalogBySku, item.sku_code, item);
+        addToCatalogIndex(catalogByName, item.name, item);
+        addToCatalogIndex(catalogBySize, item.size, item);
+      });
+      const fillCatalogList = (el, values) => {
+        if (!el) {
+          return;
+        }
+        el.innerHTML = '';
+        values.forEach((value) => {
+          const option = document.createElement('option');
+          option.value = value;
+          el.appendChild(option);
+        });
+      };
+      fillCatalogList(catalogSkuList, catalogSkuValues);
+      fillCatalogList(catalogNameList, catalogNameValues);
+      fillCatalogList(catalogSizeList, catalogSizeValues);
+      const getCatalogMatches = (skuValue, nameValue, sizeValue) => {
+        const skuKey = normalizeText(skuValue).toLowerCase();
+        const nameKey = normalizeText(nameValue).toLowerCase();
+        const sizeKey = normalizeText(sizeValue).toLowerCase();
+        if (!skuKey && !nameKey && !sizeKey) {
+          return [];
+        }
+        let candidates = [];
+        if (skuKey) {
+          candidates = catalogBySku.get(skuKey) || [];
+        } else if (nameKey) {
+          candidates = catalogByName.get(nameKey) || [];
+        } else if (sizeKey) {
+          candidates = catalogBySize.get(sizeKey) || [];
+        }
+        const matches = candidates.filter((item) => {
+          const itemSku = (item.sku_code || '').toLowerCase();
+          const itemName = (item.name || '').toLowerCase();
+          const itemSize = (item.size || '').toLowerCase();
+          if (skuKey && itemSku !== skuKey) {
+            return false;
+          }
+          if (nameKey && itemName !== nameKey) {
+            return false;
+          }
+          if (sizeKey && itemSize !== sizeKey) {
+            return false;
+          }
+          return true;
+        });
+        return matches;
+      };
+      const scoreCatalogItem = (item) => {
+        let score = 0;
+        if (normalizeText(item.sku_code)) {
+          score += 1;
+        }
+        if (normalizeText(item.name)) {
+          score += 1;
+        }
+        if (normalizeText(item.size)) {
+          score += 1;
+        }
+        return score;
+      };
+      const pickCatalogItem = (matches) => {
+        if (!matches.length) {
+          return null;
+        }
+        let best = matches[0];
+        let bestScore = scoreCatalogItem(best);
+        for (const item of matches) {
+          const score = scoreCatalogItem(item);
+          if (score > bestScore) {
+            best = item;
+            bestScore = score;
+          }
+        }
+        return best;
+      };
+      const getSelectedCatalogItem = (skuValue, nameValue, sizeValue) => {
+        const matches = getCatalogMatches(skuValue, nameValue, sizeValue);
+        return pickCatalogItem(matches);
+      };
       let highlightedKey = '';
+      let highlightTimer = null;
       let pendingFocusKey = '';
       let pendingFocusEl = null;
+      let lastFocusedRowKey = '';
       let suppressBlurApply = false;
+      let addRowSku = '';
+      let addRowName = '';
+      let addRowSize = '';
+      let addRowQty = '';
+      let addRowItem = null;
+      let pendingAddRowFocus = false;
       const manualInputByKey = new Map();
       const boxAdjustByKey = new Map();
       let draftSaveTimer = null;
       let draftEnabled = false;
       let isSubmitting = false;
+      let mainQrLoading = false;
+      let mainQrFailed = false;
+      const mainQrQueue = [];
 
       const normalizePrefix = (value) => {
         const raw = String(value || '').trim().toUpperCase();
@@ -407,6 +806,12 @@
 
       const getBox = (code) => state.boxes.find((box) => box.code === code) || null;
       const getPallet = (code) => state.pallets.find((pallet) => pallet.code === code) || null;
+      const getBoxItemsCount = (box) => {
+        if (!box || !Array.isArray(box.items)) {
+          return 0;
+        }
+        return box.items.reduce((sum, item) => sum + Number(item.qty || 0), 0);
+      };
       const getBoxItemQty = (key) => {
         const box = getBox(state.activeBox);
         if (!box || !Array.isArray(box.items)) {
@@ -447,7 +852,9 @@
       };
 
       const hasRemaining = () => {
-        return getRemaining().some((item) => item.remaining > 0);
+        return getRemaining().some(
+          (item) => item.remaining > 0 || (Number(item.qty || 0) <= 0 && Number(item.placed || 0) > 0),
+        );
       };
 
       const openNewPallet = () => {
@@ -467,11 +874,12 @@
         state.activeBox = box.code;
       };
 
-      const ensureOpenContainers = () => {
+      const ensureOpenContainers = (forceOpen = false) => {
+        const shouldOpen = forceOpen || hasRemaining();
         let activePallet = getPallet(state.activePallet);
         if (!activePallet || activePallet.sealed) {
           activePallet = state.pallets.find((pallet) => !pallet.sealed) || null;
-          if (!activePallet && hasRemaining()) {
+          if (!activePallet && shouldOpen) {
             openNewPallet();
             return;
           }
@@ -488,7 +896,7 @@
               .map((code) => getBox(code))
               .find((box) => box && !box.sealed);
           }
-          if (!openBox && pallet && hasRemaining()) {
+          if (!openBox && pallet && shouldOpen) {
             openNewBox(pallet);
             return;
           }
@@ -512,7 +920,7 @@
 
       const getRemaining = () => {
         const placedMap = getPlacedMap();
-        return plannedItems.map((item) => {
+        const buildEntry = (item) => {
           const key = makeKey(item);
           const placed = placedMap.get(key) || 0;
           return {
@@ -521,7 +929,12 @@
             placed,
             remaining: item.qty - placed,
           };
-        });
+        };
+        const extras = extraItems.map((item) => buildEntry(item));
+        const planned = plannedItems
+          .filter((item) => !extraKeys.has(makeKey(item)))
+          .map((item) => buildEntry(item));
+        return [...extras, ...planned];
       };
 
       const addToBox = (item, qty) => {
@@ -549,6 +962,39 @@
         }
         markDraftDirty();
         return true;
+      };
+      const applyAddRow = (keepFocus) => {
+        if (flowLocked) {
+          return;
+        }
+        const selected = addRowItem || getSelectedCatalogItem(addRowSku, addRowName, addRowSize);
+        if (!selected) {
+          return;
+        }
+        const rawQty = parseInt(addRowQty, 10);
+        if (!Number.isFinite(rawQty) || rawQty <= 0) {
+          return;
+        }
+        ensureOpenContainers(true);
+        const planned = ensurePlannedItem(selected);
+        if (!planned) {
+          return;
+        }
+        const plannedKey = makeKey(planned);
+        const added = addToBox({ ...planned, key: plannedKey }, rawQty);
+        if (!added) {
+          return;
+        }
+        manualInputByKey.set(plannedKey, '');
+        addRowSku = '';
+        addRowName = '';
+        addRowSize = '';
+        addRowQty = '';
+        addRowItem = null;
+        pendingAddRowFocus = keepFocus;
+        suppressBlurApply = true;
+        pendingFocusKey = '__add-row__';
+        renderAll();
       };
 
       const setBoxItemQty = (item, qty) => {
@@ -636,7 +1082,24 @@
         if (!box || box.sealed) {
           return;
         }
-        if (!(box.items || []).length) {
+        if (getBoxItemsCount(box) <= 0) {
+          const boxCode = box.code;
+          state.boxes = state.boxes.filter((entry) => entry.code !== boxCode);
+          state.pallets.forEach((pallet) => {
+            pallet.boxes = (pallet.boxes || []).filter((code) => code !== boxCode);
+          });
+          if (state.activeBox === boxCode) {
+            state.activeBox = '';
+          }
+          markDraftDirty();
+          if (autoNext && hasRemaining()) {
+            const pallet = getPallet(state.activePallet);
+            if (pallet && !pallet.sealed) {
+              openNewBox(pallet);
+            } else {
+              openNewPallet();
+            }
+          }
           return;
         }
         box.sealed = true;
@@ -647,7 +1110,7 @@
         }
       };
 
-      const closePallet = () => {
+      const closePallet = (autoNext = true) => {
         if (flowLocked) {
           return;
         }
@@ -655,13 +1118,54 @@
         if (!pallet || pallet.sealed) {
           return;
         }
-        const currentBox = getBox(state.activeBox);
-        if (currentBox && !currentBox.sealed && (currentBox.items || []).length) {
-          currentBox.sealed = true;
+        const palletBoxes = (pallet.boxes || [])
+          .map((code) => getBox(code))
+          .filter((box) => box);
+        const palletItemCount = getBoxItemsCount({ items: pallet.items || [] });
+        const boxesItemCount = palletBoxes.reduce(
+          (sum, box) => sum + getBoxItemsCount(box),
+          0,
+        );
+        if (palletItemCount + boxesItemCount <= 0) {
+          const palletCode = pallet.code;
+          const removeCodes = new Set(pallet.boxes || []);
+          state.boxes = state.boxes.filter((box) => !removeCodes.has(box.code));
+          state.pallets = state.pallets.filter((entry) => entry.code !== palletCode);
+          if (state.activePallet === palletCode) {
+            state.activePallet = '';
+          }
+          if (removeCodes.has(state.activeBox)) {
+            state.activeBox = '';
+          }
+          markDraftDirty();
+          if (autoNext && hasRemaining()) {
+            openNewPallet();
+          }
+          return;
+        }
+        const emptyBoxCodes = new Set();
+        palletBoxes.forEach((box) => {
+          if (!box) {
+            return;
+          }
+          if (getBoxItemsCount(box) <= 0) {
+            emptyBoxCodes.add(box.code);
+            return;
+          }
+          if (!box.sealed) {
+            box.sealed = true;
+          }
+        });
+        if (emptyBoxCodes.size) {
+          state.boxes = state.boxes.filter((box) => !emptyBoxCodes.has(box.code));
+          pallet.boxes = (pallet.boxes || []).filter((code) => !emptyBoxCodes.has(code));
+          if (emptyBoxCodes.has(state.activeBox)) {
+            state.activeBox = '';
+          }
         }
         pallet.sealed = true;
         markDraftDirty();
-        if (hasRemaining()) {
+        if (autoNext && hasRemaining()) {
           openNewPallet();
         }
       };
@@ -684,6 +1188,47 @@
           }
           return (pallet.items || []).length > 0 || (pallet.boxes || []).length > 0;
         });
+      };
+
+      const finalizeContainers = () => {
+        const removedBoxes = new Set();
+        state.boxes.forEach((box) => {
+          if (getBoxItemsCount(box) <= 0) {
+            removedBoxes.add(box.code);
+            return;
+          }
+          box.sealed = true;
+        });
+        if (removedBoxes.size) {
+          state.boxes = state.boxes.filter((box) => !removedBoxes.has(box.code));
+        }
+        state.pallets.forEach((pallet) => {
+          if (removedBoxes.size) {
+            pallet.boxes = (pallet.boxes || []).filter((code) => !removedBoxes.has(code));
+          }
+          const directQty = getBoxItemsCount({ items: pallet.items || [] });
+          const boxesQty = (pallet.boxes || [])
+            .map((code) => getBox(code))
+            .filter((box) => box)
+            .reduce((sum, box) => sum + getBoxItemsCount(box), 0);
+          if (directQty + boxesQty > 0) {
+            pallet.sealed = true;
+          }
+        });
+        state.pallets = state.pallets.filter((pallet) => {
+          const directQty = getBoxItemsCount({ items: pallet.items || [] });
+          const boxesQty = (pallet.boxes || [])
+            .map((code) => getBox(code))
+            .filter((box) => box)
+            .reduce((sum, box) => sum + getBoxItemsCount(box), 0);
+          return directQty + boxesQty > 0;
+        });
+        if (removedBoxes.has(state.activeBox)) {
+          state.activeBox = '';
+        }
+        if (state.activePallet && !getPallet(state.activePallet)) {
+          state.activePallet = '';
+        }
       };
 
       const updateHidden = () => {
@@ -769,8 +1314,8 @@
           }
           return;
         }
-        const canCloseBox = box && !box.sealed && (box.items || []).length > 0;
-        const canClosePallet = pallet && !pallet.sealed && (pallet.boxes || []).length > 0;
+        const canCloseBox = box && !box.sealed;
+        const canClosePallet = pallet && !pallet.sealed;
         if (closeBoxBtn) {
           closeBoxBtn.disabled = !canCloseBox;
         }
@@ -778,9 +1323,10 @@
           closePalletBtn.disabled = !canClosePallet;
         }
         const remaining = getRemaining();
+        const totalPlaced = remaining.reduce((sum, item) => sum + Number(item.placed || 0), 0);
         const allDone = remaining.every((item) => item.remaining <= 0);
         if (finishBtn) {
-          finishBtn.disabled = !allDone;
+          finishBtn.disabled = totalPlaced <= 0;
         }
       };
 
@@ -791,6 +1337,136 @@
         pendingFocusEl = null;
         remainingBody.innerHTML = '';
         const remaining = getRemaining();
+        const addRow = document.createElement('tr');
+        addRow.innerHTML = `
+          <td></td>
+          <td></td>
+          <td></td>
+          <td class="muted">-</td>
+          <td class="muted">-</td>
+          <td></td>
+        `;
+        const skuCell = addRow.children[0];
+        const nameCell = addRow.children[1];
+        const sizeCell = addRow.children[2];
+        const qtyCell = addRow.children[5];
+        const skuInput = document.createElement('input');
+        const nameInput = document.createElement('input');
+        const sizeInput = document.createElement('input');
+        const qtyInput = document.createElement('input');
+        skuInput.type = 'text';
+        skuInput.className = 'catalog-input';
+        skuInput.placeholder = 'SKU';
+        skuInput.setAttribute('list', 'catalog-sku-list');
+        skuInput.value = addRowSku;
+        nameInput.type = 'text';
+        nameInput.className = 'catalog-input';
+        nameInput.placeholder = 'Наименование';
+        nameInput.setAttribute('list', 'catalog-name-list');
+        nameInput.value = addRowName;
+        sizeInput.type = 'text';
+        sizeInput.className = 'catalog-input';
+        sizeInput.placeholder = 'Размер';
+        sizeInput.setAttribute('list', 'catalog-size-list');
+        sizeInput.value = addRowSize;
+        if (flowLocked) {
+          skuInput.disabled = true;
+          nameInput.disabled = true;
+          sizeInput.disabled = true;
+        }
+        const updateAddRowItem = () => {
+          addRowItem = getSelectedCatalogItem(addRowSku, addRowName, addRowSize);
+          if (!addRowItem) {
+            return;
+          }
+          if (!addRowSku && addRowItem.sku_code) {
+            addRowSku = addRowItem.sku_code;
+            skuInput.value = addRowSku;
+          }
+          if (!addRowName && addRowItem.name) {
+            addRowName = addRowItem.name;
+            nameInput.value = addRowName;
+          }
+          if (!addRowSize && addRowItem.size) {
+            addRowSize = addRowItem.size;
+            sizeInput.value = addRowSize;
+          }
+        };
+        const handleAddRowEnter = (event) => {
+          if (event.key !== 'Enter') {
+            return;
+          }
+          event.preventDefault();
+          if (addRowQty) {
+            applyAddRow(true);
+          } else {
+            qtyInput.focus();
+            qtyInput.select();
+          }
+        };
+        skuInput.addEventListener('input', () => {
+          addRowSku = skuInput.value;
+          updateAddRowItem();
+        });
+        skuInput.addEventListener('change', () => {
+          addRowSku = skuInput.value;
+          updateAddRowItem();
+        });
+        skuInput.addEventListener('keydown', handleAddRowEnter);
+        nameInput.addEventListener('input', () => {
+          addRowName = nameInput.value;
+          updateAddRowItem();
+        });
+        nameInput.addEventListener('change', () => {
+          addRowName = nameInput.value;
+          updateAddRowItem();
+        });
+        nameInput.addEventListener('keydown', handleAddRowEnter);
+        sizeInput.addEventListener('input', () => {
+          addRowSize = sizeInput.value;
+          updateAddRowItem();
+        });
+        sizeInput.addEventListener('change', () => {
+          addRowSize = sizeInput.value;
+          updateAddRowItem();
+        });
+        sizeInput.addEventListener('keydown', handleAddRowEnter);
+        qtyInput.type = 'number';
+        qtyInput.min = '0';
+        qtyInput.step = '1';
+        qtyInput.className = 'qty-input';
+        qtyInput.value = addRowQty;
+        if (flowLocked) {
+          qtyInput.disabled = true;
+        }
+        qtyInput.addEventListener('input', () => {
+          const raw = String(qtyInput.value || '');
+          const cleaned = raw.replace(/[^\d]/g, '');
+          qtyInput.value = cleaned;
+          addRowQty = cleaned;
+        });
+        qtyInput.addEventListener('keydown', (event) => {
+          if (event.key === 'Enter') {
+            event.preventDefault();
+            applyAddRow(true);
+          }
+        });
+        qtyInput.addEventListener('blur', () => {
+          if (suppressBlurApply) {
+            return;
+          }
+          applyAddRow(false);
+        });
+        skuCell.appendChild(skuInput);
+        nameCell.appendChild(nameInput);
+        sizeCell.appendChild(sizeInput);
+        qtyCell.appendChild(qtyInput);
+        remainingBody.appendChild(addRow);
+        if (pendingAddRowFocus) {
+          pendingFocusKey = '__add-row__';
+          pendingFocusEl = skuInput;
+          pendingAddRowFocus = false;
+        }
         if (!remaining.length) {
           const row = document.createElement('tr');
           row.innerHTML = '<td colspan="6" class="muted">Нет данных.</td>';
@@ -810,6 +1486,9 @@
             <td></td>
           `;
           row.dataset.key = item.key;
+          if (Number(item.qty || 0) === Number(factValue || 0)) {
+            row.classList.add('row-done');
+          }
           if (highlightedKey && item.key === highlightedKey) {
             row.classList.add('row-scan');
           }
@@ -826,6 +1505,9 @@
           }
           const manualValue = manualInputByKey.get(item.key) || '';
           input.value = manualValue;
+          input.addEventListener('focus', () => {
+            lastFocusedRowKey = item.key;
+          });
           input.addEventListener('input', () => {
             const raw = String(input.value || '');
             const cleaned = raw.replace(/[^\d]/g, '');
@@ -860,16 +1542,7 @@
             }
             applyInputValue(false);
           });
-          const btn = document.createElement('button');
-          btn.type = 'button';
-          btn.className = 'btn';
-          btn.textContent = 'В короб';
-          btn.disabled = flowLocked || remainingValue <= 0;
-          btn.addEventListener('click', () => {
-            applyInputValue(true);
-          });
           actions.appendChild(input);
-          actions.appendChild(btn);
           cell.appendChild(actions);
           remainingBody.appendChild(row);
           if (pendingFocusKey && item.key === pendingFocusKey) {
@@ -886,6 +1559,7 @@
         if (currentBoxStatus) {
           currentBoxStatus.textContent = box && !box.sealed ? 'Открыт' : 'Закрыт';
         }
+        renderCurrentBoxQr(box);
         if (!currentBoxItems) {
           return;
         }
@@ -904,7 +1578,7 @@
           row.innerHTML = `
             <div>
               <strong>${item.name || item.sku_code || '-'}</strong>
-              <small>${item.size || '-'} · ${item.qty} шт.</small>
+              <small>${item.size || '-'} · <span class="box-qty">${item.qty} шт.</span></small>
             </div>
           `;
           const actions = document.createElement('div');
@@ -955,8 +1629,23 @@
           btn.addEventListener('click', () => {
             applyAdjust();
           });
+          const printBtn = document.createElement('button');
+          printBtn.type = 'button';
+          printBtn.className = 'btn';
+          printBtn.textContent = 'Печать';
+          printBtn.addEventListener('click', () => {
+            const previewWindow = window.open('', '_blank', 'width=520,height=620');
+            if (!previewWindow) {
+              alert('Разрешите всплывающие окна для печати.');
+              return;
+            }
+            openBoxPrintPreview(previewWindow, ({ doc, qrPayload }) => {
+              loadQrInPreview(doc, qrPayload);
+            });
+          });
           actions.appendChild(input);
           actions.appendChild(btn);
+          actions.appendChild(printBtn);
           row.appendChild(actions);
           currentBoxItems.appendChild(row);
         });
@@ -974,13 +1663,27 @@
           palletBoard.appendChild(empty);
           return;
         }
-        state.pallets.forEach((pallet) => {
+        const openPallets = [];
+        const closedPallets = [];
+        state.pallets.forEach((pallet, palletIndex) => {
+          const palletNumber = palletIndex + 1;
+          if (flowLocked || pallet.sealed) {
+            closedPallets.push({ pallet, palletNumber });
+          } else {
+            openPallets.push({ pallet, palletNumber });
+          }
+        });
+        if (flowLocked) {
+          openPallets.length = 0;
+        }
+        openPallets.forEach(({ pallet, palletNumber }) => {
           const card = document.createElement('div');
           card.className = `pallet-card${pallet.sealed ? '' : ' is-open'}`;
           const header = document.createElement('div');
           header.className = 'pallet-header';
+          const palletLabel = `${palletNumber}.${pallet.code || '-'}`;
           header.innerHTML = `
-            <div class="pallet-code">${pallet.code}</div>
+            <div class="pallet-code">${palletLabel}</div>
             <div class="pallet-status">${pallet.sealed ? 'Закрыта' : 'Открыта'}</div>
           `;
           card.appendChild(header);
@@ -992,11 +1695,30 @@
             const label = index + 1;
             chip.className = `box-chip ${box && box.sealed ? 'closed' : 'open'}`;
             chip.textContent = label;
+            chip.dataset.boxCode = code;
+            chip.title = code;
             grid.appendChild(chip);
           });
           card.appendChild(grid);
           palletBoard.appendChild(card);
         });
+        if (closedPallets.length) {
+          const title = document.createElement('div');
+          title.className = 'pallet-closed-title';
+          title.textContent = 'Закрытые палеты';
+          palletBoard.appendChild(title);
+          const grid = document.createElement('div');
+          grid.className = 'pallet-closed-grid';
+          closedPallets.forEach(({ pallet, palletNumber }) => {
+            const chip = document.createElement('div');
+            chip.className = 'pallet-chip';
+            chip.textContent = palletNumber;
+            chip.title = pallet.code || '';
+            chip.dataset.palletCode = pallet.code || '';
+            grid.appendChild(chip);
+          });
+          palletBoard.appendChild(grid);
+        }
       };
 
       const renderClosedBoxes = () => {
@@ -1004,7 +1726,7 @@
           return;
         }
         closedBoxesEl.innerHTML = '';
-        const closedBoxes = state.boxes.filter((box) => box.sealed);
+        const closedBoxes = state.boxes.filter((box) => box.sealed).slice().reverse();
         if (!closedBoxes.length) {
           const empty = document.createElement('div');
           empty.className = 'muted';
@@ -1014,15 +1736,23 @@
         }
         closedBoxes.forEach((box) => {
           const total = (box.items || []).reduce((sum, item) => sum + Number(item.qty || 0), 0);
+          const info = findBoxPalletInfo(box.code);
+          const palletNumber = info.palletIndex || 0;
+          const boxNumber = info.index || 0;
+          const label = `${palletNumber}.${boxNumber}.${box.code}`;
           const row = document.createElement('div');
           row.className = 'closed-box';
-          row.innerHTML = `<span>${box.code}</span><span>${total} шт.</span>`;
+          row.dataset.boxCode = box.code;
+          row.title = box.code;
+          row.innerHTML = `<span>${label}</span><span>${total} шт.</span>`;
           closedBoxesEl.appendChild(row);
         });
       };
 
       const renderAll = () => {
-        ensureOpenContainers();
+        if (!flowLocked) {
+          ensureOpenContainers();
+        }
         renderRemaining();
         renderCurrentBox();
         renderPallets();
@@ -1030,6 +1760,9 @@
         updateSummary();
         updateButtons();
         updateHidden();
+        if (currentBoxSection) {
+          currentBoxSection.classList.toggle('is-hidden', flowLocked);
+        }
         if (activePalletCode) {
           activePalletCode.textContent = state.activePallet || '-';
         }
@@ -1040,7 +1773,28 @@
       };
 
       const flashScan = (key) => {
-        highlightedKey = key || '';
+        const nextKey = key || '';
+        if (!nextKey) {
+          return;
+        }
+        highlightedKey = nextKey;
+        if (highlightTimer) {
+          clearTimeout(highlightTimer);
+        }
+        highlightTimer = setTimeout(() => {
+          if (highlightedKey !== nextKey) {
+            return;
+          }
+          highlightedKey = '';
+          if (!remainingBody) {
+            return;
+          }
+          const safeKey = typeof CSS !== 'undefined' && CSS.escape ? CSS.escape(nextKey) : nextKey;
+          const row = remainingBody.querySelector(`tr[data-key="${safeKey}"]`);
+          if (row) {
+            row.classList.remove('row-scan');
+          }
+        }, 1500);
       };
 
       const focusRowInput = (key) => {
@@ -1105,6 +1859,681 @@
         scannerStatus.style.color = isError ? 'var(--danger)' : '';
       };
 
+      const escapeHtml = (value) =>
+        String(value || '').replace(/[&<>"']/g, (char) => {
+          const map = {
+            '&': '&amp;',
+            '<': '&lt;',
+            '>': '&gt;',
+            '"': '&quot;',
+            "'": '&#39;',
+          };
+          return map[char] || char;
+        });
+
+      const ensureMainQrLib = (callback) => {
+        if (window.QRCode) {
+          if (typeof callback === 'function') {
+            callback();
+          }
+          return;
+        }
+        if (mainQrFailed) {
+          console.error('QR lib unavailable; previous load failed.', {
+            boxCode: getBox(state.activeBox)?.code || '',
+          });
+          return;
+        }
+        if (typeof callback === 'function') {
+          mainQrQueue.push(callback);
+        }
+        if (mainQrLoading) {
+          return;
+        }
+        mainQrLoading = true;
+        const script = document.createElement('script');
+        script.src = '/static/vendor/qrcode.min.js';
+        script.onload = () => {
+          mainQrLoading = false;
+          console.info('QR lib loaded.', { src: script.src });
+          const queue = mainQrQueue.splice(0, mainQrQueue.length);
+          queue.forEach((fn) => fn());
+        };
+        script.onerror = () => {
+          mainQrLoading = false;
+          mainQrFailed = true;
+          console.error('QR lib failed to load.', { src: script.src });
+          mainQrQueue.length = 0;
+        };
+        document.head.appendChild(script);
+      };
+
+      const renderCurrentBoxQr = (box) => {
+        if (!currentBoxQr) {
+          return;
+        }
+        currentBoxQr.innerHTML = '';
+        const placeholder = document.createElement('div');
+        placeholder.className = 'qr-placeholder';
+        placeholder.textContent = 'QR...';
+        currentBoxQr.appendChild(placeholder);
+        if (!box || !box.code) {
+          placeholder.textContent = 'Нет открытого короба';
+          console.warn('QR render skipped: no active box code.');
+          return;
+        }
+        if (!window.QRCode) {
+          if (mainQrFailed) {
+            placeholder.textContent = 'QR не загружен';
+            console.error('QR render failed: QR lib missing after load.', {
+              boxCode: box.code,
+            });
+          } else {
+            console.warn('QR lib missing; loading.', { boxCode: box.code });
+            ensureMainQrLib(() => renderCurrentBoxQr(box));
+          }
+          return;
+        }
+        const qrBox = document.createElement('div');
+        qrBox.className = 'qr-box';
+        currentBoxQr.appendChild(qrBox);
+        const size = Math.max(
+          120,
+          Math.min(currentBoxQr.clientWidth || 160, currentBoxQr.clientHeight || 160)
+        );
+        try {
+          new QRCode(qrBox, {
+            text: String(box.code),
+            width: size,
+            height: size,
+            correctLevel: QRCode.CorrectLevel.M,
+          });
+          placeholder.style.display = 'none';
+        } catch (error) {
+          placeholder.textContent = 'QR не загружен';
+          console.error('QR render error.', { boxCode: box.code, error });
+        }
+      };
+
+      const loadQrInPreview = (previewWindow, qrPayload) => {
+        if (!previewWindow || !previewWindow.document) {
+          return;
+        }
+        const doc = previewWindow.document;
+        const payload = String(qrPayload || '').trim();
+        const setPlaceholder = (ready) => {
+          const placeholder = doc.getElementById('qr-placeholder');
+          if (!placeholder) {
+            return;
+          }
+          placeholder.textContent = ready ? '' : 'QR не загружен';
+          placeholder.style.display = ready ? 'none' : 'grid';
+        };
+        const render = () => {
+          const qrBox = doc.getElementById('qr-box');
+          if (!previewWindow.QRCode || !qrBox) {
+            setPlaceholder(false);
+            return;
+          }
+          if (!payload) {
+            setPlaceholder(false);
+            return;
+          }
+          qrBox.innerHTML = '';
+          new previewWindow.QRCode(qrBox, {
+            text: payload,
+            width: 240,
+            height: 240,
+            correctLevel: previewWindow.QRCode.CorrectLevel.M,
+          });
+          setPlaceholder(true);
+          setTimeout(() => {
+            previewWindow.focus();
+            previewWindow.print();
+          }, 80);
+        };
+        const loadScript = () => {
+          if (previewWindow.QRCode) {
+            render();
+            return;
+          }
+          const existing = doc.getElementById('qr-lib-loader');
+          if (existing) {
+            existing.addEventListener('load', render, { once: true });
+            return;
+          }
+          const script = doc.createElement('script');
+          script.id = 'qr-lib-loader';
+          script.src = window.location.origin + '/static/vendor/qrcode.min.js';
+          script.onload = () => render();
+          script.onerror = () => {
+            setPlaceholder(false);
+          };
+          const target = doc.head || doc.body;
+          if (target) {
+            target.appendChild(script);
+          } else {
+            setPlaceholder(false);
+          }
+        };
+        const start = () => {
+          if (!payload) {
+            setPlaceholder(false);
+            return;
+          }
+          loadScript();
+        };
+        if (doc.readyState === 'loading') {
+          doc.addEventListener('DOMContentLoaded', start, { once: true });
+        } else {
+          start();
+        }
+      };
+
+      const findBoxPalletInfo = (boxCode) => {
+        for (let palletIndex = 0; palletIndex < state.pallets.length; palletIndex += 1) {
+          const pallet = state.pallets[palletIndex];
+          const codes = pallet.boxes || [];
+          const index = codes.indexOf(boxCode);
+          if (index >= 0) {
+            return {
+              index: index + 1,
+              total: codes.length,
+              palletCode: pallet.code,
+              palletIndex: palletIndex + 1,
+            };
+          }
+        }
+        return { index: 0, total: 0, palletCode: '', palletIndex: 0 };
+      };
+
+      let contextMenuBoxCode = '';
+      let contextMenuPalletCode = '';
+      const closeContextMenu = () => {
+        if (!contextMenu) {
+          return;
+        }
+        contextMenu.classList.remove('is-open');
+        contextMenu.setAttribute('aria-hidden', 'true');
+        contextMenuBoxCode = '';
+      };
+      const closePalletContextMenu = () => {
+        if (!palletContextMenu) {
+          return;
+        }
+        palletContextMenu.classList.remove('is-open');
+        palletContextMenu.setAttribute('aria-hidden', 'true');
+        contextMenuPalletCode = '';
+      };
+
+      const openContextMenu = (event, boxCode) => {
+        if (!contextMenu || !boxCode) {
+          return;
+        }
+        contextMenuBoxCode = boxCode;
+        const box = getBox(boxCode);
+        const editBtn = contextMenu.querySelector('[data-action="edit"]');
+        const deleteBtn = contextMenu.querySelector('[data-action="delete"]');
+        if (editBtn) {
+          editBtn.disabled = flowLocked || !box;
+        }
+        if (deleteBtn) {
+          deleteBtn.disabled = flowLocked || !box;
+        }
+        const menuWidth = contextMenu.offsetWidth || 220;
+        const menuHeight = contextMenu.offsetHeight || 120;
+        let left = event.clientX;
+        let top = event.clientY;
+        if (left + menuWidth > window.innerWidth - 8) {
+          left = Math.max(8, window.innerWidth - menuWidth - 8);
+        }
+        if (top + menuHeight > window.innerHeight - 8) {
+          top = Math.max(8, window.innerHeight - menuHeight - 8);
+        }
+        contextMenu.style.left = `${left}px`;
+        contextMenu.style.top = `${top}px`;
+        contextMenu.classList.add('is-open');
+        contextMenu.setAttribute('aria-hidden', 'false');
+      };
+      const openPalletContextMenu = (event, palletCode) => {
+        if (!palletContextMenu || !palletCode) {
+          return;
+        }
+        contextMenuPalletCode = palletCode;
+        const pallet = getPallet(palletCode);
+        const openBtn = palletContextMenu.querySelector('[data-action="open"]');
+        const printBtn = palletContextMenu.querySelector('[data-action="print"]');
+        if (openBtn) {
+          openBtn.disabled = flowLocked || !pallet || !pallet.sealed;
+        }
+        if (printBtn) {
+          printBtn.disabled = !pallet || !pallet.code;
+        }
+        const menuWidth = palletContextMenu.offsetWidth || 220;
+        const menuHeight = palletContextMenu.offsetHeight || 120;
+        let left = event.clientX;
+        let top = event.clientY;
+        if (left + menuWidth > window.innerWidth - 8) {
+          left = Math.max(8, window.innerWidth - menuWidth - 8);
+        }
+        if (top + menuHeight > window.innerHeight - 8) {
+          top = Math.max(8, window.innerHeight - menuHeight - 8);
+        }
+        palletContextMenu.style.left = `${left}px`;
+        palletContextMenu.style.top = `${top}px`;
+        palletContextMenu.classList.add('is-open');
+        palletContextMenu.setAttribute('aria-hidden', 'false');
+      };
+
+      const buildBoxSnapshot = (boxCode, extra = {}) => {
+        const box = getBox(boxCode);
+        const info = findBoxPalletInfo(boxCode);
+        return {
+          order_id: orderId,
+          box_code: boxCode,
+          pallet_code: info.palletCode || '',
+          pallet_index: info.palletIndex || 0,
+          box_index: info.index || 0,
+          total_qty: getBoxItemsCount(box),
+          items: (box && Array.isArray(box.items)) ? box.items : [],
+          ...extra,
+        };
+      };
+
+      const logFlowBoxAction = (action, payload) => {
+        if (!orderId || !csrfToken || !payload) {
+          return;
+        }
+        fetch(`/orders/receiving/${orderId}/flow/box-action/`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': csrfToken,
+          },
+          credentials: 'same-origin',
+          body: JSON.stringify({ action, ...payload }),
+        }).catch((error) => {
+          console.warn('Failed to log flow box action.', error);
+        });
+      };
+
+      const openBoxView = (boxCode) => {
+        if (!boxViewModal || !boxViewBody || !boxViewCode) {
+          return;
+        }
+        const box = getBox(boxCode);
+        const info = findBoxPalletInfo(boxCode);
+        boxViewCode.textContent = boxCode || '-';
+        boxViewBody.innerHTML = '';
+        if (!box) {
+          const row = document.createElement('div');
+          row.className = 'muted';
+          row.textContent = 'Короб не найден.';
+          boxViewBody.appendChild(row);
+        } else {
+          const meta = document.createElement('div');
+          meta.className = 'muted';
+          const palletLabel = info.palletIndex
+            ? `Палета ${info.palletIndex}, короб ${info.index || '-'}`
+            : 'Палета не задана';
+          meta.textContent = `${palletLabel} · ${getBoxItemsCount(box)} шт.`;
+          boxViewBody.appendChild(meta);
+          if (!Array.isArray(box.items) || !box.items.length) {
+            const empty = document.createElement('div');
+            empty.className = 'muted';
+            empty.textContent = 'Товаров в коробе нет.';
+            boxViewBody.appendChild(empty);
+          } else {
+            box.items.forEach((item) => {
+              const row = document.createElement('div');
+              row.className = 'box-modal-row';
+              const title = `${item.name || item.sku_code || '-'}`;
+              const size = item.size || '-';
+              row.innerHTML = `
+                <span>${escapeHtml(title)} · ${escapeHtml(size)}</span>
+                <span>${Number(item.qty || 0)} шт.</span>
+              `;
+              boxViewBody.appendChild(row);
+            });
+          }
+        }
+        boxViewModal.classList.add('is-open');
+        boxViewModal.setAttribute('aria-hidden', 'false');
+      };
+
+      const closeBoxView = () => {
+        if (!boxViewModal) {
+          return;
+        }
+        boxViewModal.classList.remove('is-open');
+        boxViewModal.setAttribute('aria-hidden', 'true');
+      };
+
+      const editBoxFromContext = (boxCode) => {
+        if (flowLocked) {
+          return;
+        }
+        const box = getBox(boxCode);
+        if (!box) {
+          return;
+        }
+        const info = findBoxPalletInfo(boxCode);
+        const targetPalletCode = info.palletCode || '';
+        const currentPalletCode = state.activePallet || '';
+        const previousActive = state.activeBox || '';
+        if (targetPalletCode && targetPalletCode !== currentPalletCode) {
+          const currentPallet = getPallet(currentPalletCode);
+          if (currentPallet && !currentPallet.sealed) {
+            closePallet(false);
+          }
+        } else if (previousActive && previousActive !== boxCode) {
+          closeBox(false);
+        }
+        if (targetPalletCode) {
+          state.activePallet = targetPalletCode;
+          const pallet = getPallet(targetPalletCode);
+          if (pallet && pallet.sealed) {
+            pallet.sealed = false;
+          }
+        }
+        box.sealed = false;
+        state.activeBox = box.code;
+        markDraftDirty();
+        renderAll();
+        logFlowBoxAction('edit', buildBoxSnapshot(boxCode, {
+          previous_active_box: previousActive,
+          new_active_box: box.code,
+        }));
+      };
+      const openClosedPallet = (palletCode) => {
+        if (flowLocked) {
+          return;
+        }
+        const pallet = getPallet(palletCode);
+        if (!pallet) {
+          return;
+        }
+        const otherOpenPallets = state.pallets
+          .filter((entry) => entry && entry.code && entry.code !== pallet.code && !entry.sealed)
+          .map((entry) => entry.code);
+        if (otherOpenPallets.length) {
+          const previousActivePallet = state.activePallet;
+          otherOpenPallets.forEach((code) => {
+            state.activePallet = code;
+            closePallet(false);
+          });
+          state.activePallet = previousActivePallet;
+        }
+        pallet.sealed = false;
+        state.activePallet = pallet.code;
+        if (state.activeBox) {
+          const activeBox = getBox(state.activeBox);
+          const belongsToPallet = activeBox && (pallet.boxes || []).includes(activeBox.code);
+          if (!belongsToPallet) {
+            state.activeBox = '';
+          }
+        }
+        markDraftDirty();
+        renderAll();
+      };
+
+      const deleteBoxFromContext = (boxCode) => {
+        if (flowLocked) {
+          return;
+        }
+        const box = getBox(boxCode);
+        if (!box) {
+          return;
+        }
+        const shouldDelete = window.confirm(
+          `Удалить короб ${boxCode} и вернуть товар в неразмещенные?`,
+        );
+        if (!shouldDelete) {
+          return;
+        }
+        logFlowBoxAction('delete', buildBoxSnapshot(boxCode));
+        state.boxes = state.boxes.filter((entry) => entry.code !== boxCode);
+        state.pallets.forEach((pallet) => {
+          pallet.boxes = (pallet.boxes || []).filter((code) => code !== boxCode);
+        });
+        if (state.activeBox === boxCode) {
+          state.activeBox = '';
+        }
+        cleanupEmpty();
+        markDraftDirty();
+        renderAll();
+      };
+
+      const openPalletPrintPreview = (palletCode, previewWindow, onReady) => {
+        const pallet = getPallet(palletCode);
+        if (!pallet || !pallet.code) {
+          if (previewWindow && previewWindow.document) {
+            previewWindow.document.open();
+            previewWindow.document.write(`<!doctype html><html lang="ru"><head><meta charset="utf-8"><title>Этикетка палеты</title></head><body style="font-family: Arial, sans-serif; padding: 16px;">Палета не найдена.</body></html>`);
+            previewWindow.document.close();
+          }
+          return;
+        }
+        const clientLabel = String("{{ client_label|escapejs }}").trim();
+        const palletIndex = state.pallets.findIndex((entry) => entry && entry.code === pallet.code);
+        const palletNumber = palletIndex >= 0 ? String(palletIndex + 1) : '-';
+        const qrPayload = pallet.code;
+        const doc = previewWindow || window.open('', '_blank', 'width=520,height=720');
+        if (!doc) {
+          return;
+        }
+        const html = `
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <title>Этикетка палеты</title>
+  <style>
+    @page { size: 75mm 120mm; margin: 0; }
+    html, body { width: 75mm; height: 120mm; margin: 0; padding: 0; }
+    body { font-family: Arial, sans-serif; color: #111; }
+    .label {
+      width: 75mm;
+      height: 120mm;
+      box-sizing: border-box;
+      padding: 6mm 6mm 6mm 8mm;
+      position: relative;
+    }
+    .code-label { font-size: 10pt; text-transform: uppercase; letter-spacing: 0.6px; }
+    .code {
+      margin-top: 2mm;
+      font-size: 13pt;
+      font-weight: 700;
+      word-break: normal;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .qr {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: 60mm;
+      height: 60mm;
+      transform: translate(-50%, -50%);
+      z-index: 2;
+    }
+    .qr-box {
+      position: absolute;
+      inset: 0;
+    }
+    .qr img,
+    .qr canvas,
+    .qr svg {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+    .qr-placeholder {
+      position: absolute;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      font-size: 10pt;
+      color: #6b7280;
+      border: 1px dashed rgba(17, 17, 17, 0.2);
+      border-radius: 8px;
+    }
+    .client {
+      position: absolute;
+      left: 3mm;
+      bottom: 4mm;
+      transform: rotate(-90deg);
+      transform-origin: left bottom;
+      font-size: 11pt;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+    .pallet-number {
+      position: absolute;
+      right: 4mm;
+      bottom: 4mm;
+      font-size: 14pt;
+      font-weight: 700;
+    }
+  </style>
+</head>
+<body>
+  <div class="label">
+    <div class="code-label">Палета</div>
+    <div class="code">${escapeHtml(pallet.code)}</div>
+    <div class="qr">
+      <div class="qr-placeholder" id="qr-placeholder">QR...</div>
+      <div class="qr-box" id="qr-box"></div>
+    </div>
+    <div class="client">${escapeHtml(clientLabel)}</div>
+    <div class="pallet-number">${escapeHtml(palletNumber)}</div>
+  </div>
+</body>
+</html>`;
+        doc.document.open();
+        doc.document.write(html);
+        doc.document.close();
+        if (typeof onReady === 'function') {
+          onReady({ doc, qrPayload });
+        }
+      };
+
+      const openBoxPrintPreview = (previewWindow, onReady) => {
+        const box = getBox(state.activeBox);
+        if (!box || !box.code) {
+          if (previewWindow && previewWindow.document) {
+            previewWindow.document.open();
+            previewWindow.document.write(`<!doctype html><html lang="ru"><head><meta charset="utf-8"><title>Этикетка короба</title></head><body style="font-family: Arial, sans-serif; padding: 16px;">Нет открытого короба.</body></html>`);
+            previewWindow.document.close();
+          }
+          return;
+        }
+        const clientLabel = String("{{ client_label|escapejs }}").trim();
+        const info = findBoxPalletInfo(box.code);
+        const boxNumber = info.index ? String(info.index) : '-';
+        const qrPayload = box.code;
+        const doc = previewWindow || window.open('', '_blank', 'width=520,height=620');
+        if (!doc) {
+          return;
+        }
+        const html = `
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <title>Этикетка короба</title>
+  <style>
+    @page { size: 58mm 60mm; margin: 0; }
+    html, body { width: 58mm; height: 60mm; margin: 0; padding: 0; }
+    body { font-family: Arial, sans-serif; color: #111; }
+    .label {
+      width: 58mm;
+      height: 60mm;
+      box-sizing: border-box;
+      padding: 4mm 4mm 4mm 8mm;
+      position: relative;
+    }
+    .code-label { font-size: 10pt; text-transform: uppercase; letter-spacing: 0.6px; }
+    .code {
+      margin-top: 1.5mm;
+      font-size: 12pt;
+      font-weight: 700;
+      word-break: normal;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .qr {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: 30mm;
+      height: 30mm;
+      transform: translate(-50%, -40%);
+      z-index: 2;
+    }
+    .qr-box {
+      position: absolute;
+      inset: 0;
+    }
+    .qr img,
+    .qr canvas,
+    .qr svg {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+    .qr-placeholder {
+      position: absolute;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      font-size: 9pt;
+      color: #6b7280;
+      border: 1px dashed rgba(17, 17, 17, 0.2);
+      border-radius: 6px;
+    }
+    .client {
+      position: absolute;
+      left: 3mm;
+      bottom: 3mm;
+      transform: rotate(-90deg);
+      transform-origin: left bottom;
+      font-size: 10pt;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+    .box-number {
+      position: absolute;
+      right: 3mm;
+      bottom: 3mm;
+      font-size: 12pt;
+      font-weight: 700;
+    }
+  </style>
+</head>
+<body>
+  <div class="label">
+    <div class="code-label">Короб</div>
+    <div class="code">${escapeHtml(box.code)}</div>
+    <div class="qr">
+      <div class="qr-placeholder" id="qr-placeholder">QR...</div>
+      <div class="qr-box" id="qr-box"></div>
+    </div>
+    <div class="client">${escapeHtml(clientLabel)}</div>
+    <div class="box-number">${escapeHtml(boxNumber)}</div>
+  </div>
+</body>
+</html>`;
+        doc.document.open();
+        doc.document.write(html);
+        doc.document.close();
+        if (typeof onReady === 'function') {
+          onReady({ doc, qrPayload });
+        }
+      };
+
       const handleBarcode = (rawValue) => {
         if (flowLocked) {
           setScannerStatus('Приемка закрыта', true);
@@ -1132,7 +2561,7 @@
           setScannerStatus(`ШК ${value} не найден в номенклатуре клиента`, true);
           return;
         }
-        ensureOpenContainers();
+        ensureOpenContainers(true);
         const plannedKey = makeKey(planned);
         const added = addToBox({ ...planned, key: plannedKey }, 1);
         if (!added) {
@@ -1373,8 +2802,99 @@
         },
         true,
       );
+      const handleBoxContextMenu = (event) => {
+        const target = event.target.closest('[data-box-code]');
+        if (!target) {
+          return;
+        }
+        event.preventDefault();
+        openContextMenu(event, target.dataset.boxCode || '');
+      };
+      const handlePalletContextMenu = (event) => {
+        const target = event.target.closest('[data-pallet-code]');
+        if (!target) {
+          return;
+        }
+        event.preventDefault();
+        openPalletContextMenu(event, target.dataset.palletCode || '');
+      };
+      if (palletBoard) {
+        palletBoard.addEventListener('contextmenu', handleBoxContextMenu);
+        palletBoard.addEventListener('contextmenu', handlePalletContextMenu);
+      }
+      if (closedBoxesEl) {
+        closedBoxesEl.addEventListener('contextmenu', handleBoxContextMenu);
+      }
+      if (contextMenu) {
+        contextMenu.addEventListener('click', (event) => {
+          const button = event.target.closest('button[data-action]');
+          if (!button || !contextMenuBoxCode) {
+            return;
+          }
+          const action = button.dataset.action;
+          if (action === 'view') {
+            openBoxView(contextMenuBoxCode);
+          } else if (action === 'edit') {
+            editBoxFromContext(contextMenuBoxCode);
+          } else if (action === 'delete') {
+            deleteBoxFromContext(contextMenuBoxCode);
+          }
+          closeContextMenu();
+        });
+      }
+      if (palletContextMenu) {
+        palletContextMenu.addEventListener('click', (event) => {
+          const button = event.target.closest('button[data-action]');
+          if (!button || !contextMenuPalletCode) {
+            return;
+          }
+          const action = button.dataset.action;
+          if (action === 'open') {
+            openClosedPallet(contextMenuPalletCode);
+          } else if (action === 'print') {
+            const previewWindow = window.open('', '_blank', 'width=520,height=720');
+            if (!previewWindow) {
+              alert('Разрешите всплывающие окна для печати.');
+              return;
+            }
+            openPalletPrintPreview(contextMenuPalletCode, previewWindow, ({ doc, qrPayload }) => {
+              loadQrInPreview(doc, qrPayload);
+            });
+          }
+          closePalletContextMenu();
+        });
+      }
+      document.addEventListener('click', (event) => {
+        if (contextMenu && contextMenu.classList.contains('is-open') && !contextMenu.contains(event.target)) {
+          closeContextMenu();
+        }
+        if (palletContextMenu && palletContextMenu.classList.contains('is-open') && !palletContextMenu.contains(event.target)) {
+          closePalletContextMenu();
+        }
+      });
+      document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') {
+          closeContextMenu();
+          closePalletContextMenu();
+          closeBoxView();
+        }
+      });
+      if (boxViewModal) {
+        boxViewModal.addEventListener('click', (event) => {
+          if (event.target === boxViewModal) {
+            closeBoxView();
+          }
+        });
+      }
+      if (boxViewClose) {
+        boxViewClose.addEventListener('click', closeBoxView);
+      }
       if (closeBoxBtn) {
         closeBoxBtn.addEventListener('click', () => {
+          if (lastFocusedRowKey) {
+            pendingFocusKey = lastFocusedRowKey;
+            pendingFocusEl = null;
+          }
           closeBox(true);
           renderAll();
         });
@@ -1389,20 +2909,27 @@
       if (formEl) {
         formEl.addEventListener('submit', (event) => {
           const remaining = getRemaining();
+          const totalPlaced = remaining.reduce((sum, item) => sum + Number(item.placed || 0), 0);
           const allDone = remaining.every((item) => item.remaining <= 0);
-          if (!allDone) {
+          if (totalPlaced <= 0) {
             event.preventDefault();
             return;
           }
+          if (!allDone) {
+            const remainingTotal = remaining.reduce(
+              (sum, item) => sum + Math.max(0, Number(item.remaining || 0)),
+              0,
+            );
+            const shouldFinish = window.confirm(
+              `Осталось ${remainingTotal} шт. по заявке. Завершить приемку с расхождениями?`,
+            );
+            if (!shouldFinish) {
+              event.preventDefault();
+              return;
+            }
+          }
           isSubmitting = true;
-          const currentBox = getBox(state.activeBox);
-          if (currentBox && !currentBox.sealed && (currentBox.items || []).length) {
-            currentBox.sealed = true;
-          }
-          const currentPallet = getPallet(state.activePallet);
-          if (currentPallet && !currentPallet.sealed) {
-            currentPallet.sealed = true;
-          }
+          finalizeContainers();
           updateHidden();
         });
       }

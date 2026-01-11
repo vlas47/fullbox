@@ -141,6 +141,34 @@ def log_agency_change(action: str, agency, user=None, description: str = "", sna
     )
 
 
+def get_staff_overactions_journal():
+    return AuditJournal.objects.get_or_create(
+        code="staff_overactions",
+        defaults={
+            "name": "Избыточные действия сотрудников",
+            "description": "Логи ручных корректировок в потоковой приемке (редактирование/удаление коробов).",
+        },
+    )[0]
+
+
+def log_staff_overaction(
+    action: str,
+    user=None,
+    agency=None,
+    description: str = "",
+    snapshot: dict | None = None,
+):
+    journal = get_staff_overactions_journal()
+    AuditEntry.objects.create(
+        journal=journal,
+        action=action,
+        agency=agency,
+        user=user,
+        description=description,
+        snapshot=snapshot or {},
+    )
+
+
 class OrderAuditEntry(models.Model):
     ACTION_CHOICES = [
         ("create", "Создание"),

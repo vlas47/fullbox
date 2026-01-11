@@ -209,6 +209,90 @@
                 </tbody>
               </table>
             </div>
+          {% elif order_type == 'processing' %}
+            <h3>Детали заявки</h3>
+            <div class="table-scroll">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Поле</th>
+                    <th>Значение</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for row in processing_fields %}
+                    <tr>
+                      <td>{{ row.label }}</td>
+                      <td>{{ row.value }}</td>
+                    </tr>
+                  {% empty %}
+                    <tr><td colspan="2" class="muted">Данные не указаны.</td></tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+
+            <h3 style="margin-top:18px;">Размеры</h3>
+            <div class="table-scroll">
+              <table>
+                <thead>
+                  <tr>
+                    <th>№</th>
+                    <th>Размер</th>
+                    <th>Баркод</th>
+                    <th>Пересчет</th>
+                    <th>Обработка</th>
+                    <th>Раскоробовка</th>
+                    <th>Брак</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for row in processing_size_rows %}
+                    <tr>
+                      <td>{{ row.size_no|default:"-" }}</td>
+                      <td>{{ row.size_value|default:"-" }}</td>
+                      <td>{{ row.barcode|default:"-" }}</td>
+                      <td>{{ row.recount_qty|default:"-" }}</td>
+                      <td>{{ row.processing_qty|default:"-" }}</td>
+                      <td>{{ row.unboxing_qty|default:"-" }}</td>
+                      <td>{{ row.defect_qty|default:"-" }}</td>
+                    </tr>
+                  {% empty %}
+                    <tr><td colspan="7" class="muted">Данные не указаны.</td></tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+
+            <h3 style="margin-top:18px;">Раскоробовка</h3>
+            <div class="table-scroll">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Дата</th>
+                    <th>Размер короба</th>
+                    <th>Кратность</th>
+                    <th>Кол-во коробов</th>
+                    <th>Кол-во паллет</th>
+                    <th>Зона хранения</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for row in processing_unboxing_rows %}
+                    <tr>
+                      <td>{{ row.date|default:"-" }}</td>
+                      <td>{{ row.box_size|default:"-" }}</td>
+                      <td>{{ row.multiple|default:"-" }}</td>
+                      <td>{{ row.box_qty|default:"-" }}</td>
+                      <td>{{ row.pallet_qty|default:"-" }}</td>
+                      <td>{{ row.storage_zone|default:"-" }}</td>
+                    </tr>
+                  {% empty %}
+                    <tr><td colspan="6" class="muted">Данные не указаны.</td></tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
           {% endif %}
 
           <h3 style="margin-top:18px;">История</h3>
@@ -308,6 +392,27 @@
                 <div class="info-label">Комментарий</div>
                 <div class="info-value">{{ packing_meta.comment|default:"-" }}</div>
               </div>
+            {% elif order_type == 'processing' %}
+              <div class="info-item">
+                <div class="info-label">Товар</div>
+                <div class="info-value">{{ processing_meta.product_name|default:"-" }}</div>
+              </div>
+              <div class="info-item">
+                <div class="info-label">Заказ №</div>
+                <div class="info-value">{{ processing_meta.order_no|default:"-" }}</div>
+              </div>
+              <div class="info-item">
+                <div class="info-label">Поставщик</div>
+                <div class="info-value">{{ processing_meta.supplier|default:"-" }}</div>
+              </div>
+              <div class="info-item">
+                <div class="info-label">Бренд</div>
+                <div class="info-value">{{ processing_meta.brand|default:"-" }}</div>
+              </div>
+              <div class="info-item">
+                <div class="info-label">Предмет</div>
+                <div class="info-value">{{ processing_meta.subject|default:"-" }}</div>
+              </div>
             {% endif %}
           </div>
         </div>
@@ -346,6 +451,7 @@
         <button class="tab" type="button" data-goods-type="br">Брак (br)</button>
         <button class="tab" type="button" data-goods-type="vz">Возврат (vz)</button>
         <button class="tab" type="button" data-goods-type="rh">Расходный (rh)</button>
+        <button class="tab" type="button" data-goods-type="no">Не обработанный (no)</button>
       </div>
       <div class="modal-note">В поставке всегда один тип товара.</div>
       <button class="tab" type="button" id="goods-type-close">Отмена</button>

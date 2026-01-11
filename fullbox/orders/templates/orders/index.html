@@ -122,8 +122,10 @@
         {% if client_view %}
         {% else %}
           <a class="tab {% if active_tab == 'journal' %}active{% endif %}" href="/orders/">Журнал заявок</a>
-          <a class="tab {% if active_tab == 'receiving' %}active{% endif %}" href="/orders/receiving/">Новая приемка</a>
-          <a class="tab {% if active_tab == 'packing' %}active{% endif %}" href="/orders/packing/">Упаковка</a>
+          {% if active_tab != 'journal' %}
+            <a class="tab {% if active_tab == 'receiving' %}active{% endif %}" href="/orders/receiving/">Новая приемка</a>
+            <a class="tab {% if active_tab == 'packing' %}active{% endif %}" href="/orders/packing/">Упаковка</a>
+          {% endif %}
         {% endif %}
           {% if client_view %}
             <a class="tab" href="/client/dashboard/?client={{ agency.id }}">В кабинет</a>

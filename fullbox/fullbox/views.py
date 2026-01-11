@@ -123,7 +123,12 @@ def role_cabinet(request, role):
 
 def sign_in(request):
     if request.user.is_authenticated:
-        return redirect(resolve_cabinet_url(get_request_role(request)))
+        role = get_request_role(request)
+        if role:
+            return redirect(resolve_cabinet_url(role))
+        agency = Agency.objects.filter(portal_user=request.user).first()
+        if agency:
+            return redirect(f"/client/dashboard/?client={agency.id}")
     error = None
     employees = Employee.objects.select_related("user").order_by("role", "full_name")
     clients = Agency.objects.select_related("portal_user").order_by("agn_name")

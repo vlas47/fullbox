@@ -81,8 +81,11 @@ def inventory_journal(request):
                 client_labels[entry.order_id] = _shorten_ip_name(base)
 
     entries = OrderAuditEntry.objects.filter(order_type="receiving")
-    if order_ids:
-        entries = entries.filter(order_id__in=order_ids)
+    if client_agency:
+        if order_ids:
+            entries = entries.filter(order_id__in=order_ids)
+        else:
+            entries = entries.none()
     entries = entries.select_related("agency").order_by("-created_at")
     latest_by_order = {}
     blocked_orders = set()
