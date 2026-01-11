@@ -198,6 +198,23 @@
 - 2026-01-06 08:28: colored task card status values (waiting red, done green) in `_task_panel.html`, deployed and restarted `fullbox`.
 - 2026-01-06 08:40: renamed receiving act creation button to "Взять в работу" in order detail and task detail; deployed and restarted `fullbox`.
 - 2026-01-06 08:49: changed receiving act add-item flow to a persistent top entry row with add button; extra items append below; deployed and restarted `fullbox`.
+- 2026-01-10 13:18: reviewed repo root, `fullbox/`, `README.md`, and `PROJECT_CONTEXT.md` to familiarize with the project.
+- 2026-01-10 13:22: reviewed storekeeper cabinet and streaming receiving flow (orders flow/receiving views and templates).
+- 2026-01-10 13:34: updated receiving flow scan highlight color and persistence behavior in `receiving_flow.html`.
+- 2026-01-10 13:36: added timed scan highlight auto-clear in receiving flow UI.
+- 2026-01-10 13:38: deployed updated `receiving_flow.html` to server and restarted `fullbox` service.
+- 2026-01-10 13:44: hid scanner UI block in receiving flow template.
+- 2026-01-10 13:44: deployed updated `receiving_flow.html` to server and restarted `fullbox` service.
+- 2026-01-10 13:49: changed closed pallets display to chips in receiving flow.
+- 2026-01-10 13:50: deployed updated `receiving_flow.html` to server and restarted `fullbox` service.
+- 2026-01-10 13:58: added closed pallet context menu with open/print QR actions in receiving flow.
+- 2026-01-10 13:59: deployed updated `receiving_flow.html` to server and restarted `fullbox` service.
+- 2026-01-10 14:49: enforced single open pallet when opening a closed pallet in receiving flow.
+- 2026-01-10 14:51: deployed updated `receiving_flow.html` to server and restarted `fullbox` service.
+- 2026-01-10 15:07: removed active pallet/box pills from receiving flow header.
+- 2026-01-10 15:09: deployed updated `receiving_flow.html` to server and restarted `fullbox` service.
+- 2026-01-10 15:12: moved pallet close/finish buttons into pallets block in receiving flow.
+- 2026-01-10 15:13: deployed updated `receiving_flow.html` to server and restarted `fullbox` service.
 - 2026-01-06 08:54: updated receiving act page title/header to "В работе ..." using order title derived from payload; deployed and restarted `fullbox`.
 - 2026-01-06 09:03: added SKU/barcode columns to receiving act table with backend lookup and extra-item fields; deployed and restarted `fullbox`.
 - 2026-01-06 09:17: added SKU/barcode/name datalist suggestions for receiving act entry fields; deployed and restarted `fullbox`.
@@ -316,3 +333,67 @@
 - 2026-01-09 08:23: reviewed `README.md`, `PROJECT_CONTEXT.md`, and `description.md` to refresh project context.
 - 2026-01-09 08:24: located team manager routing and access, reviewed `teammanager` view/urls and dashboard template.
 - 2026-01-09 10:28: adjusted receiving flow scan/manual input handling to ignore scanner digits in "В короб" field and preserve manual values; deployed template and restarted `fullbox`.
+- 2026-01-09 21:14: updated receiving flow close logic to delete empty boxes/pallets and auto-close open boxes when closing a pallet (`fullbox/orders/templates/orders/receiving_flow.html`).
+- 2026-01-09 21:17: deployed updated receiving flow template to server and restarted `fullbox`.
+- 2026-01-09 21:58: allowed finishing receiving flow with mismatches (confirm prompt), deployed updated template and restarted `fullbox`.
+- 2026-01-09 22:07: finalize receiving flow now seals open containers and removes empty boxes/pallets on submit; deployed template and restarted `fullbox`.
+- 2026-01-10 07:14: fixed inventory journal to return empty list for clients without their own receiving entries (avoid showing other clients' stock), deployed `fullbox/sklad/views.py`, restarted `fullbox`.
+- 2026-01-10 07:24: added goods type "Не обработанный" (no) in receiving flow selection and labels, deployed `fullbox/orders/views.py` and `fullbox/orders/templates/orders/detail.html`, restarted `fullbox`.
+- 2026-01-10 07:40: restyled current box panel in receiving flow with split layout and large close button, highlighted quantities, deployed template and restarted `fullbox`.
+- 2026-01-10 07:47: keep focus in "В короб" input after closing box in receiving flow, deployed template and restarted `fullbox`.
+- 2026-01-10 07:53: constrained closed boxes panel with scroll and newest-first ordering in receiving flow, deployed template and restarted `fullbox`.
+- 2026-01-10 08:14: added print button for current box label (58x60) next to "Убрать лишнее" with print preview, deployed receiving flow template and restarted `fullbox`.
+- 2026-01-10 08:18: fixed receiving flow JS break by removing inline </script> from print preview HTML, redeployed template and restarted `fullbox`.
+- 2026-01-10 08:53: added QR code to current box print label preview (receiving flow), deployed template and restarted `fullbox`.
+- 2026-01-10 08:56: resized box label code text and QR image to fit without wrapping, redeployed receiving flow template and restarted `fullbox`.
+- 2026-01-10 09:05: embedded QR generation for box label via local qrcodejs (no external QR fetch), deployed template and static vendor script, restarted `fullbox`.
+- 2026-01-10 09:18: switched box label print preview to generate QR inside the print window (qrcodejs) and show error text if QR fails; redeployed template and restarted `fullbox`.
+- 2026-01-10 09:25: fixed QR loader to use absolute script URL in print preview, redeployed receiving flow template and restarted `fullbox`.
+- 2026-01-10 09:29: copied qrcode.min.js into staticfiles so /static/vendor/qrcode.min.js serves 200 (QR print preview).
+- 2026-01-10 09:34: generate QR data URL in main window before print preview (ensure QR lib load), embedded QR image in print HTML, redeployed template and restarted `fullbox`.
+- 2026-01-10 09:38: opened print preview window synchronously to avoid popup blocking; QR generation runs after lib load, redeployed template and restarted `fullbox`.
+- 2026-01-10 09:42: render QR data URL asynchronously with retry and show placeholder in print preview before printing, redeployed template and restarted `fullbox`.
+- 2026-01-10 09:54: reverted to generating QR inside print preview window using qrcodejs script, with placeholder fallback, redeployed template and restarted `fullbox`.
+- 2026-01-10 09:58: generate QR data URL in main window after ensuring qrcodejs, inject QR image into print preview, redeployed template and restarted `fullbox`.
+- 2026-01-10 10:18: render box label QR directly in print preview by loading qrcodejs inside the preview window, add fallback message for missing box; deployed template and restarted `fullbox`.
+- 2026-01-10 10:32: wait for print preview DOM ready before loading qrcodejs and rendering QR, then print; deployed template and restarted `fullbox`.
+- 2026-01-10 10:42: added QR preview column in current box panel and render QR immediately in main window on box change; deployed template and restarted `fullbox`.
+- 2026-01-10 10:49: removed QR header text, reduced QR preview size to avoid expanding current box panel, and added dynamic loader for qrcodejs in main flow view; deployed template and restarted `fullbox`.
+- 2026-01-10 11:30: reviewed repo structure and core docs (`README.md`, `PROJECT_CONTEXT.md`, `description.md`, `DEPLOY.md`, `LABEL_PRINT.md`) plus Django settings/urls/manage entrypoints to refresh project understanding.
+- 2026-01-10 11:36: reviewed storekeeper streaming receiving entrypoints and UI (orders detail link, `/orders/receiving/<id>/flow/`, `ReceivingFlowView`, and `receiving_flow.html`) to explain the workflow.
+- 2026-01-10 11:44: inspected receiving flow QR rendering path and local `qrcode.min.js` asset to diagnose missing QR preview.
+- 2026-01-10 11:46: added console logging around receiving flow QR load/render to surface missing lib or render errors.
+- 2026-01-10 12:01: patched local `qrcode.min.js` to reset UTF-8 byte buffer per char (fixes QR overflow on Cyrillic).
+- 2026-01-10 12:11: added pallet numbering in flow UI and prefixed closed box codes with pallet/box numbers.
+- 2026-01-10 12:40: added box context menu in receiving flow (view/edit/delete), server logging to new audit journal, and head manager link to the new journal.
+- 2026-01-10 12:59: removed per-row "В короб" button from receiving flow items table; keep input-only entry.
+- 2026-01-10 13:02: highlighted remaining items rows in green when planned qty equals actual qty.
+- 2026-01-10 13:11: enforced single open pallet by closing current pallet when editing a box in another pallet (empty pallet removed).
+- 2026-01-10 15:40: added catalog-backed add row for unplaced items in receiving flow (datalist, extra-item ordering, and seeding from existing boxes) plus catalog items JSON in the template.
+- 2026-01-10 15:41: deployed receiving flow add-row/catalog updates (`fullbox/orders/views.py`, `fullbox/orders/templates/orders/receiving_flow.html`) and restarted `fullbox`.
+- 2026-01-10 15:50: split add-row inputs into separate SKU/name/size fields with individual dropdown lists in receiving flow.
+- 2026-01-10 15:50: deployed receiving flow add-row field split update (`fullbox/orders/templates/orders/receiving_flow.html`) and restarted `fullbox`.
+- 2026-01-10 15:59: auto-fill SKU/name/size in add-row based on a matching catalog item and allow selection with single-field input.
+- 2026-01-10 16:00: deployed add-row auto-fill tweak (`fullbox/orders/templates/orders/receiving_flow.html`) and restarted `fullbox`.
+- 2026-01-10 17:39: kept receiving flow completion on flow page and adjusted status label logic for "Товар принят (с расхождениями)" (`fullbox/orders/views.py`).
+- 2026-01-10 17:40: deployed receiving flow completion/status update (`fullbox/orders/views.py`) and restarted `fullbox`.
+- 2026-01-10 17:52: updated receiving flow completion to lock with flow_closed, add reopen action logging, status label, and act print link (`fullbox/orders/views.py`, `fullbox/orders/templates/orders/receiving_flow.html`).
+- 2026-01-10 17:53: deployed receiving flow completion/reopen updates and restarted `fullbox`.
+- 2026-01-10 17:59: hide current box section and open pallets when flow is closed in receiving flow UI (`fullbox/orders/templates/orders/receiving_flow.html`).
+- 2026-01-10 18:00: deployed flow-closed UI cleanup (`fullbox/orders/templates/orders/receiving_flow.html`) and restarted `fullbox`.
+- 2026-01-10 18:18: hid "Новая приемка" and "Упаковка" buttons on orders journal page (`fullbox/orders/templates/orders/index.html`).
+- 2026-01-10 18:19: deployed orders journal header change (`fullbox/orders/templates/orders/index.html`) and restarted `fullbox`.
+- 2026-01-10 18:34: force opening pallets/boxes when adding via scanner or manual add row in flow (`fullbox/orders/templates/orders/receiving_flow.html`).
+- 2026-01-10 18:35: deployed flow scanner/open-container tweak (`fullbox/orders/templates/orders/receiving_flow.html`) and restarted `fullbox`.
+- 2026-01-10 19:03: adjusted flow auto-open logic to treat extra (qty=0) items as remaining (`fullbox/orders/templates/orders/receiving_flow.html`).
+- 2026-01-10 19:04: deployed auto-open tweak for extra items and restarted `fullbox`.
+- 2026-01-10 19:12: set flow act print link to return back to flow (`fullbox/orders/views.py`).
+- 2026-01-10 19:13: deployed flow act print return link update (`fullbox/orders/views.py`) and restarted `fullbox`.
+- 2026-01-10 20:01: fixed login redirect for already-authenticated client users (`fullbox/fullbox/views.py`).
+- 2026-01-10 20:02: deployed login redirect fix (`fullbox/fullbox/views.py`) and restarted `fullbox`.
+- 2026-01-10 22:15: added processing order type (views/urls), client cabinet button, and processing template with detailed fields (`fullbox/orders/views.py`, `fullbox/orders/urls.py`, `fullbox/orders/templates/orders/processing.html`, `fullbox/orders/templates/orders/detail.html`, `fullbox/client_cabinet/views.py`, `fullbox/client_cabinet/templates/client_cabinet/dashboard.html`).
+- 2026-01-10 22:20: deployed processing order changes (orders/client cabinet templates/views) and restarted `fullbox` service.
+- 2026-01-10 22:30: trimmed client-side nav in processing order page to only cabinet + stock links (`fullbox/orders/templates/orders/processing.html`).
+- 2026-01-10 22:31: deployed processing nav trim and restarted `fullbox` service.
+- 2026-01-10 22:45: restructured processing form into 2x2 grid with only product info in top-left and photo placeholder (`fullbox/orders/templates/orders/processing.html`).
+- 2026-01-10 22:46: deployed processing grid layout update and restarted `fullbox` service.

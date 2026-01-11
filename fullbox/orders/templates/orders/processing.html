@@ -1,0 +1,532 @@
+
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Заявка на обработку</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@500;600;700&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #f2efe8;
+      --surface: #fffdf8;
+      --surface-2: #f7f2ea;
+      --ink: #1c1f1a;
+      --muted: #6b6f66;
+      --accent: #0e6b5b;
+      --accent-strong: #0b5246;
+      --sun: #f2b747;
+      --danger: #d4543c;
+      --stroke: rgba(28,31,26,0.12);
+      --shadow: 0 18px 45px rgba(15,23,42,0.12);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Manrope", system-ui, sans-serif;
+      color: var(--ink);
+      overflow: hidden;
+      background:
+        radial-gradient(1200px 540px at -10% -20%, rgba(242,183,71,0.22), transparent 60%),
+        radial-gradient(900px 520px at 110% 10%, rgba(14,107,91,0.18), transparent 55%),
+        var(--bg);
+      min-height: 100vh;
+    }
+    a { color: inherit; text-decoration: none; }
+    .wrap {
+      position: relative;
+      width: 100%;
+      max-width: 100%;
+      margin: 0 auto;
+      padding: 24px 24px 72px;
+    }
+    .layout {
+      display: grid;
+      grid-template-columns: 260px minmax(0, 1fr);
+      gap: 20px;
+      align-items: stretch;
+      min-height: calc(100vh - 96px);
+    }
+    .side {
+      background: var(--surface);
+      border: 1px solid var(--stroke);
+      border-radius: 22px;
+      padding: 18px;
+      box-shadow: var(--shadow);
+      display: grid;
+      gap: 16px;
+      max-height: calc(100vh - 96px);
+      overflow: auto;
+    }
+    .brand-title {
+      font-family: "Bricolage Grotesque", "Manrope", sans-serif;
+      font-size: 22px;
+      letter-spacing: 0.6px;
+    }
+    .profile {
+      display: grid;
+      gap: 6px;
+      padding: 12px;
+      border-radius: 16px;
+      background: var(--surface-2);
+      border: 1px solid var(--stroke);
+    }
+    .profile-value { font-weight: 600; }
+    .nav { display: grid; gap: 10px; }
+    .nav-link {
+      display: grid;
+      gap: 4px;
+      padding: 12px 12px;
+      border-radius: 16px;
+      border: 1px solid var(--stroke);
+      background: var(--surface-2);
+      transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+    }
+    .nav-link:hover {
+      transform: translateY(-1px);
+      border-color: rgba(14,107,91,0.4);
+      box-shadow: 0 12px 24px rgba(14,107,91,0.12);
+    }
+    .nav-link.primary {
+      background: linear-gradient(135deg, rgba(242,183,71,0.45), rgba(14,107,91,0.15));
+      border-color: transparent;
+    }
+    .nav-title { font-weight: 700; }
+    .nav-sub { font-size: 12px; color: var(--muted); }
+    .side-footer { display: grid; gap: 10px; }
+    .content {
+      display: grid;
+      gap: 18px;
+      max-height: calc(100vh - 96px);
+      overflow: auto;
+      padding-right: 4px;
+    }
+    .panel {
+      background: var(--surface);
+      border: 1px solid var(--stroke);
+      border-radius: 22px;
+      box-shadow: var(--shadow);
+      padding: 18px;
+    }
+    .panel-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 14px;
+      flex-wrap: wrap;
+      margin-bottom: 14px;
+    }
+    .panel-title {
+      margin: 0;
+      font-family: "Bricolage Grotesque", "Manrope", sans-serif;
+      font-size: 22px;
+    }
+    .panel-subtitle { color: var(--muted); font-size: 13px; }
+    .btn {
+      padding: 10px 14px;
+      border-radius: 12px;
+      border: 1px solid var(--stroke);
+      background: rgba(28,31,26,0.04);
+      color: var(--ink);
+      font-weight: 700;
+      transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .btn:hover {
+      transform: translateY(-1px);
+      border-color: rgba(14,107,91,0.4);
+      box-shadow: 0 10px 24px rgba(14,107,91,0.14);
+    }
+    .btn.primary {
+      background: linear-gradient(120deg, var(--sun), #ffd88a);
+      border-color: transparent;
+      color: #2a2110;
+    }
+    .btn.ghost { background: transparent; }
+    .alert {
+      border-radius: 14px;
+      padding: 10px 12px;
+      margin-bottom: 12px;
+      border: 1px solid transparent;
+    }
+    .alert.success {
+      border-color: rgba(14,107,91,0.35);
+      background: rgba(14,107,91,0.12);
+      color: var(--accent-strong);
+    }
+    .alert.error {
+      border-color: rgba(212,84,60,0.35);
+      background: rgba(212,84,60,0.14);
+      color: #7f1d1d;
+    }
+    form { display: grid; gap: 12px; }
+    .form-section {
+      border: 1px solid var(--stroke);
+      background: var(--surface-2);
+      border-radius: 16px;
+      padding: 14px;
+      display: grid;
+      gap: 12px;
+    }
+    .form-section h3 {
+      margin: 0;
+      font-size: 16px;
+      font-family: "Bricolage Grotesque", "Manrope", sans-serif;
+    }
+    .form-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 12px;
+    }
+    .field { display: grid; gap: 6px; }
+    label { font-weight: 600; color: var(--muted); }
+    input, textarea, select {
+      width: 100%;
+      padding: 9px 10px;
+      border-radius: 10px;
+      border: 1px solid var(--stroke);
+      background: var(--surface);
+      color: var(--ink);
+      font-size: 14px;
+      font-family: inherit;
+    }
+    textarea { resize: vertical; }
+    input[type="checkbox"],
+    input[type="radio"] {
+      width: auto;
+      margin: 0;
+      accent-color: var(--accent);
+    }
+    .inline { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+    .inline label { display: flex; align-items: center; gap: 6px; font-weight: 500; color: var(--ink); }
+    .hint { color: var(--muted); font-size: 12px; }
+    .required { color: var(--danger); margin-left: 4px; }
+    .table-wrap {
+      border-radius: 14px;
+      border: 1px solid var(--stroke);
+      overflow: auto;
+      background: var(--surface);
+    }
+    table { width: 100%; border-collapse: collapse; min-width: 900px; }
+    th, td { padding: 8px; border-bottom: 1px solid var(--stroke); vertical-align: top; }
+    th {
+      text-transform: uppercase;
+      font-size: 11px;
+      letter-spacing: 1px;
+      color: var(--muted);
+      background: var(--surface-2);
+      position: sticky;
+      top: 0;
+    }
+    .table-actions {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .row-action {
+      padding: 6px 10px;
+      border-radius: 8px;
+      border: 1px solid var(--stroke);
+      background: transparent;
+      color: var(--ink);
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 600;
+    }
+    .row-action:hover {
+      border-color: rgba(14,107,91,0.4);
+      box-shadow: 0 10px 24px rgba(14,107,91,0.14);
+    }
+    .actions { display: flex; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
+    @media (max-width: 1200px) {
+      body { overflow: auto; }
+      .layout { grid-template-columns: 1fr; }
+      .side,
+      .content { max-height: none; overflow: visible; padding-right: 0; }
+    }
+  
+    .processing-content {
+      height: calc(100vh - 96px);
+      overflow: hidden;
+    }
+    .processing-form {
+      height: 100%;
+      display: grid;
+    }
+    .processing-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      grid-template-rows: repeat(2, minmax(0, 1fr));
+      gap: 18px;
+      min-height: 0;
+      height: 100%;
+    }
+    .processing-block {
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      overflow: hidden;
+    }
+    .block-header {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: flex-start;
+    }
+    .block-body {
+      min-height: 0;
+      overflow: auto;
+      display: grid;
+      gap: 12px;
+      margin-top: 12px;
+      padding-right: 4px;
+    }
+    .block-footer {
+      margin-top: auto;
+      padding-top: 12px;
+    }
+    .photo-box {
+      width: 2cm;
+      height: 2cm;
+      border-radius: 8px;
+      border: 1px dashed var(--stroke);
+      background: var(--surface-2);
+      display: grid;
+      place-items: center;
+      position: relative;
+      overflow: hidden;
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+    .photo-box input {
+      position: absolute;
+      inset: 0;
+      opacity: 0;
+      cursor: pointer;
+    }
+    .photo-placeholder {
+      font-size: 10px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+    .photo-preview {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: none;
+    }
+    .photo-box.has-image .photo-placeholder {
+      display: none;
+    }
+    .photo-box.has-image .photo-preview {
+      display: block;
+    }
+    @media (max-width: 1200px) {
+      .processing-content { height: auto; }
+      .processing-form { height: auto; }
+      .processing-grid {
+        grid-template-columns: 1fr;
+        grid-template-rows: auto;
+        height: auto;
+      }
+    }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="layout">
+      <aside class="side">
+        <div class="brand">
+          <div class="brand-title">FULLBOX</div>
+        </div>
+        <div class="profile">
+          <div class="profile-value">
+            {% if agency %}
+              Кабинет клиента<br>
+              {{ agency.agn_name|default:agency.fio_agn|default:"клиента" }}
+            {% else %}
+              {% include "partials/current_user.html" %}
+            {% endif %}
+          </div>
+        </div>
+        <nav class="nav">
+          {% if agency %}
+            <a class="nav-link" href="/client/dashboard/?client={{ agency.id }}">
+              <span class="nav-title">В кабинет</span>
+              <span class="nav-sub">Главная клиента</span>
+            </a>
+            <a class="nav-link" href="/sklad/journal/?client={{ agency.id }}">
+              <span class="nav-title">Складские остатки</span>
+              <span class="nav-sub">Актуальные стоки</span>
+            </a>
+          {% else %}
+            <a class="nav-link" href="/orders/">
+              <span class="nav-title">Журнал заявок</span>
+              <span class="nav-sub">Все заявки</span>
+            </a>
+            <a class="nav-link" href="{{ cabinet_url }}">
+              <span class="nav-title">В кабинет</span>
+              <span class="nav-sub">Главная роль</span>
+            </a>
+            <a class="nav-link primary" href="/orders/processing/">
+              <span class="nav-title">Заявка на обработку</span>
+              <span class="nav-sub">Техническая карта</span>
+            </a>
+            <a class="nav-link" href="/orders/packing/">
+              <span class="nav-title">Заявка на упаковку</span>
+              <span class="nav-sub">Подготовка товара</span>
+            </a>
+            <a class="nav-link" href="/client/">
+              <span class="nav-title">Список клиентов</span>
+              <span class="nav-sub">Выбрать кабинет</span>
+            </a>
+          {% endif %}
+        </nav>
+        <div class="side-footer">
+          <a class="btn ghost" href="/logout/">Выход</a>
+        </div>
+      </aside>
+
+            <main class="content processing-content">
+        <form class="processing-form" method="post" enctype="multipart/form-data">
+          {% csrf_token %}
+          <input type="hidden" name="agency_id" value="{{ agency.id|default:'' }}">
+          <input type="hidden" name="email" value="{{ agency.email|default:'' }}">
+          <input type="hidden" name="fio" value="{{ agency.fio_agn|default:'' }}">
+          <input type="hidden" name="org" value="{{ agency.agn_name|default:'' }}">
+
+          <div class="processing-grid">
+            <section class="panel processing-block">
+              <div class="block-header">
+                <div>
+                  <h2 class="panel-title">Заявка на обработку товара</h2>
+                  <div class="panel-subtitle">Поля со <span class="required">*</span> обязательны.</div>
+                </div>
+                <label class="photo-box" id="photo-box">
+                  <input type="file" name="product_photo" accept="image/*">
+                  <span class="photo-placeholder">Фото</span>
+                  <img class="photo-preview" alt="Фото товара">
+                </label>
+              </div>
+
+              <div class="block-body">
+                {% if error %}
+                  <div class="alert error">{{ error }}</div>
+                {% endif %}
+                {% if submitted %}
+                  <div class="alert success">Заявка на обработку отправлена. Мы свяжемся с вами для уточнения деталей.</div>
+                {% endif %}
+
+                <div class="form-grid">
+                  <div class="field" style="grid-column: 1 / -1;">
+                    <label>Наименование товара <span class="required">*</span></label>
+                    <input type="text" name="product_name" required>
+                  </div>
+                  <div class="field">
+                    <label>Поставщик</label>
+                    <input type="text" name="supplier">
+                  </div>
+                  <div class="field">
+                    <label>Бренд</label>
+                    <input type="text" name="brand">
+                  </div>
+                  <div class="field">
+                    <label>Предмет</label>
+                    <input type="text" name="subject">
+                  </div>
+                  <div class="field">
+                    <label>Артикул</label>
+                    <input type="text" name="article">
+                  </div>
+                  <div class="field">
+                    <label>Артикул ВБ</label>
+                    <input type="text" name="wb_article">
+                  </div>
+                  <div class="field">
+                    <label>Цвет</label>
+                    <input type="text" name="color">
+                  </div>
+                  <div class="field">
+                    <label>Состав</label>
+                    <input type="text" name="composition">
+                  </div>
+                  <div class="field">
+                    <label>Пол</label>
+                    <input type="text" name="gender">
+                  </div>
+                  <div class="field">
+                    <label>Сезон</label>
+                    <input type="text" name="season">
+                  </div>
+                  <div class="field">
+                    <label>Заказ №</label>
+                    <input type="text" name="order_no">
+                  </div>
+                  <div class="field">
+                    <label>Приобретение в 1С №</label>
+                    <input type="text" name="purchase_1c_no">
+                  </div>
+                  <div class="field">
+                    <label>Приобретение в 1С от</label>
+                    <input type="date" name="purchase_1c_date">
+                  </div>
+                </div>
+              </div>
+
+              <div class="block-footer actions">
+                <button type="submit" class="btn primary">Отправить</button>
+                {% if agency %}
+                  <a class="btn ghost" href="/orders/?client={{ agency.id }}">Отмена</a>
+                {% else %}
+                  <a class="btn ghost" href="/orders/">Отмена</a>
+                {% endif %}
+              </div>
+            </section>
+
+            <section class="panel processing-block empty-block"></section>
+            <section class="panel processing-block empty-block"></section>
+            <section class="panel processing-block empty-block"></section>
+          </div>
+        </form>
+      </main>
+    </div>
+  </div>
+
+    <script>
+    (() => {
+      const photoBox = document.getElementById('photo-box');
+      if (!photoBox) {
+        return;
+      }
+      const input = photoBox.querySelector('input[type="file"]');
+      const preview = photoBox.querySelector('.photo-preview');
+      if (!input || !preview) {
+        return;
+      }
+      input.addEventListener('change', () => {
+        const file = input.files && input.files[0];
+        if (!file) {
+          preview.src = '';
+          photoBox.classList.remove('has-image');
+          return;
+        }
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          preview.src = event.target.result;
+          photoBox.classList.add('has-image');
+        };
+        reader.readAsDataURL(file);
+      });
+    })();
+  </script>
+</body>
+</html>
