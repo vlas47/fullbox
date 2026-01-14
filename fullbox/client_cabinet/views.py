@@ -150,6 +150,13 @@ def _order_title_label(order_type: str, order_id: str, payload: dict | None = No
     if order_type == "packing":
         return f"Заявка на упаковку №{order_id}"
     if order_type == "processing":
+        if payload:
+            status_value = (payload.get("status") or payload.get("submit_action") or "").lower()
+            status_label = (payload.get("status_label") or "").lower()
+            if status_value == "draft" or "черновик" in status_label:
+                return "Черновик заявки на обработку"
+        if str(order_id).startswith("draft-"):
+            return "Черновик заявки на обработку"
         return f"Заявка на обработку №{order_id}"
     return f"Заявка №{order_id}"
 
@@ -199,6 +206,8 @@ def _is_draft_entry(entry) -> bool:
 def _order_detail_url(entry, client_id: int | None, client_view: bool) -> str:
     if client_view and entry.order_type == "receiving" and _is_draft_entry(entry) and client_id:
         return f"/orders/receiving/?client={client_id}&edit={entry.order_id}"
+    if client_view and entry.order_type == "processing" and _is_draft_entry(entry) and client_id:
+        return f"/orders/processing/?client={client_id}&order={entry.order_id}&status=draft"
     suffix = f"?client={client_id}" if client_view and client_id else ""
     return f"/orders/{entry.order_type}/{entry.order_id}/{suffix}"
 
@@ -247,36 +256,35 @@ def dashboard(request):
     client_messages = []
     if selected_client:
         dashboard_return_url = f"/client/dashboard/?client={selected_client.id}"
-        base_entries = (
-            OrderAuditEntry.objects.filter(agency=selected_client)
-            .order_by("-created_at")
-        )
-        order_ids = list(base_entries.values_list("order_id", flat=True).distinct())
-        raw_entries = (
-            OrderAuditEntry.objects.filter(order_id__in=order_ids)
-            .order_by("-created_at")
+        raw_entries = list(
+            OrderAuditEntry.objects.filter(agency=selected_client).order_by("-created_at")
         )
         latest_by_order = {}
         status_by_order = {}
         act_info_by_order = {}
         for entry in raw_entries:
-            if entry.order_id not in latest_by_order:
-                latest_by_order[entry.order_id] = entry
-            if entry.order_id not in status_by_order and _is_status_entry(entry):
-                status_by_order[entry.order_id] = entry
-            if entry.order_id not in act_info_by_order and entry.order_type == "receiving":
+            key = (entry.order_type, entry.order_id)
+            if key not in latest_by_order:
+                latest_by_order[key] = entry
+            if key not in status_by_order and _is_status_entry(entry):
+                status_by_order[key] = entry
+            if key not in act_info_by_order and entry.order_type == "receiving":
                 payload = entry.payload or {}
                 if payload.get("act_sent"):
-                    act_info_by_order[entry.order_id] = entry
+                    act_info_by_order[key] = entry
         selected_entries = [
-            status_by_order.get(order_id, latest_entry)
-            for order_id, latest_entry in latest_by_order.items()
+            status_by_order.get(key, latest_entry)
+            for key, latest_entry in latest_by_order.items()
         ]
         selected_entries.sort(key=lambda item: item.created_at, reverse=True)
         if not client_view:
             selected_entries = [entry for entry in selected_entries if not _is_draft_entry(entry)]
         order_titles = {
-            entry.order_id: _order_title_label(entry.order_type, entry.order_id, entry.payload or {})
+            (entry.order_type, entry.order_id): _order_title_label(
+                entry.order_type,
+                entry.order_id,
+                entry.payload or {},
+            )
             for entry in selected_entries
         }
         buckets = {
@@ -286,7 +294,7 @@ def dashboard(request):
             "done": {"label": "Выполнена", "orders": []},
         }
         act_cards = []
-        visible_order_ids = {entry.order_id for entry in selected_entries}
+        visible_order_keys = {(entry.order_type, entry.order_id) for entry in selected_entries}
         for entry in selected_entries:
             bucket = _order_bucket(entry)
             buckets[bucket]["orders"].append(
@@ -300,7 +308,7 @@ def dashboard(request):
                     "detail_url": _order_detail_url(entry, selected_client.id if selected_client else None, client_view),
                 }
             )
-        for order_id, act_entry in act_info_by_order.items():
+        for key, act_entry in act_info_by_order.items():
             payload = act_entry.payload or {}
             client_response = (payload.get("act_client_response") or "").lower()
             if client_response in {"confirmed", "dispute"}:
@@ -312,13 +320,13 @@ def dashboard(request):
             act_cards.append(
                 {
                     "bucket": "client",
-                    "order_id": order_id,
+                    "order_id": act_entry.order_id,
                     "order_type": act_entry.order_type,
                     "type_label": "Акт",
-                    "title": f"{act_label} по заявке №{order_id}",
+                    "title": f"{act_label} по заявке №{act_entry.order_id}",
                     "status_label": "Акт отправлен клиенту",
                     "created_at": act_entry.created_at,
-                    "detail_url": f"/orders/receiving/{order_id}/act/?client={selected_client.id}&{return_param}",
+                    "detail_url": f"/orders/receiving/{act_entry.order_id}/act/?client={selected_client.id}&{return_param}",
                     "attention": True,
                 }
             )
@@ -343,13 +351,19 @@ def dashboard(request):
             action="update",
         ).order_by("-created_at")
         if not client_view:
-            message_qs = message_qs.filter(order_id__in=visible_order_ids)
+            if visible_order_keys:
+                key_filter = models.Q()
+                for order_type, order_id in visible_order_keys:
+                    key_filter |= models.Q(order_type=order_type, order_id=order_id)
+                message_qs = message_qs.filter(key_filter)
+            else:
+                message_qs = message_qs.none()
         client_messages = [
             {
                 "created_at": entry.created_at,
                 "text": _format_message_text(entry.description) or "Исправление заявки",
                 "title": order_titles.get(
-                    entry.order_id,
+                    (entry.order_type, entry.order_id),
                     _order_title_label(entry.order_type, entry.order_id, entry.payload or {}),
                 ),
                 "detail_url": f"/orders/{entry.order_type}/{entry.order_id}/?client={selected_client.id}",

@@ -230,7 +230,7 @@
       border: 1px solid var(--stroke);
       background: rgba(28,31,26,0.03);
     }
-    table { width: 100%; border-collapse: collapse; min-width: 520px; }
+    table { width: 100%; border-collapse: collapse; min-width: 640px; }
     th, td { border-bottom: 1px solid var(--stroke); padding: 10px; text-align: left; vertical-align: top; }
     th {
       color: var(--muted);
@@ -348,6 +348,7 @@
                   <th>SKU</th>
                   <th>Наименование</th>
                   <th>Размер</th>
+                  <th>Тип товара</th>
                   <th>Кол-во</th>
                 </tr>
                 <tr class="filter-row">
@@ -366,6 +367,11 @@
                       <option value="">Все</option>
                     </select>
                   </th>
+                  <th>
+                    <select class="filter-select" data-col="3">
+                      <option value="">Все</option>
+                    </select>
+                  </th>
                   <th></th>
                 </tr>
               </thead>
@@ -375,11 +381,12 @@
                     <td>{{ row.sku }}</td>
                     <td>{{ row.name }}</td>
                     <td>{{ row.size }}</td>
+                    <td>{{ row.goods_type }}</td>
                     <td>{{ row.qty }}</td>
                   </tr>
                 {% empty %}
                   <tr>
-                    <td colspan="4" class="muted">Записей пока нет.</td>
+                    <td colspan="5" class="muted">Записей пока нет.</td>
                   </tr>
                 {% endfor %}
               </tbody>

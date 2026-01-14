@@ -399,3 +399,29 @@
 - 2026-01-10 22:46: deployed processing grid layout update and restarted `fullbox` service.
 - 2026-01-10 23:10: updated journal.md with 2026-01-10 work summary, uploaded to server and restarted `fullbox`.
 - 2026-01-10 23:11: committed and pushed changes to GitHub (commit 5a51b43).
+- 2026-01-11 08:45: updated processing form to replace extra fields with stock table, added stock picker modal, and wired inventory data (`fullbox/orders/templates/orders/processing.html`, `fullbox/orders/views.py`, `fullbox/orders/templates/orders/detail.html`).
+- 2026-01-11 08:47: deployed processing stock picker/table update and restarted `fullbox` service.
+- 2026-01-11 08:55: reduced processing stock table typography/padding to fit block (`fullbox/orders/templates/orders/processing.html`).
+- 2026-01-11 08:56: deployed smaller stock table styling for processing page and restarted `fullbox` service.
+- 2026-01-11 09:05: narrowed size column in processing stock table (`fullbox/orders/templates/orders/processing.html`).
+- 2026-01-11 09:06: deployed size column width adjustment for processing table and restarted `fullbox` service.
+- 2026-01-11 09:20: moved processing form actions to sidebar, added draft save handling, and aligned product name input with "Выбрать"; deployed processing template/view updates and restarted `fullbox` service.
+- 2026-01-11 09:24: fixed processing block scroll behavior by constraining block body (`fullbox/orders/templates/orders/processing.html`); deployed and restarted `fullbox` service.
+- 2026-01-11 10:11: added processing stock photo autofill from SKU, limited processing qty to available stock (UI + server validation), and stored stock photo URL (`fullbox/orders/templates/orders/processing.html`, `fullbox/orders/views.py`); deployed and restarted `fullbox` service.
+- 2026-01-11 10:23: added "Тип товара" column to inventory journal with goods type mapping from receiving status (`fullbox/sklad/views.py`, `fullbox/sklad/templates/sklad/inventory_journal.html`, `fullbox/client_cabinet/templates/client_cabinet/inventory_journal.html`, `fullbox/templates/teammanager/inventory_journal.html`); deployed and restarted `fullbox` service.
+- 2026-01-11 10:38: restored client inventory journal rows by falling back to payload org/email/fio matching when agency links are missing (`fullbox/sklad/views.py`); deployed and restarted `fullbox` service.
+- 2026-01-11 10:44: broadened inventory journal client match to use agency, portal user, and payload org/fio/email (includes icontains fallback) to restore rows (`fullbox/sklad/views.py`); deployed and restarted `fullbox` service.
+- 2026-01-11 11:18: fixed inventory journal row generation by correcting indentation so box/pallet items append properly (`fullbox/sklad/views.py`); deployed and restarted `fullbox` service.
+- 2026-01-11 11:55: created `processing_app` and routed `/orders/processing/` to it, moved processing form template into the app, and updated settings/urls (`fullbox/processing_app`, `fullbox/orders/urls.py`, `fullbox/orders/views.py`, `fullbox/fullbox/settings.py`); deployed and restarted `fullbox` service.
+- 2026-01-11 12:15: removed processing logic from `fullbox/orders/views.py` so processing handlers live in `fullbox/processing_app/views.py`.
+- 2026-01-11 12:40: added processing stock picker view/template and wired "Выбрать" to open it; removed duplicate processing template from orders app and moved `processing_app` ahead of `orders` in `INSTALLED_APPS`.
+- 2026-01-11 13:08: expanded processing stock picker to full width, added goods type column and filters, and included goods type data in processing inventory payload (`fullbox/processing_app/views.py`, `fullbox/processing_app/templates/processing/stock_picker.html`).
+- 2026-01-11 13:14: enforced equal 2x2 processing grid blocks and added table scroll behavior within the processing form layout (`fullbox/processing_app/templates/processing/processing.html`).
+- 2026-01-11 13:22: restored processing draft prefill (product name, photo URL, stock rows) after save by loading draft payload in `ProcessingHomeView` and hydrating the form via JS (`fullbox/processing_app/views.py`, `fullbox/processing_app/templates/processing/processing.html`).
+- 2026-01-11 13:25: moved processing status/notifications to left sidebar and removed client-side "Складские остатки" link from processing form (`fullbox/processing_app/templates/processing/processing.html`).
+- 2026-01-11 13:29: merged right-side processing blocks into a single "Параметры обработки" panel spanning two rows (`fullbox/processing_app/templates/processing/processing.html`).
+- 2026-01-11 13:40: added processing parameters table (quality, marking, packaging, inserts, box forming) with draft prefill and payload storage (`fullbox/processing_app/templates/processing/processing.html`, `fullbox/processing_app/views.py`).
+- 2026-01-11 17:15: renamed processing parameter label to "Маркировка 58/40 (шт/чз)" (`fullbox/processing_app/templates/processing/processing.html`).
+- 2026-01-11 17:25: open client draft processing orders in edit form instead of detail view (`fullbox/client_cabinet/views.py`).
+- 2026-01-11 20:00: reduced remaining-items table height in receiving flow with internal scroll and tighter padding (`fullbox/orders/templates/orders/receiving_flow.html`).
+- 2026-01-11 20:21: added closed pallet context menu action to set storage location with modal form and draft save (`fullbox/orders/templates/orders/receiving_flow.html`).

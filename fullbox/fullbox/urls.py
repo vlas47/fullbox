@@ -42,6 +42,7 @@ urlpatterns = [
     path('scanner/ims-2290hd/', TemplateView.as_view(template_name='scanner_ims_2290hd.html'), name='scanner-ims-2290hd'),
     path('orders/', include('orders.urls')),
     path('head-manager/', include('head_manager.urls')),
+    path('processing-head/', include('processing_head.urls')),
     path('client/', include('client_cabinet.urls')),
     path('sku/', include('sku.urls')),
     path('audit/', include('audit.urls')),

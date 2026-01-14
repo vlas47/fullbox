@@ -9,6 +9,7 @@ STAFF_ROLES = {
     "admin",
     "director",
     "head_manager",
+    "processing_head",
     "manager",
     "accountant",
     "developer",
@@ -70,6 +71,7 @@ def resolve_cabinet_url(role: str | None) -> str:
         "manager": "/team-manager/",
         "storekeeper": "/sklad/",
         "head_manager": "/head-manager/",
+        "processing_head": "/processing-head/",
         "developer": "/dev/",
         "admin": "/admin/",
     }

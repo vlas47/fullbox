@@ -11,6 +11,7 @@ ROLE_USERNAMES = {
     "director": "director",
     "accountant": "accountant",
     "head_manager": "head",
+    "processing_head": "processing_head",
     "manager": "manager",
     "storekeeper": "storekeeper",
     "picker": "picker",

@@ -238,27 +238,23 @@
                 <thead>
                   <tr>
                     <th>№</th>
+                    <th>Артикул товара</th>
                     <th>Размер</th>
-                    <th>Баркод</th>
-                    <th>Пересчет</th>
-                    <th>Обработка</th>
-                    <th>Раскоробовка</th>
-                    <th>Брак</th>
+                    <th>ШК</th>
+                    <th>Кол-во</th>
                   </tr>
                 </thead>
                 <tbody>
                   {% for row in processing_size_rows %}
                     <tr>
-                      <td>{{ row.size_no|default:"-" }}</td>
-                      <td>{{ row.size_value|default:"-" }}</td>
+                      <td>{{ forloop.counter }}</td>
+                      <td>{{ row.article|default:"-" }}</td>
+                      <td>{{ row.size|default:"-" }}</td>
                       <td>{{ row.barcode|default:"-" }}</td>
-                      <td>{{ row.recount_qty|default:"-" }}</td>
-                      <td>{{ row.processing_qty|default:"-" }}</td>
-                      <td>{{ row.unboxing_qty|default:"-" }}</td>
-                      <td>{{ row.defect_qty|default:"-" }}</td>
+                      <td>{{ row.qty|default:"-" }}</td>
                     </tr>
                   {% empty %}
-                    <tr><td colspan="7" class="muted">Данные не указаны.</td></tr>
+                    <tr><td colspan="5" class="muted">Данные не указаны.</td></tr>
                   {% endfor %}
                 </tbody>
               </table>

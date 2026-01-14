@@ -1,12 +1,10 @@
-from django.urls import path
+from django.urls import path, include
 
 from .views import (
     OrdersDetailView,
     OrdersHomeView,
     OrdersPackingView,
-    OrdersProcessingView,
     PackingDetailView,
-    ProcessingDetailView,
     ReceivingActView,
     ReceivingFlowView,
     PlacementActView,
@@ -41,8 +39,7 @@ urlpatterns = [
     path('receiving/<str:order_id>/act/mx1/print/', print_receiving_act_mx1, name='orders-receiving-act-mx1-print'),
     path('packing/', OrdersPackingView.as_view(), {'tab': 'packing'}, name='orders-packing'),
     path('packing/<str:order_id>/', PackingDetailView.as_view(), name='orders-packing-detail'),
-    path('processing/', OrdersProcessingView.as_view(), {'tab': 'processing'}, name='orders-processing'),
-    path('processing/<str:order_id>/', ProcessingDetailView.as_view(), name='orders-processing-detail'),
+    path('processing/', include('processing_app.urls')),
     path('shipping/', OrdersHomeView.as_view(), {'tab': 'shipping'}, name='orders-shipping'),
     path('other/', OrdersHomeView.as_view(), {'tab': 'other'}, name='orders-other'),
     path('templates/receiving/', download_receiving_template, name='orders-template-receiving'),

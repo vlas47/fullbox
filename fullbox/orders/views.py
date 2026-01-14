@@ -435,6 +435,8 @@ def _item_key(sku: str | None, name: str | None, size: str | None) -> str:
     return f"{sku_part}|{name_part}|{size_part}"
 
 
+
+
 def _warehouse_status_from_entry(entry) -> bool:
     if not entry:
         return False
@@ -2089,6 +2091,15 @@ class OrdersHomeView(RoleRequiredMixin, TemplateView):
         client_agency = _client_agency_from_request(request)
         if client_agency:
             request._client_agency = client_agency
+            order_id = kwargs.get("order_id")
+            if order_id:
+                has_access = OrderAuditEntry.objects.filter(
+                    order_id=order_id,
+                    order_type=self.order_type,
+                    agency=client_agency,
+                ).exists()
+                if not has_access:
+                    return HttpResponseForbidden("Доступ запрещен")
             return TemplateView.dispatch(self, request, *args, **kwargs)
         return super().dispatch(request, *args, **kwargs)
 
@@ -2135,8 +2146,6 @@ class OrdersHomeView(RoleRequiredMixin, TemplateView):
         active_tab = kwargs.get("tab", "journal")
         if active_tab == "packing":
             return self._submit_packing(request)
-        if active_tab == "processing":
-            return self._submit_processing(request)
         if active_tab != "receiving":
             return redirect("/orders/")
 
@@ -2388,151 +2397,6 @@ class OrdersHomeView(RoleRequiredMixin, TemplateView):
             f"/orders/packing/?client={agency.id}&ok=1&status={status_value}&order={order_id}"
         )
 
-    def _submit_processing(self, request):
-        client_agency = getattr(request, "_client_agency", None) or _client_agency_from_request(request)
-        if client_agency:
-            agency = client_agency
-        else:
-            agency_id = request.POST.get("agency_id")
-            agency = Agency.objects.filter(pk=agency_id).first()
-        if not agency:
-            return self.get(request, error="Выберите клиента.")
-
-        product_name = (request.POST.get("product_name") or "").strip()
-        if not product_name:
-            return self.get(request, error="Укажите наименование товара.")
-
-        def collect_rows(field_map: dict) -> list[dict]:
-            row_count = 0
-            for values in field_map.values():
-                row_count = max(row_count, len(values))
-            rows = []
-            for idx in range(row_count):
-                row = {}
-                for key, values in field_map.items():
-                    row[key] = values[idx] if idx < len(values) else ""
-                if any(str(value).strip() for value in row.values()):
-                    rows.append(row)
-            return rows
-
-        size_rows = collect_rows(
-            {
-                "size_no": request.POST.getlist("size_no[]"),
-                "size_value": request.POST.getlist("size_value[]"),
-                "barcode": request.POST.getlist("size_barcode[]"),
-                "recount_qty": request.POST.getlist("size_recount[]"),
-                "processing_qty": request.POST.getlist("size_processing[]"),
-                "unboxing_qty": request.POST.getlist("size_unpacking[]"),
-                "defect_qty": request.POST.getlist("size_defect[]"),
-            }
-        )
-        unboxing_rows = collect_rows(
-            {
-                "date": request.POST.getlist("unboxing_date[]"),
-                "box_size": request.POST.getlist("unboxing_box_size[]"),
-                "multiple": request.POST.getlist("unboxing_multiple[]"),
-                "box_qty": request.POST.getlist("unboxing_box_qty[]"),
-                "pallet_qty": request.POST.getlist("unboxing_pallet_qty[]"),
-                "storage_zone": request.POST.getlist("unboxing_storage_zone[]"),
-            }
-        )
-
-        payload = {
-            "email": (request.POST.get("email") or "").strip(),
-            "fio": (request.POST.get("fio") or "").strip(),
-            "org": (request.POST.get("org") or "").strip(),
-            "product_name": product_name,
-            "supplier": request.POST.get("supplier"),
-            "brand": request.POST.get("brand"),
-            "subject": request.POST.get("subject"),
-            "article": request.POST.get("article"),
-            "wb_article": request.POST.get("wb_article"),
-            "color": request.POST.get("color"),
-            "composition": request.POST.get("composition"),
-            "gender": request.POST.get("gender"),
-            "season": request.POST.get("season"),
-            "order_no": request.POST.get("order_no"),
-            "purchase_1c_no": request.POST.get("purchase_1c_no"),
-            "purchase_1c_date": request.POST.get("purchase_1c_date"),
-            "project_manager": request.POST.get("project_manager"),
-            "warehouse_receiving": request.POST.get("warehouse_receiving"),
-            "warehouse_packing": request.POST.get("warehouse_packing"),
-            "warehouse_unpacking": request.POST.get("warehouse_unpacking"),
-            "size_rows": size_rows,
-            "measure_needed": request.POST.get("measure_needed"),
-            "measure_weight": request.POST.get("measure_weight"),
-            "measure_width": request.POST.get("measure_width"),
-            "measure_height": request.POST.get("measure_height"),
-            "measure_depth": request.POST.get("measure_depth"),
-            "defect_percent": request.POST.get("defect_percent"),
-            "defect_qty": request.POST.get("defect_qty"),
-            "trim_threads_qty": request.POST.get("trim_threads_qty"),
-            "tape_qty": request.POST.get("tape_qty"),
-            "remove_tag": request.POST.get("remove_tag"),
-            "remove_tag_qty": request.POST.get("remove_tag_qty"),
-            "attach_tag": request.POST.get("attach_tag"),
-            "attach_tag_qty": request.POST.get("attach_tag_qty"),
-            "marking_stickers": request.POST.getlist("marking_stickers[]"),
-            "marking_sizes": request.POST.getlist("marking_sizes[]"),
-            "marking_info": request.POST.get("marking_info"),
-            "set_build": request.POST.get("set_build"),
-            "set_qty": request.POST.get("set_qty"),
-            "insert_needed": request.POST.get("insert_needed"),
-            "insert_types": request.POST.getlist("insert_types[]"),
-            "insert_other": request.POST.get("insert_other"),
-            "pull_from_bag": request.POST.get("pull_from_bag"),
-            "bubble_wrap_needed": request.POST.get("bubble_wrap_needed"),
-            "bubble_wrap_type": request.POST.get("bubble_wrap_type"),
-            "bubble_wrap_size": request.POST.get("bubble_wrap_size"),
-            "bubble_wrap_qty": request.POST.get("bubble_wrap_qty"),
-            "bubble_wrap_supply": request.POST.get("bubble_wrap_supply"),
-            "bag_replace_needed": request.POST.get("bag_replace_needed"),
-            "bag_replace_type": request.POST.get("bag_replace_type"),
-            "bag_replace_size": request.POST.get("bag_replace_size"),
-            "bag_replace_qty": request.POST.get("bag_replace_qty"),
-            "bag_replace_supply": request.POST.get("bag_replace_supply"),
-            "box_replace_needed": request.POST.get("box_replace_needed"),
-            "box_replace_type": request.POST.get("box_replace_type"),
-            "box_replace_size": request.POST.get("box_replace_size"),
-            "box_replace_qty": request.POST.get("box_replace_qty"),
-            "box_replace_supply": request.POST.get("box_replace_supply"),
-            "shrink_wrap_needed": request.POST.get("shrink_wrap_needed"),
-            "shrink_wrap_type": request.POST.get("shrink_wrap_type"),
-            "shrink_wrap_size": request.POST.get("shrink_wrap_size"),
-            "shrink_wrap_qty": request.POST.get("shrink_wrap_qty"),
-            "shrink_wrap_supply": request.POST.get("shrink_wrap_supply"),
-            "unboxing_rows": unboxing_rows,
-            "wholesale_places_qty": request.POST.get("wholesale_places_qty"),
-            "invoice_no": request.POST.get("invoice_no"),
-            "invoice_date": request.POST.get("invoice_date"),
-            "payment_date": request.POST.get("payment_date"),
-            "accountant": request.POST.get("accountant"),
-            "archive_date": request.POST.get("archive_date"),
-            "executor_name": request.POST.get("executor_name"),
-            "start_date": request.POST.get("start_date"),
-            "end_date": request.POST.get("end_date"),
-            "receive_date": request.POST.get("receive_date"),
-            "responsible_name": request.POST.get("responsible_name"),
-            "comments": request.POST.get("comments"),
-        }
-        status_value = "sent_unconfirmed"
-        status_label = "Ждет подтверждения"
-        payload["status"] = status_value
-        payload["status_label"] = status_label
-        payload["submit_action"] = "submitted"
-        order_id = self._next_order_number(order_type="processing")
-        log_order_action(
-            "create",
-            order_id=order_id,
-            order_type="processing",
-            user=request.user if request.user.is_authenticated else None,
-            agency=agency,
-            description=f"Заявка на обработку №{order_id}",
-            payload=payload,
-        )
-        return redirect(
-            f"/orders/processing/?client={agency.id}&ok=1&status={status_value}&order={order_id}"
-        )
 
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
@@ -2693,15 +2557,7 @@ class OrdersHomeView(RoleRequiredMixin, TemplateView):
                 status_label = "Ждет подтверждения"
             ctx["status_label"] = status_label
             ctx["order_number"] = self.request.GET.get("order", "")
-        if active_tab == "processing":
-            status = self.request.GET.get("status")
-            status_label = "Подготовка заявки"
-            if status == "draft":
-                status_label = "Черновик"
-            elif status in {"sent_unconfirmed", "send", "submitted"}:
-                status_label = "Ждет подтверждения"
-            ctx["status_label"] = status_label
-            ctx["order_number"] = self.request.GET.get("order", "")
+
         return ctx
 
 
@@ -2709,8 +2565,6 @@ class OrdersPackingView(OrdersHomeView):
     template_name = "orders/packing.html"
 
 
-class OrdersProcessingView(OrdersHomeView):
-    template_name = "orders/processing.html"
 
 
 class OrdersDetailView(RoleRequiredMixin, TemplateView):
@@ -3146,169 +3000,6 @@ class PackingDetailView(OrdersDetailView):
         return ctx
 
 
-class ProcessingDetailView(OrdersDetailView):
-    order_type = "processing"
-
-    def get_context_data(self, **kwargs):
-        ctx = super().get_context_data(**kwargs)
-        order_id = kwargs.get("order_id")
-        entries_list = list(
-            OrderAuditEntry.objects.filter(order_id=order_id, order_type=self.order_type)
-            .select_related("user", "agency")
-            .order_by("created_at")
-        )
-        payload = self._payload_from_entries(entries_list)
-        size_rows_raw = payload.get("size_rows") or []
-        unboxing_rows_raw = payload.get("unboxing_rows") or []
-
-        size_rows = []
-        if isinstance(size_rows_raw, list):
-            for row in size_rows_raw:
-                if not isinstance(row, dict):
-                    continue
-                size_rows.append(
-                    {
-                        "size_no": row.get("size_no") or "",
-                        "size_value": row.get("size_value") or "",
-                        "barcode": row.get("barcode") or "",
-                        "recount_qty": row.get("recount_qty") or "",
-                        "processing_qty": row.get("processing_qty") or "",
-                        "unboxing_qty": row.get("unboxing_qty") or "",
-                        "defect_qty": row.get("defect_qty") or "",
-                    }
-                )
-
-        unboxing_rows = []
-        if isinstance(unboxing_rows_raw, list):
-            for row in unboxing_rows_raw:
-                if not isinstance(row, dict):
-                    continue
-                unboxing_rows.append(
-                    {
-                        "date": row.get("date") or "",
-                        "box_size": row.get("box_size") or "",
-                        "multiple": row.get("multiple") or "",
-                        "box_qty": row.get("box_qty") or "",
-                        "pallet_qty": row.get("pallet_qty") or "",
-                        "storage_zone": row.get("storage_zone") or "",
-                    }
-                )
-
-        insert_types = payload.get("insert_types") or []
-        if isinstance(insert_types, str):
-            insert_types = [insert_types] if insert_types else []
-        insert_other = (payload.get("insert_other") or "").strip()
-        if insert_other:
-            insert_types = list(insert_types) + [insert_other]
-
-        marking_stickers = payload.get("marking_stickers") or []
-        if isinstance(marking_stickers, str):
-            marking_stickers = [marking_stickers] if marking_stickers else []
-        marking_sizes = payload.get("marking_sizes") or []
-        if isinstance(marking_sizes, str):
-            marking_sizes = [marking_sizes] if marking_sizes else []
-
-        def format_pack(prefix: str, title: str):
-            needed = _format_payload_value(payload.get(f"{prefix}_needed"))
-            parts = []
-            type_value = (payload.get(f"{prefix}_type") or "").strip()
-            size_value = (payload.get(f"{prefix}_size") or "").strip()
-            qty_value = (payload.get(f"{prefix}_qty") or "").strip()
-            supply_value = (payload.get(f"{prefix}_supply") or "").strip()
-            if type_value:
-                parts.append(f"Тип: {type_value}")
-            if size_value:
-                parts.append(f"Размер: {size_value}")
-            if qty_value:
-                parts.append(f"Кол-во: {qty_value}")
-            if supply_value:
-                parts.append(f"Закупка: {supply_value}")
-            value = needed
-            if parts:
-                joiner = ", ".join(parts)
-                if value == "-":
-                    value = joiner
-                else:
-                    value = f"{value}; {joiner}"
-            return {"label": title, "value": value}
-
-        processing_fields = [
-            {"label": "Наименование товара", "value": _format_payload_value(payload.get("product_name"))},
-            {"label": "Поставщик", "value": _format_payload_value(payload.get("supplier"))},
-            {"label": "Бренд", "value": _format_payload_value(payload.get("brand"))},
-            {"label": "Предмет", "value": _format_payload_value(payload.get("subject"))},
-            {"label": "Артикул", "value": _format_payload_value(payload.get("article"))},
-            {"label": "Артикул ВБ", "value": _format_payload_value(payload.get("wb_article"))},
-            {"label": "Цвет", "value": _format_payload_value(payload.get("color"))},
-            {"label": "Состав", "value": _format_payload_value(payload.get("composition"))},
-            {"label": "Пол", "value": _format_payload_value(payload.get("gender"))},
-            {"label": "Сезон", "value": _format_payload_value(payload.get("season"))},
-            {"label": "Заказ №", "value": _format_payload_value(payload.get("order_no"))},
-            {"label": "Приобретение в 1С №", "value": _format_payload_value(payload.get("purchase_1c_no"))},
-            {"label": "Приобретение в 1С от", "value": _format_payload_value(payload.get("purchase_1c_date"))},
-            {"label": "Менеджер проекта", "value": _format_payload_value(payload.get("project_manager"))},
-            {"label": "Склад приемка", "value": _format_payload_value(payload.get("warehouse_receiving"))},
-            {"label": "Склад упаковка", "value": _format_payload_value(payload.get("warehouse_packing"))},
-            {"label": "Склад раскоробовка", "value": _format_payload_value(payload.get("warehouse_unpacking"))},
-            {"label": "Замер в упаковке", "value": _format_payload_value(payload.get("measure_needed"))},
-            {"label": "Вес (грамм)", "value": _format_payload_value(payload.get("measure_weight"))},
-            {"label": "Ширина (см)", "value": _format_payload_value(payload.get("measure_width"))},
-            {"label": "Высота (см)", "value": _format_payload_value(payload.get("measure_height"))},
-            {"label": "Глубина (см)", "value": _format_payload_value(payload.get("measure_depth"))},
-            {"label": "Проверка на брак (%)", "value": _format_payload_value(payload.get("defect_percent"))},
-            {"label": "Проверка на брак (кол-во)", "value": _format_payload_value(payload.get("defect_qty"))},
-            {"label": "Обрезание ниток (кол-во)", "value": _format_payload_value(payload.get("trim_threads_qty"))},
-            {"label": "Скрепление скотчем (кол-во)", "value": _format_payload_value(payload.get("tape_qty"))},
-            {"label": "Удаление бирки", "value": _format_payload_value(payload.get("remove_tag"))},
-            {"label": "Удаление бирки (кол-во)", "value": _format_payload_value(payload.get("remove_tag_qty"))},
-            {"label": "Скрепление бирки", "value": _format_payload_value(payload.get("attach_tag"))},
-            {"label": "Скрепление бирки (кол-во)", "value": _format_payload_value(payload.get("attach_tag_qty"))},
-            {"label": "Маркировка", "value": _format_payload_list(marking_stickers)},
-            {"label": "Размеры стикеров", "value": _format_payload_list(marking_sizes)},
-            {"label": "Информационный", "value": _format_payload_value(payload.get("marking_info"))},
-            {"label": "Сборка набора", "value": _format_payload_value(payload.get("set_build"))},
-            {"label": "Кол-во ед. в наборе", "value": _format_payload_value(payload.get("set_qty"))},
-            {"label": "Доп. вложение", "value": _format_payload_value(payload.get("insert_needed"))},
-            {"label": "Типы вложений", "value": _format_payload_list(insert_types)},
-            {"label": "Вытянуть из мешка и наклеить ЧЗ", "value": _format_payload_value(payload.get("pull_from_bag"))},
-            format_pack("bubble_wrap", "Упаковка в бабл пленку"),
-            format_pack("bag_replace", "Замена пакета"),
-            format_pack("box_replace", "Замена гофрокороба"),
-            format_pack("shrink_wrap", "Термоусадочная упаковка"),
-            {"label": "Кол-во оптовых мест", "value": _format_payload_value(payload.get("wholesale_places_qty"))},
-            {"label": "Счет №", "value": _format_payload_value(payload.get("invoice_no"))},
-            {"label": "Дата выставления", "value": _format_payload_value(payload.get("invoice_date"))},
-            {"label": "Дата оплаты", "value": _format_payload_value(payload.get("payment_date"))},
-            {"label": "Бухгалтер", "value": _format_payload_value(payload.get("accountant"))},
-            {"label": "В архив (дата)", "value": _format_payload_value(payload.get("archive_date"))},
-            {"label": "Исполнитель", "value": _format_payload_value(payload.get("executor_name"))},
-            {"label": "Дата начала", "value": _format_payload_value(payload.get("start_date"))},
-            {"label": "Дата окончания", "value": _format_payload_value(payload.get("end_date"))},
-            {"label": "Дата приема заказа", "value": _format_payload_value(payload.get("receive_date"))},
-            {"label": "Ответственный", "value": _format_payload_value(payload.get("responsible_name"))},
-            {"label": "Комментарий", "value": _format_payload_value(payload.get("comments"))},
-        ]
-
-        ctx["processing_fields"] = processing_fields
-        ctx["processing_size_rows"] = size_rows
-        ctx["processing_unboxing_rows"] = unboxing_rows
-        ctx["processing_meta"] = {
-            "product_name": _format_payload_value(payload.get("product_name")),
-            "order_no": _format_payload_value(payload.get("order_no")),
-            "supplier": _format_payload_value(payload.get("supplier")),
-            "brand": _format_payload_value(payload.get("brand")),
-            "subject": _format_payload_value(payload.get("subject")),
-        }
-        ctx["items"] = []
-        ctx["can_edit_order"] = False
-        ctx["can_send_to_warehouse"] = False
-        ctx["can_create_receiving_act"] = False
-        ctx["has_receiving_act"] = False
-        ctx["has_placement_act"] = False
-        ctx["act_label"] = ""
-        ctx["placement_act_label"] = ""
-        ctx["can_send_act_to_client"] = False
-        return ctx
 
 
 class ReceivingActView(RoleRequiredMixin, TemplateView):
