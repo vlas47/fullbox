@@ -1,5 +1,6 @@
 import re
 
+from django.db.models import Q
 from django.http import HttpResponseForbidden
 from django.shortcuts import render
 
@@ -63,22 +64,48 @@ def inventory_journal(request):
             return HttpResponseForbidden("Доступ запрещен")
     order_ids = None
     client_labels = {}
-    if client_agency:
-        order_ids = list(
-            OrderAuditEntry.objects.filter(order_type="receiving", agency=client_agency)
+    def _order_ids_for_agency(agency: Agency) -> list[str]:
+        if not agency:
+            return []
+        query = Q()
+        query |= Q(agency=agency)
+        if agency.portal_user:
+            query |= Q(user=agency.portal_user)
+        if agency.agn_name:
+            query |= Q(payload__org__iexact=agency.agn_name)
+            query |= Q(payload__org__icontains=agency.agn_name)
+        if agency.fio_agn:
+            query |= Q(payload__fio__iexact=agency.fio_agn)
+            query |= Q(payload__fio__icontains=agency.fio_agn)
+        if agency.email:
+            query |= Q(payload__email__iexact=agency.email)
+        if not query:
+            return []
+        return list(
+            OrderAuditEntry.objects.filter(order_type="receiving")
+            .filter(query)
             .values_list("order_id", flat=True)
             .distinct()
         )
+
+    if client_agency:
+        order_ids = _order_ids_for_agency(client_agency)
         if order_ids:
             for entry in (
                 OrderAuditEntry.objects.filter(order_type="receiving", order_id__in=order_ids)
                 .select_related("agency")
                 .order_by("-created_at")
             ):
-                if entry.order_id in client_labels or not entry.agency:
+                if entry.order_id in client_labels:
                     continue
-                base = entry.agency.agn_name or entry.agency.fio_agn or str(entry.agency)
-                client_labels[entry.order_id] = _shorten_ip_name(base)
+                if entry.agency:
+                    base = entry.agency.agn_name or entry.agency.fio_agn or str(entry.agency)
+                    client_labels[entry.order_id] = _shorten_ip_name(base)
+            fallback_label = _shorten_ip_name(
+                client_agency.agn_name or client_agency.fio_agn or str(client_agency)
+            )
+            for order_id in order_ids:
+                client_labels.setdefault(order_id, fallback_label)
 
     entries = OrderAuditEntry.objects.filter(order_type="receiving")
     if client_agency:
@@ -87,14 +114,41 @@ def inventory_journal(request):
         else:
             entries = entries.none()
     entries = entries.select_related("agency").order_by("-created_at")
+    goods_type_labels = {
+        "op": "Оптовый",
+        "gv": "Готовый",
+        "br": "Брак",
+        "vz": "Возврат",
+        "rh": "Расходный",
+        "no": "Не обработанный",
+    }
+    goods_type_by_order = {}
+    for entry in entries:
+        if entry.order_id in goods_type_by_order:
+            continue
+        payload = entry.payload or {}
+        goods_type = (payload.get("goods_type") or "").strip().lower()
+        goods_label = (payload.get("goods_type_label") or "").strip()
+        if not goods_label and goods_type in goods_type_labels:
+            goods_label = goods_type_labels[goods_type]
+        if goods_label or goods_type:
+            goods_type_by_order[entry.order_id] = goods_label or goods_type
+    placement_entries = OrderAuditEntry.objects.filter(
+        order_type="receiving",
+        payload__act="placement",
+    )
+    if client_agency:
+        if order_ids:
+            placement_entries = placement_entries.filter(order_id__in=order_ids)
+        else:
+            placement_entries = placement_entries.none()
+    placement_entries = placement_entries.select_related("agency").order_by("-created_at")
     latest_by_order = {}
     blocked_orders = set()
-    for entry in entries:
+    for entry in placement_entries:
         if entry.order_id in latest_by_order or entry.order_id in blocked_orders:
             continue
         payload = entry.payload or {}
-        if payload.get("act") != "placement":
-            continue
         state = (payload.get("act_state") or "closed").lower()
         if state != "closed":
             blocked_orders.add(entry.order_id)
@@ -213,6 +267,7 @@ def inventory_journal(request):
                     "sku": sku or "-",
                     "name": name or "-",
                     "size": size or "-",
+                    "goods_type": goods_type_by_order.get(entry.order_id, "-"),
                     "qty": qty,
                     "box_code": box_code or "-",
                     "pallet_code": pallet_code or "-",
@@ -238,7 +293,7 @@ def inventory_journal(request):
     if not staff_view:
         grouped = {}
         for row in rows:
-            key = (row.get("sku"), row.get("name"), row.get("size"))
+            key = (row.get("sku"), row.get("name"), row.get("size"), row.get("goods_type"))
             qty_value = _parse_qty_value(row.get("qty")) or 0
             existing = grouped.get(key)
             if existing:

@@ -1,9 +1,10 @@
+{% load todo_panel %}
 <!doctype html>
 <html lang="ru">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Складские остатки | FULLBOX</title>
+  <title>Кабинет руководителя обработки | FULLBOX</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@500;600;700&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -19,8 +20,12 @@
       --accent-soft: rgba(14,107,91,0.12);
       --sun: #f2b747;
       --sun-soft: rgba(242,183,71,0.18);
+      --danger: #d4543c;
       --stroke: rgba(28,31,26,0.12);
       --shadow: 0 18px 45px rgba(15,23,42,0.12);
+      --card: var(--surface);
+      --card-soft: var(--surface-2);
+      --text: var(--ink);
     }
     * { box-sizing: border-box; }
     body {
@@ -66,7 +71,7 @@
     }
     .layout {
       display: grid;
-      grid-template-columns: 260px minmax(0, 1fr);
+      grid-template-columns: 260px minmax(0, 1fr) 300px;
       gap: 20px;
       align-items: stretch;
       min-height: calc(100vh - 96px);
@@ -131,17 +136,31 @@
     .content {
       display: grid;
       gap: 18px;
+      height: 100%;
       max-height: calc(100vh - 96px);
-      overflow: auto;
-      padding-right: 4px;
+      overflow: hidden;
     }
-    .panel {
+    .rail {
+      display: grid;
+      gap: 18px;
+      align-self: start;
+      max-height: calc(100vh - 96px);
+      overflow: hidden;
+    }
+    .rail .panel {
+      height: 100%;
+      display: grid;
+      grid-template-rows: auto 1fr;
+    }
+    .panel,
+    .card {
       background: var(--surface);
       border: 1px solid var(--stroke);
       border-radius: 22px;
       box-shadow: var(--shadow);
-      padding: 18px;
     }
+    .panel { padding: 18px; }
+    .card { padding: 16px; }
     .panel-header {
       display: flex;
       justify-content: space-between;
@@ -173,42 +192,13 @@
       border-color: rgba(14,107,91,0.4);
       box-shadow: 0 10px 24px rgba(14,107,91,0.14);
     }
+    .btn.primary {
+      background: linear-gradient(120deg, var(--sun), #ffd88a);
+      border-color: transparent;
+      color: #2a2110;
+    }
     .btn.ghost { background: transparent; }
-    .table-wrap {
-      overflow: auto;
-      border-radius: 14px;
-      border: 1px solid var(--stroke);
-      background: rgba(28,31,26,0.03);
-    }
-    table { width: 100%; border-collapse: collapse; min-width: 1200px; }
-    th, td { border-bottom: 1px solid var(--stroke); padding: 10px; text-align: left; vertical-align: top; }
-    th {
-      color: var(--muted);
-      font-weight: 600;
-      font-size: 12px;
-      text-transform: uppercase;
-      letter-spacing: 1px;
-      background: rgba(28,31,26,0.04);
-    }
-    .filter-row th {
-      background: transparent;
-      padding: 6px 10px 12px;
-    }
-    .filter-select {
-      width: 100%;
-      padding: 6px 8px;
-      border-radius: 10px;
-      border: 1px solid var(--stroke);
-      background: var(--surface);
-      color: var(--ink);
-      font-size: 13px;
-      font-family: inherit;
-    }
-    .filter-select:focus {
-      outline: none;
-      border-color: rgba(14,107,91,0.4);
-      box-shadow: 0 0 0 2px var(--accent-soft);
-    }
+    .muted { color: var(--muted); }
     .orders-empty {
       padding: 12px;
       border-radius: 12px;
@@ -217,7 +207,69 @@
       font-size: 12px;
       text-align: center;
     }
+    .message-list {
+      display: grid;
+      gap: 10px;
+      align-content: start;
+      min-height: 0;
+      overflow: auto;
+      padding-right: 4px;
+    }
+    .task-shell {
+      height: 100%;
+      min-height: 0;
+    }
+    .task-shell .card {
+      height: 100%;
+      display: grid;
+      grid-template-rows: auto auto 1fr;
+      min-height: 0;
+    }
+    .task-shell .task-board {
+      min-height: 0;
+      height: 100%;
+      overflow: hidden;
+    }
+    .task-shell .task-col {
+      height: 100%;
+      min-height: 0;
+      display: grid;
+      grid-template-rows: auto 1fr;
+    }
+    .task-shell .task-col-body {
+      min-height: 0;
+      overflow: auto;
+      padding-right: 4px;
+    }
+    .task-shell .card > div > .muted {
+      display: none;
+    }
+    .task-shell .task-summary {
+      display: none;
+    }
+    .message-card {
+      padding: 12px;
+      border-radius: 14px;
+      border: 1px solid var(--stroke);
+      background: var(--surface-2);
+      display: grid;
+      gap: 6px;
+    }
+    .message-title { font-weight: 700; }
+    .message-time {
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .reveal {
+      animation: rise 0.7s ease both;
+      animation-delay: calc(var(--i, 0) * 70ms);
+    }
+    @keyframes rise {
+      from { opacity: 0; transform: translateY(12px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
     @media (prefers-reduced-motion: reduce) {
+      .reveal { animation: none; }
       .btn:hover,
       .nav-link:hover { transform: none; }
     }
@@ -225,8 +277,31 @@
       body { overflow: auto; }
       .layout { grid-template-columns: 1fr; }
       .side,
-      .content {
+      .content,
+      .rail {
         max-height: none;
+        overflow: visible;
+        padding-right: 0;
+      }
+      .content { height: auto; }
+      .task-shell { height: auto; }
+      .task-shell .card { height: auto; }
+      .task-shell .task-board {
+        min-height: auto;
+        height: auto;
+        overflow: visible;
+      }
+      .task-shell .task-col {
+        height: auto;
+      }
+      .task-shell .task-col-body {
+        min-height: auto;
+        overflow: visible;
+        padding-right: 0;
+      }
+      .rail .panel { height: auto; }
+      .message-list {
+        min-height: auto;
         overflow: visible;
         padding-right: 0;
       }
@@ -242,7 +317,7 @@
         </div>
         <div class="profile">
           <div class="profile-value">
-            Кабинет менеджера<br>
+            Кабинет руководителя обработки<br>
             {% if request.user.is_authenticated and request.user.employee_profile %}
               {{ request.user.employee_profile.full_name }}
             {% elif request.session.employee_name %}
@@ -255,17 +330,25 @@
           </div>
         </div>
         <nav class="nav">
+          <a class="nav-link primary" href="/orders/processing/">
+            <span class="nav-title">Заявки на обработку</span>
+            <span class="nav-sub">Очередь и статусы</span>
+          </a>
           <a class="nav-link" href="/orders/">
-            <span class="nav-title">Заявки</span>
-            <span class="nav-sub">Журнал и приемки</span>
+            <span class="nav-title">Все заявки</span>
+            <span class="nav-sub">Приемка и обработка</span>
           </a>
           <a class="nav-link" href="/todo/">
             <span class="nav-title">Задачи</span>
             <span class="nav-sub">Контроль исполнения</span>
           </a>
-          <a class="nav-link primary" href="/sklad/journal/">
+          <a class="nav-link" href="/sklad/journal/">
             <span class="nav-title">Складские остатки</span>
             <span class="nav-sub">Актуальные стоки</span>
+          </a>
+          <a class="nav-link" href="/stockmap/">
+            <span class="nav-title">Карта склада</span>
+            <span class="nav-sub">Зоны и хранение</span>
           </a>
           <a class="nav-link" href="/client/">
             <span class="nav-title">Клиенты</span>
@@ -278,147 +361,25 @@
       </aside>
 
       <main class="content">
-        <section class="panel">
+        <div class="task-shell reveal" style="--i:2">
+          {% task_panel "processing_head" 10 False %}
+        </div>
+      </main>
+
+      <aside class="rail">
+        <section class="panel reveal" style="--i:3">
           <div class="panel-header">
             <div>
-              <h2 class="panel-title">Складские остатки</h2>
-              <div class="panel-subtitle">
-                {% if client_agency %}
-                  Показан товар клиента: {{ client_agency.agn_name|default:client_agency }}
-                {% else %}
-                  Показан весь товар на складе.
-                {% endif %}
-              </div>
-            </div>
-            <div>
-              <a class="btn" href="/team-manager/">В кабинет</a>
+              <h2 class="panel-title">Сообщения</h2>
+              <div class="panel-subtitle">Оперативные обновления.</div>
             </div>
           </div>
-          <div class="table-wrap">
-            <table data-filter-table>
-              <thead>
-                <tr>
-                  <th>Когда</th>
-                  <th>Клиент</th>
-                  <th>Заявка</th>
-                  <th>SKU</th>
-                  <th>Наименование</th>
-                  <th>Размер</th>
-                  <th>Тип товара</th>
-                  <th>Кол-во</th>
-                  <th>Короб</th>
-                  <th>Палета</th>
-                  <th>Зона</th>
-                </tr>
-                <tr class="filter-row">
-                  <th><span class="muted">-</span></th>
-                  <th>
-                    <select class="filter-select" data-col="1">
-                      <option value="">Все</option>
-                    </select>
-                  </th>
-                  <th></th>
-                  <th>
-                    <select class="filter-select" data-col="3">
-                      <option value="">Все</option>
-                    </select>
-                  </th>
-                  <th>
-                    <select class="filter-select" data-col="4">
-                      <option value="">Все</option>
-                    </select>
-                  </th>
-                  <th></th>
-                  <th>
-                    <select class="filter-select" data-col="6">
-                      <option value="">Все</option>
-                    </select>
-                  </th>
-                  <th></th>
-                  <th><span class="muted">-</span></th>
-                  <th><span class="muted">-</span></th>
-                  <th><span class="muted">-</span></th>
-                </tr>
-              </thead>
-              <tbody>
-                {% for row in rows %}
-                  <tr>
-                    <td>{{ row.created_at|date:"d.m.Y, H:i" }}</td>
-                    <td>{{ row.client_label }}</td>
-                    <td>{{ row.order_id }}</td>
-                    <td>{{ row.sku }}</td>
-                    <td>{{ row.name }}</td>
-                    <td>{{ row.size }}</td>
-                    <td>{{ row.goods_type }}</td>
-                    <td>{{ row.qty }}</td>
-                    <td>{{ row.box_code }}</td>
-                    <td>{{ row.pallet_code }}</td>
-                    <td>{{ row.location }}</td>
-                  </tr>
-                {% empty %}
-                  <tr>
-                    <td colspan="11" class="orders-empty">Записей пока нет.</td>
-                  </tr>
-                {% endfor %}
-              </tbody>
-            </table>
+          <div class="message-list">
+            <div class="orders-empty">Сообщений пока нет.</div>
           </div>
         </section>
-      </main>
+      </aside>
     </div>
   </div>
-  <script>
-    document.addEventListener("DOMContentLoaded", () => {
-      const table = document.querySelector("table[data-filter-table]");
-      if (!table) return;
-      const body = table.tBodies[0];
-      if (!body) return;
-      const rows = Array.from(body.rows);
-      const selects = Array.from(table.querySelectorAll("select[data-col]"));
-
-      const normalize = (value) => (value || "").replace(/\s+/g, " ").trim();
-
-      selects.forEach((select) => {
-        const col = Number(select.dataset.col);
-        const values = new Set();
-        rows.forEach((row) => {
-          const cell = row.cells[col];
-          if (!cell) return;
-          const text = normalize(cell.textContent);
-          if (text) values.add(text);
-        });
-        Array.from(values)
-          .sort((a, b) => a.localeCompare(b, "ru"))
-          .forEach((value) => {
-            const option = document.createElement("option");
-            option.value = value;
-            option.textContent = value;
-            select.appendChild(option);
-          });
-      });
-
-      const applyFilters = () => {
-        const filters = selects.map((select) => ({
-          col: Number(select.dataset.col),
-          value: select.value,
-        }));
-        rows.forEach((row) => {
-          let visible = true;
-          for (const filter of filters) {
-            if (!filter.value) continue;
-            const cell = row.cells[filter.col];
-            const text = normalize(cell ? cell.textContent : "");
-            if (text !== filter.value) {
-              visible = false;
-              break;
-            }
-          }
-          row.style.display = visible ? "" : "none";
-        });
-      };
-
-      selects.forEach((select) => select.addEventListener("change", applyFilters));
-    });
-  </script>
 </body>
 </html>

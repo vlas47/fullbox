@@ -24,6 +24,7 @@ DEV_USERS = [
     ("director", "Директор"),
     ("accountant", "Бухгалтер"),
     ("head_manager", "Главный менеджер"),
+    ("processing_head", "Руководитель участка обработки"),
     ("manager", "Менеджер"),
     ("storekeeper", "Кладовщик"),
     ("picker", "Сборщик"),

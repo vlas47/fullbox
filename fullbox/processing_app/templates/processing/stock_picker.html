@@ -1,0 +1,653 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Складские остатки</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@500;600;700&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #f2efe8;
+      --surface: #fffdf8;
+      --surface-2: #f7f2ea;
+      --ink: #1c1f1a;
+      --muted: #6b6f66;
+      --accent: #0e6b5b;
+      --accent-strong: #0b5246;
+      --sun: #f2b747;
+      --danger: #d4543c;
+      --stroke: rgba(28,31,26,0.12);
+      --shadow: 0 18px 45px rgba(15,23,42,0.12);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Manrope", system-ui, sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(1200px 540px at -10% -20%, rgba(242,183,71,0.22), transparent 60%),
+        radial-gradient(900px 520px at 110% 10%, rgba(14,107,91,0.18), transparent 55%),
+        var(--bg);
+      min-height: 100vh;
+    }
+    .wrap {
+      width: 100%;
+      max-width: none;
+      min-height: 100vh;
+      margin: 0;
+      padding: 24px;
+      display: grid;
+      gap: 18px;
+    }
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+    .header-title {
+      font-family: "Bricolage Grotesque", "Manrope", sans-serif;
+      font-size: 24px;
+      margin: 0;
+    }
+    .header-subtitle {
+      color: var(--muted);
+      font-size: 13px;
+      margin-top: 6px;
+    }
+    .client-label {
+      margin-top: 10px;
+      font-weight: 600;
+    }
+    .header-actions {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .filter-bar {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      flex-wrap: wrap;
+    }
+    .filter-title {
+      font-weight: 700;
+      font-size: 13px;
+    }
+    .filter-group {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+    .filter-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 13px;
+    }
+    .filter-item input {
+      width: 16px;
+      height: 16px;
+    }
+    .panel {
+      background: var(--surface);
+      border: 1px solid var(--stroke);
+      border-radius: 22px;
+      box-shadow: var(--shadow);
+      padding: 16px;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.8fr);
+      gap: 18px;
+      min-height: 0;
+    }
+    .table-wrap {
+      border-radius: 14px;
+      border: 1px solid var(--stroke);
+      overflow: auto;
+      background: var(--surface);
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 720px;
+    }
+    th, td {
+      padding: 8px;
+      border-bottom: 1px solid var(--stroke);
+      vertical-align: middle;
+      font-size: 13px;
+    }
+    th {
+      text-transform: uppercase;
+      font-size: 11px;
+      letter-spacing: 1px;
+      color: var(--muted);
+      background: var(--surface-2);
+      position: sticky;
+      top: 0;
+    }
+    tr.selected {
+      background: rgba(14,107,91,0.12);
+    }
+    .thumb {
+      width: 36px;
+      height: 36px;
+      border-radius: 8px;
+      border: 1px solid var(--stroke);
+      background: var(--surface-2);
+      object-fit: cover;
+    }
+    .btn {
+      padding: 8px 12px;
+      border-radius: 10px;
+      border: 1px solid var(--stroke);
+      background: rgba(28,31,26,0.04);
+      color: var(--ink);
+      font-weight: 700;
+      transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+      cursor: pointer;
+    }
+    .btn:hover {
+      transform: translateY(-1px);
+      border-color: rgba(14,107,91,0.4);
+      box-shadow: 0 10px 24px rgba(14,107,91,0.14);
+    }
+    .btn.primary {
+      background: linear-gradient(120deg, var(--sun), #ffd88a);
+      border-color: transparent;
+      color: #2a2110;
+    }
+    .btn[disabled] {
+      opacity: 0.6;
+      cursor: not-allowed;
+      box-shadow: none;
+      transform: none;
+    }
+    .search {
+      min-width: 280px;
+      padding: 9px 10px;
+      border-radius: 10px;
+      border: 1px solid var(--stroke);
+      background: var(--surface);
+      font-size: 14px;
+    }
+    .detail-header {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+    .detail-title {
+      font-weight: 700;
+      font-size: 16px;
+    }
+    .detail-subtitle {
+      color: var(--muted);
+      font-size: 12px;
+      margin-top: 4px;
+    }
+    .detail-body {
+      display: grid;
+      gap: 12px;
+    }
+    .detail-photo {
+      width: 96px;
+      height: 96px;
+      border-radius: 14px;
+      border: 1px dashed var(--stroke);
+      background: var(--surface-2);
+      display: grid;
+      place-items: center;
+      overflow: hidden;
+      position: relative;
+    }
+    .detail-photo img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: none;
+    }
+    .detail-photo.has-image img {
+      display: block;
+    }
+    .photo-placeholder {
+      font-size: 10px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      text-align: center;
+      padding: 6px;
+    }
+    .empty-state {
+      padding: 16px;
+      color: var(--muted);
+      text-align: center;
+    }
+    @media (max-width: 1100px) {
+      .grid {
+        grid-template-columns: 1fr;
+      }
+      table {
+        min-width: 640px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap" data-return-url="{{ return_url }}">
+    <div class="header">
+      <div>
+        <h1 class="header-title">Складские остатки</h1>
+        <div class="header-subtitle">Выберите товар для заявки на обработку.</div>
+        {% if agency %}
+          <div class="client-label">Клиент: {{ agency.agn_name|default:agency.fio_agn|default:"-" }}</div>
+        {% endif %}
+      </div>
+      <div class="header-actions">
+        <input class="search" type="text" id="stock-search" placeholder="Поиск по SKU, названию или размеру">
+        <button class="btn" type="button" id="close-picker">Закрыть</button>
+      </div>
+    </div>
+
+    <div class="panel filter-bar" id="type-filter-bar" style="display:none;">
+      <div class="filter-title">Тип товара</div>
+      <div class="filter-group" id="type-filters"></div>
+    </div>
+
+    <div class="grid">
+      <section class="panel">
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th style="width:56px;">Фото</th>
+                <th>Артикул</th>
+                <th>Наименование</th>
+                <th>Тип товара</th>
+                <th>Размеры</th>
+                <th style="width:110px;">Кол-во</th>
+                <th style="width:120px;">Действие</th>
+              </tr>
+            </thead>
+            <tbody id="product-list-body"></tbody>
+          </table>
+          <div class="empty-state" id="empty-state" style="display:none;">Записей пока нет.</div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="detail-header">
+          <div>
+            <div class="detail-title" id="detail-title">Товар не выбран</div>
+            <div class="detail-subtitle" id="detail-subtitle">Выберите строку слева.</div>
+          </div>
+          <button class="btn primary" type="button" id="confirm-selection" disabled>Выбрать</button>
+        </div>
+        <div class="detail-body">
+          <div class="detail-photo" id="detail-photo">
+            <span class="photo-placeholder">нет фото</span>
+            <img alt="Фото товара">
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Размер</th>
+                  <th>ШК</th>
+                  <th style="width:110px;">Кол-во</th>
+                </tr>
+              </thead>
+              <tbody id="product-detail-body">
+                <tr>
+                  <td colspan="3" class="empty-state">Нет данных.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <script type="application/json" id="inventory-items-data">{{ inventory_items_json|default:"[]"|safe }}</script>
+  <script>
+    (() => {
+      const wrapper = document.querySelector('.wrap');
+      const returnUrl = wrapper?.dataset?.returnUrl || '/orders/processing/';
+      const searchInput = document.getElementById('stock-search');
+      const closeBtn = document.getElementById('close-picker');
+      const listBody = document.getElementById('product-list-body');
+      const emptyState = document.getElementById('empty-state');
+      const filterBar = document.getElementById('type-filter-bar');
+      const typeFilters = document.getElementById('type-filters');
+      const detailTitle = document.getElementById('detail-title');
+      const detailSubtitle = document.getElementById('detail-subtitle');
+      const detailBody = document.getElementById('product-detail-body');
+      const detailPhoto = document.getElementById('detail-photo');
+      const confirmBtn = document.getElementById('confirm-selection');
+      const inventoryScript = document.getElementById('inventory-items-data');
+
+      let inventoryItems = [];
+      if (inventoryScript && inventoryScript.textContent) {
+        try {
+          inventoryItems = JSON.parse(inventoryScript.textContent);
+        } catch (err) {
+          inventoryItems = [];
+        }
+      }
+
+      const normalizeGoodsType = (value) => {
+        const label = (value || '').toString().trim();
+        return label || '-';
+      };
+      const query = new URLSearchParams(window.location.search);
+      const excludeRaw = query.getAll('exclude');
+      if (!excludeRaw.length && query.get('exclude')) {
+        excludeRaw.push(...query.get('exclude').split(','));
+      }
+      const excludeSet = new Set(
+        excludeRaw.map((value) => (value || '').toString().trim().toLowerCase()).filter(Boolean)
+      );
+      const productMap = new Map();
+      inventoryItems.forEach((item) => {
+        const sku = (item.sku || '').trim();
+        const name = (item.name || '').trim();
+        const goodsType = normalizeGoodsType(item.goods_type);
+        if (sku && excludeSet.has(sku.toLowerCase())) {
+          return;
+        }
+        if (!sku && !name) {
+          return;
+        }
+        const key = `${sku}||${name}||${goodsType}`;
+        if (!productMap.has(key)) {
+          productMap.set(key, { key, sku, name, goods_type: goodsType, photo: '', rows: [] });
+        }
+        const productEntry = productMap.get(key);
+        if (!productEntry.photo && item.photo) {
+          productEntry.photo = item.photo;
+        }
+        productEntry.rows.push({
+          sku,
+          name,
+          size: (item.size || '').trim(),
+          barcode: (item.barcode || '').trim(),
+          qty: item.qty || 0,
+          maxQty: item.qty || 0,
+        });
+      });
+
+      const products = Array.from(productMap.values()).sort((a, b) => {
+        return (
+          (a.name || '').localeCompare(b.name || '') ||
+          (a.goods_type || '').localeCompare(b.goods_type || '') ||
+          (a.sku || '').localeCompare(b.sku || '')
+        );
+      });
+
+      let selectedKey = null;
+      let activeTypes = new Set();
+
+      const setDetailPhoto = (url) => {
+        if (!detailPhoto) {
+          return;
+        }
+        const img = detailPhoto.querySelector('img');
+        const placeholder = detailPhoto.querySelector('.photo-placeholder');
+        if (img && url) {
+          img.src = url;
+          detailPhoto.classList.add('has-image');
+          if (placeholder) {
+            placeholder.style.display = 'none';
+          }
+          return;
+        }
+        if (img) {
+          img.src = '';
+        }
+        detailPhoto.classList.remove('has-image');
+        if (placeholder) {
+          placeholder.style.display = 'block';
+        }
+      };
+
+      const renderDetailRows = (rows) => {
+        if (!detailBody) {
+          return;
+        }
+        detailBody.innerHTML = '';
+        if (!rows || !rows.length) {
+          const tr = document.createElement('tr');
+          const td = document.createElement('td');
+          td.colSpan = 3;
+          td.className = 'empty-state';
+          td.textContent = 'Нет данных.';
+          tr.appendChild(td);
+          detailBody.appendChild(tr);
+          return;
+        }
+        rows.forEach((row) => {
+          const tr = document.createElement('tr');
+          const sizeCell = document.createElement('td');
+          sizeCell.textContent = row.size || '-';
+          const barcodeCell = document.createElement('td');
+          barcodeCell.textContent = row.barcode || '-';
+          const qtyCell = document.createElement('td');
+          qtyCell.textContent = String(row.qty ?? 0);
+          tr.appendChild(sizeCell);
+          tr.appendChild(barcodeCell);
+          tr.appendChild(qtyCell);
+          detailBody.appendChild(tr);
+        });
+      };
+
+      const highlightRow = () => {
+        if (!listBody) {
+          return;
+        }
+        Array.from(listBody.querySelectorAll('tr')).forEach((row) => {
+          const key = row.dataset.key;
+          row.classList.toggle('selected', key && key === selectedKey);
+        });
+      };
+
+      const selectProduct = (product) => {
+        if (!product) {
+          return;
+        }
+        selectedKey = product.key;
+        highlightRow();
+        if (detailTitle) {
+          detailTitle.textContent = product.name || 'Без названия';
+        }
+        if (detailSubtitle) {
+          const skuText = product.sku ? `Артикул: ${product.sku}` : 'Артикул не указан';
+          const typeText = product.goods_type ? `Тип товара: ${product.goods_type}` : 'Тип товара не указан';
+          detailSubtitle.textContent = `${skuText} · ${typeText}`;
+        }
+        setDetailPhoto(product.photo);
+        const rows = product.rows.slice().sort((a, b) => (a.size || '').localeCompare(b.size || ''));
+        renderDetailRows(rows);
+        if (confirmBtn) {
+          confirmBtn.disabled = false;
+        }
+      };
+
+      const sendSelection = (product) => {
+        if (!product) {
+          return;
+        }
+        const payload = {
+          name: product.name,
+          article: product.sku,
+          goods_type: product.goods_type,
+          photo: product.photo,
+          rows: product.rows,
+        };
+        const message = { type: 'processing-stock-select', payload };
+        if (window.opener && !window.opener.closed) {
+          window.opener.postMessage(message, window.location.origin);
+          window.close();
+          return;
+        }
+        sessionStorage.setItem('processingStockSelection', JSON.stringify(message));
+        window.location.href = returnUrl;
+      };
+
+      const renderProducts = (filterText = '') => {
+        if (!listBody) {
+          return;
+        }
+        listBody.innerHTML = '';
+        const term = filterText.trim().toLowerCase();
+        const hasTypeFilter = activeTypes.size > 0;
+        const filtered = products.filter((product) => {
+          const typeMatch = !hasTypeFilter || activeTypes.has(product.goods_type);
+          if (!term) {
+            return typeMatch;
+          }
+          const sku = (product.sku || '').toLowerCase();
+          const name = (product.name || '').toLowerCase();
+          const sizeMatch = product.rows.some((row) => (row.size || '').toLowerCase().includes(term));
+          const textMatch = sku.includes(term) || name.includes(term) || sizeMatch;
+          return textMatch && typeMatch;
+        });
+        if (emptyState) {
+          emptyState.style.display = filtered.length ? 'none' : 'block';
+        }
+        filtered.forEach((product) => {
+          const tr = document.createElement('tr');
+          tr.dataset.key = product.key;
+
+          const photoCell = document.createElement('td');
+          const img = document.createElement('img');
+          img.className = 'thumb';
+          if (product.photo) {
+            img.src = product.photo;
+          }
+          photoCell.appendChild(img);
+
+          const skuCell = document.createElement('td');
+          skuCell.textContent = product.sku || '-';
+
+          const nameCell = document.createElement('td');
+          nameCell.textContent = product.name || '-';
+
+          const typeCell = document.createElement('td');
+          typeCell.textContent = product.goods_type || '-';
+
+          const sizes = Array.from(new Set(product.rows.map((row) => row.size || '-'))).filter(Boolean);
+          const sizeCell = document.createElement('td');
+          sizeCell.textContent = sizes.length ? sizes.join(', ') : '-';
+
+          const totalQty = product.rows.reduce((sum, row) => sum + Number(row.qty || 0), 0);
+          const qtyCell = document.createElement('td');
+          qtyCell.textContent = String(totalQty);
+
+          const actionCell = document.createElement('td');
+          const selectBtn = document.createElement('button');
+          selectBtn.type = 'button';
+          selectBtn.className = 'btn';
+          selectBtn.textContent = 'Выбрать';
+          selectBtn.addEventListener('click', (event) => {
+            event.stopPropagation();
+            selectProduct(product);
+            sendSelection(product);
+          });
+          actionCell.appendChild(selectBtn);
+
+          tr.appendChild(photoCell);
+          tr.appendChild(skuCell);
+          tr.appendChild(nameCell);
+          tr.appendChild(typeCell);
+          tr.appendChild(sizeCell);
+          tr.appendChild(qtyCell);
+          tr.appendChild(actionCell);
+
+          tr.addEventListener('click', () => selectProduct(product));
+          tr.addEventListener('dblclick', () => sendSelection(product));
+          listBody.appendChild(tr);
+        });
+        highlightRow();
+      };
+
+      if (searchInput) {
+        searchInput.addEventListener('input', () => {
+          renderProducts(searchInput.value);
+        });
+      }
+
+      const renderTypeFilters = () => {
+        if (!typeFilters) {
+          return;
+        }
+        const types = Array.from(new Set(products.map((product) => product.goods_type || '-')));
+        if (!types.length) {
+          if (filterBar) {
+            filterBar.style.display = 'none';
+          }
+          return;
+        }
+        if (filterBar) {
+          filterBar.style.display = 'flex';
+        }
+        typeFilters.innerHTML = '';
+        activeTypes = new Set(types);
+        types.forEach((type) => {
+          const id = `type-${type.replace(/\\s+/g, '-').toLowerCase()}`;
+          const label = document.createElement('label');
+          label.className = 'filter-item';
+          const checkbox = document.createElement('input');
+          checkbox.type = 'checkbox';
+          checkbox.checked = true;
+          checkbox.value = type;
+          checkbox.id = id;
+          const text = document.createElement('span');
+          text.textContent = type;
+          label.appendChild(checkbox);
+          label.appendChild(text);
+          checkbox.addEventListener('change', () => {
+            const checked = Array.from(typeFilters.querySelectorAll('input[type=\"checkbox\"]'))
+              .filter((input) => input.checked)
+              .map((input) => input.value);
+            activeTypes = new Set(checked);
+            renderProducts(searchInput ? searchInput.value : '');
+          });
+          typeFilters.appendChild(label);
+        });
+      };
+
+      if (confirmBtn) {
+        confirmBtn.addEventListener('click', () => {
+          if (!selectedKey) {
+            return;
+          }
+          const product = productMap.get(selectedKey);
+          sendSelection(product);
+        });
+      }
+
+      if (closeBtn) {
+        closeBtn.addEventListener('click', () => {
+          if (window.opener && !window.opener.closed) {
+            window.close();
+            return;
+          }
+          window.location.href = returnUrl;
+        });
+      }
+
+      renderTypeFilters();
+      renderProducts('');
+    })();
+  </script>
+</body>
+</html>
