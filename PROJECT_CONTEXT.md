@@ -425,3 +425,15 @@
 - 2026-01-11 17:25: open client draft processing orders in edit form instead of detail view (`fullbox/client_cabinet/views.py`).
 - 2026-01-11 20:00: reduced remaining-items table height in receiving flow with internal scroll and tighter padding (`fullbox/orders/templates/orders/receiving_flow.html`).
 - 2026-01-11 20:21: added closed pallet context menu action to set storage location with modal form and draft save (`fullbox/orders/templates/orders/receiving_flow.html`).
+- 2026-01-14 09:18: added closed box context menu actions for copy/print and pallet box batch QR printing with a copy-count modal (`fullbox/orders/templates/orders/receiving_flow.html`).
+- 2026-01-14 09:47: adjusted copied box insertion to follow the source box and keep open boxes at the end of pallet order (`fullbox/orders/templates/orders/receiving_flow.html`).
+- 2026-01-14 09:58: tuned task card colors so receiving tasks are light green and processing tasks are light blue (`fullbox/todo/templates/todo/_task_panel.html`).
+- 2026-01-14 10:01: hid assignee/due line on storekeeper board for receiving/processing order tasks (`fullbox/todo/templates/todo/_task_panel.html`).
+- 2026-01-14 18:36: added processing order manager approval/edit flow with task creation and journal logging (`fullbox/processing_app/views.py`, `fullbox/processing_app/templates/processing/processing.html`, `fullbox/orders/templates/orders/detail.html`).
+- 2026-01-14 21:33: locked processing stock items by active processing orders (added goods_type to processing cards, filtered stock picker, and blocked duplicate submissions) (`fullbox/processing_app/views.py`, `fullbox/processing_app/templates/processing/processing.html`).
+- 2026-01-14 22:20: added inventory state records for processing reservations and subtracted them from available stock (`fullbox/sklad/models.py`, `fullbox/sklad/migrations/0001_inventory_state.py`, `fullbox/processing_app/views.py`, `fullbox/processing_app/templates/processing/processing.html`).
+- 2026-01-15 08:45: added manager-specific processing edit template and status label handling, wired template selection for manager edit flow (`fullbox/processing_app/templates/processing/processing_manager.html`, `fullbox/processing_app/views.py`).
+- 2026-01-15 09:06: replaced processing "Раскоробовка" block with non-empty processing parameters list in order detail (`fullbox/processing_app/views.py`, `fullbox/orders/templates/orders/detail.html`).
+- 2026-01-15 09:05: removed processing detail table from main column and renamed right-side "Информация" to "Детали заявки" in order detail (`fullbox/orders/templates/orders/detail.html`).
+- 2026-01-15 09:17: removed manager edit sidebar navigation links from processing edit template (`fullbox/processing_app/templates/processing/processing_manager.html`).
+- 2026-01-15 09:23: after manager approval, processing orders are marked as sent to processing head and create processing_head tasks (`fullbox/processing_app/views.py`).

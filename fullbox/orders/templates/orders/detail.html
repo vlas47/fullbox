@@ -91,8 +91,8 @@
         <div class="side-card">
           <h4 class="side-title">Действия</h4>
           <div class="side-actions">
-            {% if client_view %}
-              <a class="tab" href="/orders/?client={{ agency.id }}">Журнал заявок</a>
+            {% if client_orders_url %}
+              <a class="tab" href="{{ client_orders_url }}">Журнал заявок</a>
             {% else %}
               <a class="tab" href="/orders/">Журнал заявок</a>
             {% endif %}
@@ -127,16 +127,32 @@
                   <a class="tab" href="/orders/receiving/{{ order_id }}/act/print/">Акт приемки (печатная форма)</a>
                 {% endif %}
               {% endif %}
+            {% elif order_type == 'processing' %}
+              {% if not client_view %}
+                {% if can_approve_processing %}
+                  <form method="post">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="approve_processing">
+                    <button class="tab primary" type="submit">Утвердить заявку</button>
+                  </form>
+                {% endif %}
+                {% if can_edit_processing %}
+                  <a class="tab" href="{{ processing_edit_url }}">Редактировать заявку</a>
+                {% endif %}
+              {% endif %}
+            {% endif %}
+            {% if client_cabinet_url %}
+              <a class="tab" href="{{ client_cabinet_url }}">В кабинет</a>
             {% endif %}
             {% if client_view %}
-              <a class="tab" href="/client/dashboard/?client={{ agency.id }}">В кабинет</a>
               {% if can_print_receiving_act %}
                 <a class="tab" href="/orders/receiving/{{ order_id }}/act/print/?client={{ agency.id }}">Акт приемки (печатная форма)</a>
               {% endif %}
               {% if order_type == 'packing' %}
                 <a class="tab" href="/orders/packing/?client={{ agency.id }}">Новая упаковка</a>
               {% endif %}
-            {% else %}
+            {% endif %}
+            {% if not client_cabinet_url %}
               <a class="tab" href="{{ cabinet_url }}">В кабинет</a>
             {% endif %}
             <a class="tab" href="/logout/">Выход</a>
@@ -210,28 +226,6 @@
               </table>
             </div>
           {% elif order_type == 'processing' %}
-            <h3>Детали заявки</h3>
-            <div class="table-scroll">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Поле</th>
-                    <th>Значение</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {% for row in processing_fields %}
-                    <tr>
-                      <td>{{ row.label }}</td>
-                      <td>{{ row.value }}</td>
-                    </tr>
-                  {% empty %}
-                    <tr><td colspan="2" class="muted">Данные не указаны.</td></tr>
-                  {% endfor %}
-                </tbody>
-              </table>
-            </div>
-
             <h3 style="margin-top:18px;">Размеры</h3>
             <div class="table-scroll">
               <table>
@@ -260,31 +254,23 @@
               </table>
             </div>
 
-            <h3 style="margin-top:18px;">Раскоробовка</h3>
+            <h3 style="margin-top:18px;">Параметры обработки</h3>
             <div class="table-scroll">
               <table>
                 <thead>
                   <tr>
-                    <th>Дата</th>
-                    <th>Размер короба</th>
-                    <th>Кратность</th>
-                    <th>Кол-во коробов</th>
-                    <th>Кол-во паллет</th>
-                    <th>Зона хранения</th>
+                    <th>Параметр</th>
+                    <th>Значение</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {% for row in processing_unboxing_rows %}
+                  {% for row in processing_params %}
                     <tr>
-                      <td>{{ row.date|default:"-" }}</td>
-                      <td>{{ row.box_size|default:"-" }}</td>
-                      <td>{{ row.multiple|default:"-" }}</td>
-                      <td>{{ row.box_qty|default:"-" }}</td>
-                      <td>{{ row.pallet_qty|default:"-" }}</td>
-                      <td>{{ row.storage_zone|default:"-" }}</td>
+                      <td>{{ row.label|default:"-" }}</td>
+                      <td>{{ row.value|default:"-" }}</td>
                     </tr>
                   {% empty %}
-                    <tr><td colspan="6" class="muted">Данные не указаны.</td></tr>
+                    <tr><td colspan="2" class="muted">Данные не указаны.</td></tr>
                   {% endfor %}
                 </tbody>
               </table>
@@ -324,7 +310,7 @@
 
       <aside class="detail-chat">
         <div class="side-card">
-          <h4 class="side-title">Информация</h4>
+          <h4 class="side-title">Детали заявки</h4>
           <div class="info-list">
             <div class="info-item">
               <div class="info-label">Клиент</div>
