@@ -1,15 +1,29 @@
 import json
 import re
 import uuid
+from datetime import timedelta
 
 from django.shortcuts import redirect
 from django.http import HttpResponseForbidden
+from django.utils import timezone
 from django.views.generic import TemplateView
 
 from audit.models import OrderAuditEntry, log_order_action
-from employees.access import RoleRequiredMixin, get_request_role, resolve_cabinet_url
+from employees.access import RoleRequiredMixin, get_request_role, resolve_cabinet_url, is_staff_role
+from employees.models import Employee
 from orders.views import OrdersDetailView
 from sku.models import Agency, SKU
+from sklad.models import InventoryState
+from todo.models import Task
+
+GOODS_TYPE_LABELS = {
+    "op": "Оптовый",
+    "gv": "Готовый",
+    "br": "Брак",
+    "vz": "Возврат",
+    "rh": "Расходный",
+    "no": "Не обработанный",
+}
 
 
 def _format_payload_value(value):
@@ -47,6 +61,60 @@ def _is_draft_payload(payload: dict | None) -> bool:
     return status_value == "draft" or "черновик" in status_label
 
 
+def _normalize_goods_type(value):
+    text = str(value or "").strip()
+    if not text or text == "-":
+        return ""
+    lowered = text.lower()
+    if lowered in GOODS_TYPE_LABELS:
+        return GOODS_TYPE_LABELS[lowered].lower()
+    return lowered
+
+
+def _processing_reserve_maps(
+    agency: Agency | None,
+    exclude_order_id: str | None = None,
+) -> tuple[dict[tuple[str, str, str], int], dict[tuple[str, str], int]]:
+    if not agency:
+        return {}, {}
+    reserves = InventoryState.objects.filter(agency=agency, state="processing")
+    if exclude_order_id:
+        reserves = reserves.exclude(order_type="processing", order_id=str(exclude_order_id))
+    reserve_map: dict[tuple[str, str, str], int] = {}
+    reserve_any: dict[tuple[str, str], int] = {}
+    for entry in reserves:
+        sku = (entry.sku or "").strip()
+        if not sku:
+            continue
+        size = (entry.size or "").strip()
+        goods_key = _normalize_goods_type(entry.goods_type)
+        key = (sku.lower(), size.lower(), goods_key)
+        reserve_map[key] = reserve_map.get(key, 0) + (entry.qty or 0)
+        any_key = (sku.lower(), size.lower())
+        reserve_any[any_key] = reserve_any.get(any_key, 0) + (entry.qty or 0)
+    return reserve_map, reserve_any
+
+
+def _reserved_qty(
+    reserve_map: dict[tuple[str, str, str], int],
+    reserve_any: dict[tuple[str, str], int],
+    sku: str,
+    size: str,
+    goods_type: str | None = None,
+) -> int:
+    sku_key = (sku or "").strip().lower()
+    if not sku_key:
+        return 0
+    size_key = (size or "").strip().lower()
+    goods_key = _normalize_goods_type(goods_type)
+    if not goods_key:
+        return reserve_any.get((sku_key, size_key), 0)
+    return reserve_map.get((sku_key, size_key, goods_key), 0) + reserve_map.get(
+        (sku_key, size_key, ""),
+        0,
+    )
+
+
 def _next_order_number(order_type: str = "receiving") -> str:
     order_ids = (
         OrderAuditEntry.objects.filter(order_type=order_type)
@@ -72,8 +140,69 @@ def _next_order_number(order_type: str = "receiving") -> str:
     return str(next_number)
 
 
+def _manager_due_date(submitted_at):
+    cutoff = submitted_at.replace(hour=14, minute=0, second=0, microsecond=0)
+    if submitted_at <= cutoff:
+        return submitted_at.replace(hour=18, minute=0, second=0, microsecond=0)
+    next_day = submitted_at + timedelta(days=1)
+    return next_day.replace(hour=13, minute=0, second=0, microsecond=0)
+
+
+def _create_processing_manager_task(order_id, agency, request, submitted_at):
+    if not agency:
+        return
+    manager = (
+        Employee.objects.filter(role="manager", is_active=True)
+        .order_by("full_name")
+        .first()
+    )
+    if not manager:
+        return
+    route = f"/orders/processing/{order_id}/"
+    existing = Task.objects.filter(route=route, assigned_to=manager).exclude(status="done")
+    if existing.exists():
+        return
+    description = f"Клиент: {agency.agn_name or agency.inn or agency.id}"
+    Task.objects.create(
+        title=f"Подтвердите заявку на обработку №{order_id}",
+        description=description,
+        route=route,
+        assigned_to=manager,
+        created_by=request.user if request.user.is_authenticated else None,
+        due_date=_manager_due_date(submitted_at),
+    )
+
+
+def _create_processing_head_task(order_id, agency, request, submitted_at):
+    if not agency:
+        return
+    head = (
+        Employee.objects.filter(role="processing_head", is_active=True)
+        .order_by("full_name")
+        .first()
+    )
+    if not head:
+        return
+    route = f"/orders/processing/{order_id}/"
+    existing = Task.objects.filter(route=route, assigned_to=head).exclude(status="done")
+    if existing.exists():
+        return
+    description = f"Клиент: {agency.agn_name or agency.inn or agency.id}"
+    Task.objects.create(
+        title=f"Заявка на обработку №{order_id}",
+        description=description,
+        route=route,
+        assigned_to=head,
+        created_by=request.user if request.user.is_authenticated else None,
+        due_date=submitted_at or timezone.localtime(),
+    )
+
+
 def _client_agency_from_request(request):
     if not request.user.is_authenticated:
+        return None
+    role = get_request_role(request)
+    if is_staff_role(role):
         return None
     client_id = request.GET.get("client") or request.GET.get("agency")
     if client_id:
@@ -96,7 +225,10 @@ def _barcode_value_for_sku(sku, size: str | None) -> str:
     return primary.value if primary else barcodes[0].value
 
 
-def _inventory_items_for_agency(agency: Agency | None) -> list[dict]:
+def _inventory_items_for_agency(
+    agency: Agency | None,
+    exclude_order_id: str | None = None,
+) -> list[dict]:
     if not agency:
         return []
     order_ids = list(
@@ -111,14 +243,7 @@ def _inventory_items_for_agency(agency: Agency | None) -> list[dict]:
         .select_related("agency")
         .order_by("-created_at")
     )
-    goods_type_labels = {
-        "op": "Оптовый",
-        "gv": "Готовый",
-        "br": "Брак",
-        "vz": "Возврат",
-        "rh": "Расходный",
-        "no": "Не обработанный",
-    }
+    goods_type_labels = GOODS_TYPE_LABELS
     goods_type_by_order = {}
     for entry in entries:
         if entry.order_id in goods_type_by_order:
@@ -206,18 +331,29 @@ def _inventory_items_for_agency(agency: Agency | None) -> list[dict]:
             return normalize_photo_url(url)
         return ""
 
+    reserve_map, reserve_any = _processing_reserve_maps(agency, exclude_order_id=exclude_order_id)
     items = []
     for item in totals.values():
         sku_obj = sku_map.get(item.get("sku"))
         barcode = _barcode_value_for_sku(sku_obj, item.get("size")) if sku_obj else "-"
         photo_url = sku_photo_url(sku_obj)
+        reserved_qty = _reserved_qty(
+            reserve_map,
+            reserve_any,
+            item.get("sku") or "",
+            item.get("size") or "",
+            item.get("goods_type") or "",
+        )
+        available_qty = max((item.get("qty") or 0) - reserved_qty, 0)
+        if available_qty <= 0:
+            continue
         items.append(
             {
                 "sku": item.get("sku") or "",
                 "name": item.get("name") or "",
                 "size": item.get("size") or "",
                 "barcode": barcode or "-",
-                "qty": item.get("qty") or 0,
+                "qty": available_qty,
                 "goods_type": item.get("goods_type") or "-",
                 "photo": photo_url,
             }
@@ -233,10 +369,55 @@ def _inventory_items_for_agency(agency: Agency | None) -> list[dict]:
     return items
 
 
+def _replace_processing_reserves(order_id: str, agency: Agency, stock_rows: list[dict]):
+    if not order_id or not agency:
+        return
+    InventoryState.objects.filter(
+        agency=agency,
+        order_type="processing",
+        order_id=str(order_id),
+        state="processing",
+    ).delete()
+    reserves: dict[tuple[str, str, str, str], int] = {}
+    for row in stock_rows or []:
+        if not isinstance(row, dict):
+            continue
+        sku = (row.get("article") or row.get("sku") or "").strip()
+        if not sku:
+            continue
+        qty_value = _parse_qty_value(row.get("qty"))
+        if qty_value is None or qty_value <= 0:
+            continue
+        size = (row.get("size") or "").strip()
+        barcode = (row.get("barcode") or "").strip()
+        goods_type = (row.get("goods_type") or "").strip()
+        key = (sku, size, barcode, goods_type)
+        reserves[key] = reserves.get(key, 0) + qty_value
+    if not reserves:
+        return
+    InventoryState.objects.bulk_create(
+        [
+            InventoryState(
+                agency=agency,
+                order_type="processing",
+                order_id=str(order_id),
+                sku=sku,
+                size=size,
+                barcode=barcode,
+                goods_type=goods_type,
+                qty=qty,
+                state="processing",
+            )
+            for (sku, size, barcode, goods_type), qty in reserves.items()
+        ]
+    )
+
+
 def _submit_processing(request):
     submit_action = (request.POST.get("submit_action") or "send").strip().lower()
     is_draft = submit_action == "draft"
     draft_order_id = (request.POST.get("draft_order_id") or "").strip()
+    edit_order_id = (request.POST.get("edit_order_id") or "").strip()
     client_agency = getattr(request, "_client_agency", None) or _client_agency_from_request(request)
     if client_agency:
         agency = client_agency
@@ -245,6 +426,33 @@ def _submit_processing(request):
         agency = Agency.objects.filter(pk=agency_id).first()
     if not agency:
         return ProcessingHomeView().get(request, error="Выберите клиента.")
+
+    role = get_request_role(request)
+    existing_entries = []
+    preserved_status = ""
+    preserved_label = ""
+    preserved_submit_action = ""
+    if edit_order_id:
+        if role not in {"manager", "head_manager", "director", "admin"}:
+            return HttpResponseForbidden("Доступ запрещен")
+        existing_entries = list(
+            OrderAuditEntry.objects.filter(order_id=edit_order_id, order_type="processing")
+            .order_by("created_at")
+        )
+        if not existing_entries:
+            return ProcessingHomeView().get(request, error="Заявка не найдена.")
+        latest_payload = existing_entries[-1].payload or {}
+        preserved_status = (latest_payload.get("status") or latest_payload.get("submit_action") or "").strip()
+        preserved_label = (latest_payload.get("status_label") or "").strip()
+        preserved_submit_action = (latest_payload.get("submit_action") or "").strip()
+        status_lower = preserved_status.lower()
+        label_lower = preserved_label.lower()
+        if status_lower in {"done", "completed", "closed", "finished"} or "выполн" in label_lower:
+            return ProcessingHomeView().get(
+                request,
+                error="Заявка уже утверждена и недоступна для редактирования.",
+            )
+        is_draft = False
 
     existing_draft_entries = []
     if draft_order_id:
@@ -274,6 +482,7 @@ def _submit_processing(request):
                 article = str(entry.get("article") or "").strip()
                 product_name = str(entry.get("product_name") or "").strip()
                 photo_url = str(entry.get("photo_url") or "").strip()
+                goods_type = str(entry.get("goods_type") or "").strip()
                 rows = []
                 for row in entry.get("rows") or []:
                     if not isinstance(row, dict):
@@ -292,6 +501,7 @@ def _submit_processing(request):
                     "article": article,
                     "product_name": product_name,
                     "photo_url": photo_url,
+                    "goods_type": goods_type,
                     "rows": rows,
                 }
                 if photo_field:
@@ -347,6 +557,7 @@ def _submit_processing(request):
         stock_rows = []
         for card in cards_payload:
             base_article = (card.get("article") or "").strip()
+            goods_type = (card.get("goods_type") or "").strip()
             for row in card.get("rows") or []:
                 article_value = (row.get("article") or base_article).strip()
                 stock_rows.append(
@@ -355,6 +566,7 @@ def _submit_processing(request):
                         "size": (row.get("size") or "").strip(),
                         "barcode": (row.get("barcode") or "").strip(),
                         "qty": row.get("qty"),
+                        "goods_type": goods_type,
                     }
                 )
     elif global_article:
@@ -374,7 +586,7 @@ def _submit_processing(request):
     if not is_draft and stock_rows:
         available_map = {}
         barcode_map = {}
-        for item in _inventory_items_for_agency(agency):
+        for item in _inventory_items_for_agency(agency, exclude_order_id=edit_order_id or None):
             sku_key = (item.get("sku") or "").strip().lower()
             size_key = (item.get("size") or "").strip().lower()
             qty_value = _parse_qty_value(item.get("qty")) or 0
@@ -396,7 +608,9 @@ def _submit_processing(request):
                 max_qty = available_map.get((sku_key, size_key))
             if max_qty is None and barcode_value:
                 max_qty = barcode_map.get(barcode_value)
-            if max_qty is not None and qty_value > max_qty:
+            if max_qty is None:
+                max_qty = 0
+            if qty_value > max_qty:
                 sku_label = row.get("article") or "-"
                 size_label = row.get("size") or "-"
                 return ProcessingHomeView().get(
@@ -519,9 +733,19 @@ def _submit_processing(request):
         status_value = "sent_unconfirmed"
         status_label = "Ждет подтверждения"
         payload["submit_action"] = "submitted"
+    if edit_order_id and preserved_status:
+        status_value = preserved_status
+        if preserved_label:
+            status_label = preserved_label
+        if preserved_submit_action:
+            payload["submit_action"] = preserved_submit_action
     payload["status"] = status_value
     payload["status_label"] = status_label
-    if is_draft:
+    if edit_order_id:
+        order_id = edit_order_id
+        action = "update"
+        description = f"Исправление заявки на обработку №{order_id}"
+    elif is_draft:
         if not draft_order_id:
             draft_order_id = f"draft-{uuid.uuid4().hex[:12]}"
         order_id = draft_order_id
@@ -540,12 +764,18 @@ def _submit_processing(request):
         description=description,
         payload=payload,
     )
-    if not is_draft and draft_order_id:
+    if not is_draft:
+        _replace_processing_reserves(order_id, agency, stock_rows)
+    if not is_draft and draft_order_id and not edit_order_id:
         OrderAuditEntry.objects.filter(
             order_id=draft_order_id,
             order_type="processing",
             agency=agency,
         ).delete()
+    if edit_order_id:
+        return redirect(f"/orders/processing/{order_id}/")
+    if not is_draft and client_agency:
+        _create_processing_manager_task(order_id, agency, request, timezone.localtime())
     return redirect(
         f"/orders/processing/?client={agency.id}&ok=1&status={status_value}&order={order_id}"
     )
@@ -554,6 +784,20 @@ def _submit_processing(request):
 class ProcessingHomeView(RoleRequiredMixin, TemplateView):
     template_name = "processing/processing.html"
     allowed_roles = ("manager", "storekeeper", "head_manager", "director", "admin")
+
+    def _use_manager_template(self) -> bool:
+        if getattr(self.request, "_client_agency", None):
+            return False
+        role = get_request_role(self.request)
+        if role not in {"manager", "head_manager", "director", "admin"}:
+            return False
+        edit_flag = (self.request.GET.get("edit") or "").strip().lower()
+        return edit_flag in {"1", "true", "yes"}
+
+    def get_template_names(self):
+        if self._use_manager_template():
+            return ["processing/processing_manager.html"]
+        return [self.template_name]
 
     def dispatch(self, request, *args, **kwargs):
         client_agency = _client_agency_from_request(request)
@@ -595,13 +839,18 @@ class ProcessingHomeView(RoleRequiredMixin, TemplateView):
         ctx["error"] = kwargs.get("error")
         ctx["cabinet_url"] = resolve_cabinet_url(get_request_role(self.request))
 
+        def resolve_status_label(status_value: str | None, fallback_label: str | None = None) -> str:
+            if fallback_label:
+                return fallback_label
+            value = (status_value or "").strip().lower()
+            if value == "draft":
+                return "Черновик"
+            if value in {"sent_unconfirmed", "send", "submitted"}:
+                return "Ждет подтверждения"
+            return "Подготовка заявки" if not value else value
+
         status = self.request.GET.get("status")
-        status_label = "Подготовка заявки"
-        if status == "draft":
-            status_label = "Черновик"
-        elif status in {"sent_unconfirmed", "send", "submitted"}:
-            status_label = "Ждет подтверждения"
-        ctx["status_label"] = status_label
+        status_label = resolve_status_label(status)
         ctx["order_number"] = self.request.GET.get("order", "")
 
         client_id = self.request.GET.get("client")
@@ -612,8 +861,17 @@ class ProcessingHomeView(RoleRequiredMixin, TemplateView):
         ctx["agency"] = agency
         ctx["client_view"] = bool(client_agency)
         ctx["draft_order_id"] = ""
+        ctx["edit_order_id"] = ""
         order_id = self.request.GET.get("order")
         draft_payload = None
+        role = get_request_role(self.request)
+        edit_flag = (self.request.GET.get("edit") or "").strip().lower()
+        edit_mode = edit_flag in {"1", "true", "yes"} and role in {
+            "manager",
+            "head_manager",
+            "director",
+            "admin",
+        }
         if order_id:
             draft_entries = OrderAuditEntry.objects.filter(order_id=order_id, order_type="processing")
             if client_agency:
@@ -625,41 +883,20 @@ class ProcessingHomeView(RoleRequiredMixin, TemplateView):
                 payload = draft_entry.payload or {}
                 status_value = (payload.get("submit_action") or payload.get("status") or "").lower()
                 status_label = (payload.get("status_label") or "").lower()
-                if status_value == "draft" or "черновик" in status_label:
+                is_draft = status_value == "draft" or "черновик" in status_label
+                if is_draft:
                     ctx["draft_order_id"] = order_id
-                    draft_payload = {
-                        "product_name": payload.get("product_name") or "",
-                        "article": payload.get("article") or "",
-                        "product_photo_url": payload.get("product_photo_url") or "",
-                        "cards": payload.get("cards") or [],
-                        "stock_rows": payload.get("stock_rows") or [],
-                        "defect_check": payload.get("defect_check") or "",
-                        "defect_percent": payload.get("defect_percent") or "",
-                        "marking_5840_needed": payload.get("marking_5840_needed") or "",
-                        "marking_5840_qty": payload.get("marking_5840_qty") or "",
-                        "marking_5840_each_needed": payload.get("marking_5840_each_needed") or "",
-                        "marking_5840_each_qty": payload.get("marking_5840_each_qty") or "",
-                        "tag_replace_needed": payload.get("tag_replace_needed") or "",
-                        "tag_owner": payload.get("tag_owner") or "",
-                        "bag_replace_needed": payload.get("bag_replace_needed") or "",
-                        "bag_replace_type": payload.get("bag_replace_type") or "",
-                        "bag_replace_supply": payload.get("bag_replace_supply") or "",
-                        "bubble_wrap_needed": payload.get("bubble_wrap_needed") or "",
-                        "bubble_wrap_size": payload.get("bubble_wrap_size") or "",
-                        "shrink_wrap_needed": payload.get("shrink_wrap_needed") or "",
-                        "shrink_wrap_size": payload.get("shrink_wrap_size") or "",
-                        "set_build": payload.get("set_build") or "",
-                        "set_qty": payload.get("set_qty") or "",
-                        "insert_needed": payload.get("insert_needed") or "",
-                        "insert_qty": payload.get("insert_qty") or "",
-                        "direction_needed": payload.get("direction_needed") or "",
-                        "direction_file": payload.get("direction_file") or "",
-                        "box_forming": payload.get("box_forming") or "",
-                        "box_forming_other": payload.get("box_forming_other") or "",
-                        "comments": payload.get("comments") or "",
-                    }
+                    draft_payload = payload
+                elif edit_mode:
+                    ctx["edit_order_id"] = order_id
+                    draft_payload = payload
         ctx["draft_payload"] = draft_payload or {}
         ctx["draft_payload_json"] = json.dumps(draft_payload or {}, ensure_ascii=True)
+        if draft_payload:
+            payload_status = draft_payload.get("status") or draft_payload.get("submit_action")
+            payload_label = (draft_payload.get("status_label") or "").strip()
+            status_label = resolve_status_label(payload_status, payload_label)
+        ctx["status_label"] = status_label
         return ctx
 
 
@@ -685,8 +922,9 @@ class ProcessingStockPickerView(RoleRequiredMixin, TemplateView):
         agency = client_agency or (Agency.objects.filter(pk=agency_key).first() if agency_key else None)
         ctx["agency"] = agency
         ctx["client_view"] = bool(client_agency)
+        exclude_order_id = (self.request.GET.get("order") or "").strip() or None
         ctx["inventory_items_json"] = json.dumps(
-            _inventory_items_for_agency(agency),
+            _inventory_items_for_agency(agency, exclude_order_id=exclude_order_id),
             ensure_ascii=True,
         )
         ctx["return_url"] = f"/orders/processing/?client={agency.id}" if agency else "/orders/processing/"
@@ -786,6 +1024,41 @@ class ProcessingDetailView(OrdersDetailView):
                     }
                 )
 
+        def _non_empty(value) -> str:
+            if value is None:
+                return ""
+            if isinstance(value, bool):
+                return "Да" if value else ""
+            if isinstance(value, (int, float)):
+                return "" if value == 0 else str(value)
+            text = str(value).strip()
+            if not text or text in {"-", "0", "0.0"}:
+                return ""
+            if text.isdigit() and int(text) == 0:
+                return ""
+            return text
+
+        def _format_list_value(value) -> str:
+            if value is None:
+                return ""
+            if isinstance(value, (list, tuple, set)):
+                items = [str(item).strip() for item in value if str(item).strip()]
+                return ", ".join(items)
+            return _non_empty(value)
+
+        def _add_param(rows: list[dict], label: str, value: str | None, extras: list[str] | None = None) -> None:
+            base = _non_empty(value)
+            extra_values = [item for item in (extras or []) if _non_empty(item)]
+            if not base and not extra_values:
+                return
+            if base and extra_values:
+                value_text = f"{base}; " + "; ".join(extra_values)
+            elif base:
+                value_text = base
+            else:
+                value_text = "; ".join(extra_values)
+            rows.append({"label": label, "value": value_text})
+
         insert_types = payload.get("insert_types") or []
         if isinstance(insert_types, str):
             insert_types = [insert_types] if insert_types else []
@@ -799,6 +1072,79 @@ class ProcessingDetailView(OrdersDetailView):
         marking_sizes = payload.get("marking_sizes") or []
         if isinstance(marking_sizes, str):
             marking_sizes = [marking_sizes] if marking_sizes else []
+
+        processing_params = []
+        defect_percent = _non_empty(payload.get("defect_percent"))
+        if defect_percent and defect_percent.isdigit():
+            defect_percent = f"{defect_percent}%"
+        _add_param(processing_params, "Проверка на брак", defect_percent)
+        _add_param(processing_params, "Маркировка 58/40", payload.get("marking_5840_qty"))
+        _add_param(processing_params, "Маркировка 58/40 (шт/чз)", payload.get("marking_5840_each_qty"))
+        _add_param(processing_params, "Замена бирок", payload.get("tag_owner"))
+
+        def _add_pack_param(label: str, base_value: str | None, prefix: str) -> None:
+            extras = []
+            type_value = _non_empty(payload.get(f"{prefix}_type"))
+            size_value = _non_empty(payload.get(f"{prefix}_size"))
+            qty_value = _non_empty(payload.get(f"{prefix}_qty"))
+            supply_value = _non_empty(payload.get(f"{prefix}_supply"))
+            if type_value:
+                extras.append(f"Тип: {type_value}")
+            if size_value:
+                extras.append(f"Размер: {size_value}")
+            if qty_value:
+                extras.append(f"Кол-во: {qty_value}")
+            if supply_value:
+                extras.append(f"Закупка: {supply_value}")
+            _add_param(
+                processing_params,
+                label,
+                base_value or payload.get(f"{prefix}_needed"),
+                extras=extras,
+            )
+
+        _add_pack_param("Замена пакета", payload.get("bag_replace_type"), "bag_replace")
+        _add_pack_param("Упаковка в Бабл пленку", payload.get("bubble_wrap_size"), "bubble_wrap")
+        _add_pack_param("Упаковка в термо пленку", payload.get("shrink_wrap_size"), "shrink_wrap")
+        _add_pack_param("Замена гофрокороба", payload.get("box_replace_type"), "box_replace")
+        set_qty = _non_empty(payload.get("set_qty"))
+        _add_param(
+            processing_params,
+            "Сборка набора",
+            set_qty and f"Кол-во: {set_qty}" or payload.get("set_build"),
+        )
+        insert_qty = _non_empty(payload.get("insert_qty"))
+        insert_types_label = _format_list_value(insert_types)
+        if insert_other and insert_other not in insert_types:
+            insert_types_label = _format_list_value(list(insert_types) + [insert_other])
+        _add_param(
+            processing_params,
+            "Вложение",
+            insert_qty and f"Кол-во: {insert_qty}" or payload.get("insert_needed"),
+            extras=[f"Типы: {insert_types_label}" if insert_types_label else ""],
+        )
+        direction_file = _non_empty(payload.get("direction_file"))
+        _add_param(
+            processing_params,
+            "Распределение по направлениям",
+            direction_file and f"Файл: {direction_file}" or payload.get("direction_needed"),
+        )
+        box_forming = _non_empty(payload.get("box_forming"))
+        if box_forming == "other":
+            box_forming = _non_empty(payload.get("box_forming_other"))
+        _add_param(processing_params, "Формирование короба", box_forming)
+        _add_param(processing_params, "Прочие", payload.get("comments"))
+        _add_param(processing_params, "Маркировка", _format_list_value(marking_stickers))
+        _add_param(processing_params, "Размеры стикеров", _format_list_value(marking_sizes))
+        _add_param(processing_params, "Информационный", payload.get("marking_info"))
+        _add_param(processing_params, "Вытянуть из мешка и наклеить ЧЗ", payload.get("pull_from_bag"))
+        _add_param(processing_params, "Проверка на брак (кол-во)", payload.get("defect_qty"))
+        _add_param(processing_params, "Обрезание ниток (кол-во)", payload.get("trim_threads_qty"))
+        _add_param(processing_params, "Скрепление скотчем (кол-во)", payload.get("tape_qty"))
+        _add_param(processing_params, "Удаление бирки", payload.get("remove_tag"))
+        _add_param(processing_params, "Удаление бирки (кол-во)", payload.get("remove_tag_qty"))
+        _add_param(processing_params, "Скрепление бирки", payload.get("attach_tag"))
+        _add_param(processing_params, "Скрепление бирки (кол-во)", payload.get("attach_tag_qty"))
 
         def format_pack(prefix: str, title: str):
             needed = _format_payload_value(payload.get(f"{prefix}_needed"))
@@ -884,6 +1230,7 @@ class ProcessingDetailView(OrdersDetailView):
         ctx["processing_fields"] = processing_fields
         ctx["processing_size_rows"] = size_rows
         ctx["processing_unboxing_rows"] = unboxing_rows
+        ctx["processing_params"] = processing_params
         ctx["processing_meta"] = {
             "product_name": _format_payload_value(payload.get("product_name")),
             "order_no": _format_payload_value(payload.get("order_no")),
@@ -900,4 +1247,92 @@ class ProcessingDetailView(OrdersDetailView):
         ctx["act_label"] = ""
         ctx["placement_act_label"] = ""
         ctx["can_send_act_to_client"] = False
+        status_payload = entries_list[-1].payload if entries_list else {}
+        status_value = (status_payload.get("status") or status_payload.get("submit_action") or "").lower()
+        status_label = (status_payload.get("status_label") or "").lower()
+        is_done = (
+            status_value in {"done", "completed", "closed", "finished", "processing_head"}
+            or "выполн" in status_label
+            or "утверж" in status_label
+            or "передан" in status_label
+        )
+        is_waiting = status_value in {"sent_unconfirmed", "send", "submitted"} or "подтверждени" in status_label
+        role = get_request_role(self.request)
+        can_manage = role in {"manager", "head_manager", "director", "admin"}
+        client_view = bool(ctx.get("client_view"))
+        ctx["can_approve_processing"] = bool(can_manage and not client_view and is_waiting and not is_done)
+        ctx["can_edit_processing"] = bool(can_manage and not client_view and not is_done)
+        if ctx["can_edit_processing"]:
+            agency = ctx.get("agency")
+            if agency and getattr(agency, "id", None):
+                ctx["processing_edit_url"] = (
+                    f"/orders/processing/?order={order_id}&agency={agency.id}&edit=1"
+                )
+            else:
+                ctx["processing_edit_url"] = f"/orders/processing/?order={order_id}&edit=1"
         return ctx
+
+    def post(self, request, *args, **kwargs):
+        order_id = kwargs.get("order_id")
+        if not order_id:
+            return redirect("/orders/")
+        action = (request.POST.get("action") or "").strip().lower()
+        if action == "approve_processing":
+            role = get_request_role(request)
+            if role not in {"manager", "head_manager", "director", "admin"}:
+                return HttpResponseForbidden("Доступ запрещен")
+            entries = list(
+                OrderAuditEntry.objects.filter(order_id=order_id, order_type=self.order_type)
+                .select_related("agency")
+                .order_by("created_at")
+            )
+            if not entries:
+                return redirect("/orders/")
+            latest = entries[-1]
+            status_payload = latest.payload or {}
+            status_value = (status_payload.get("status") or status_payload.get("submit_action") or "").lower()
+            status_label = (status_payload.get("status_label") or "").lower()
+            if status_value in {"done", "completed", "closed", "finished"} or "выполн" in status_label:
+                return redirect(f"/orders/processing/{order_id}/")
+            payload = dict(self._payload_from_entries(entries))
+            payload["status"] = "processing_head"
+            payload["status_label"] = "Передано в обработку"
+            payload["approved_at"] = timezone.localtime().isoformat()
+            log_order_action(
+                "status",
+                order_id=order_id,
+                order_type=self.order_type,
+                user=request.user if request.user.is_authenticated else None,
+                agency=latest.agency if latest else None,
+                description="Заявка на обработку утверждена менеджером и передана в обработку",
+                payload=payload,
+            )
+            Task.objects.filter(
+                route=f"/orders/processing/{order_id}/",
+                assigned_to__role="manager",
+            ).exclude(status="done").update(status="done")
+            _create_processing_head_task(
+                order_id,
+                latest.agency if latest else None,
+                request,
+                timezone.localtime(),
+            )
+            return redirect(f"/orders/processing/{order_id}/")
+        comment = (request.POST.get("comment") or "").strip()
+        if comment:
+            latest = (
+                OrderAuditEntry.objects.filter(order_id=order_id, order_type=self.order_type)
+                .select_related("agency")
+                .order_by("-created_at")
+                .first()
+            )
+            log_order_action(
+                "comment",
+                order_id=order_id,
+                order_type=self.order_type,
+                user=request.user if request.user.is_authenticated else None,
+                agency=latest.agency if latest else None,
+                description=comment,
+                payload={"comment": comment},
+            )
+        return redirect(f"/orders/processing/{order_id}/")
