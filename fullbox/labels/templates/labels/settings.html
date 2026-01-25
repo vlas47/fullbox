@@ -637,12 +637,30 @@
                 </tr>
               </thead>
                 <tbody>
-                  <tr data-field="barcode">
-                    <td>ШК</td>
-                    <td><input id="label-input-barcode" data-label-text value="{{ label_sample_barcode }}"></td>
-                    <td class="check-cell"><input class="check-input" id="label-enabled-barcode" data-label-enabled type="checkbox" checked></td>
-                    <td><input class="size-input" id="label-font-barcode" data-label-font type="text" inputmode="decimal" value="0.9"></td>
-                  </tr>
+                    <tr data-field="barcode">
+                      <td>ШК</td>
+                      <td><input id="label-input-barcode" data-label-text value="{{ label_sample_barcode }}"></td>
+                      <td class="check-cell"><input class="check-input" id="label-enabled-barcode" data-label-enabled type="checkbox" checked></td>
+                      <td><input class="size-input" id="label-font-barcode" data-label-font type="text" inputmode="decimal" value="0.9"></td>
+                    </tr>
+                    <tr data-field="box_client" data-label-only="box">
+                      <td>Клиент</td>
+                      <td><input id="label-input-box_client" data-label-text placeholder="Клиент"></td>
+                      <td class="check-cell"><input class="check-input" id="label-enabled-box_client" data-label-enabled type="checkbox" checked></td>
+                      <td><input class="size-input" id="label-font-box_client" data-label-font type="text" inputmode="decimal" value="1.0"></td>
+                    </tr>
+                    <tr data-field="box_basis" data-label-only="box">
+                      <td>Основание</td>
+                      <td><input id="label-input-box_basis" data-label-text placeholder="Основание"></td>
+                      <td class="check-cell"><input class="check-input" id="label-enabled-box_basis" data-label-enabled type="checkbox" checked></td>
+                      <td><input class="size-input" id="label-font-box_basis" data-label-font type="text" inputmode="decimal" value="1.0"></td>
+                    </tr>
+                    <tr data-field="box_pallet_number" data-label-only="box">
+                      <td>Номер короба на палете</td>
+                      <td><input id="label-input-box_pallet_number" data-label-text placeholder="Номер короба на палете"></td>
+                      <td class="check-cell"><input class="check-input" id="label-enabled-box_pallet_number" data-label-enabled type="checkbox" checked></td>
+                      <td><input class="size-input" id="label-font-box_pallet_number" data-label-font type="text" inputmode="decimal" value="1.0"></td>
+                    </tr>
                   <tr data-field="cz_code" data-label-only="item_cz">
                     <td>Код ЧЗ</td>
                     <td><input id="label-input-cz_code" data-label-text placeholder="Код ЧЗ"></td>
@@ -906,9 +924,12 @@
       const draftSettings = {};
         const labelFields = [
           'barcode',
+          'box_client',
+          'box_basis',
+          'box_pallet_number',
           'cz_code',
           'article',
-        'name',
+          'name',
         'size',
         'brand',
         'subject',
@@ -1077,7 +1098,20 @@
         const printButtons = Array.from(panel.querySelectorAll('[data-label-print]'));
 
         const toggleLabelOnlyRows = (key) => {
-          const rows = Array.from(table.querySelectorAll('[data-label-only]'));
+          const rows = Array.from(table.querySelectorAll('[data-field]'));
+          const barcodeRow = table.querySelector('[data-field="barcode"]');
+          const barcodeTitle = barcodeRow ? barcodeRow.querySelector('td') : null;
+          if (barcodeTitle) {
+            barcodeTitle.textContent = key === 'box' ? 'ШК для короба' : 'ШК';
+          }
+          if (key === 'box') {
+            const allowed = new Set(['barcode', 'box_client', 'box_basis', 'box_pallet_number']);
+            rows.forEach((row) => {
+              const field = row.dataset.field || '';
+              row.style.display = allowed.has(field) ? '' : 'none';
+            });
+            return;
+          }
           rows.forEach((row) => {
             const onlyKey = row.dataset.labelOnly || '';
             row.style.display = onlyKey && key !== onlyKey ? 'none' : '';
@@ -1095,11 +1129,14 @@
       }
       const draftSettings = {};
 
-        const fields = [
-          'barcode',
-          'cz_code',
-          'article',
-        'name',
+          const fields = [
+            'barcode',
+            'box_client',
+            'box_basis',
+            'box_pallet_number',
+            'cz_code',
+            'article',
+            'name',
         'size',
         'brand',
         'subject',
@@ -1426,6 +1463,9 @@
         applyFontVar(root, '--font-composition', safeSizes.composition);
         applyFontVar(root, '--font-supplier', safeSizes.supplier);
         applyFontVar(root, '--font-country', safeSizes.country);
+        applyFontVar(root, '--font-box-client', safeSizes.box_client);
+        applyFontVar(root, '--font-box-basis', safeSizes.box_basis);
+        applyFontVar(root, '--font-box-pallet-number', safeSizes.box_pallet_number);
       };
 
         const updateLabelRoot = (root, data, mode, sizes) => {
@@ -1443,6 +1483,8 @@
           setInfoLine(root, 'supplier', data.supplier, 'Поставщик: ');
           setInfoLine(root, 'article', data.article, isCzLabel ? 'Арт. ' : 'Артикул: ', safeSizes.article);
           setInfoLine(root, 'cz_code', data.cz_code, null, safeSizes.cz_code);
+          setInfoLine(root, 'box_basis', data.box_basis, 'Основание: ');
+          setInfoLine(root, 'box_client', data.box_client, 'Клиент: ');
 
         setNoCzLine(root, 'article', data.article ? `Артикул: ${data.article}` : '', null);
         setNoCzLine(root, 'name', data.name, null);
@@ -1554,6 +1596,7 @@
           return '';
         }
         const clone = root.cloneNode(true);
+        clone.dataset.renderMode = 'print';
         applyLabelDimensions(clone, dims);
         const holder = document.createElement('div');
         holder.style.position = 'fixed';
