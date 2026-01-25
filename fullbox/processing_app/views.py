@@ -2,19 +2,31 @@ import json
 import re
 import uuid
 from datetime import timedelta
+from pathlib import Path
+from urllib.parse import urlparse
 
+from django.conf import settings
+from django.contrib.auth.decorators import login_required
+from django.db import transaction
+from django.db.models import Count
 from django.shortcuts import redirect
-from django.http import HttpResponseForbidden
+from django.http import HttpResponse, HttpResponseBadRequest, HttpResponseForbidden, JsonResponse
 from django.utils import timezone
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_GET, require_POST
 from django.views.generic import TemplateView
 
 from audit.models import OrderAuditEntry, log_order_action
 from employees.access import RoleRequiredMixin, get_request_role, resolve_cabinet_url, is_staff_role
 from employees.models import Employee
+from labels.utils import load_available_printers_data, load_label_settings, save_print_agent_status
+from marking.models import MarkingCode
+from marking.utils import extract_processing_items
 from orders.views import OrdersDetailView
 from sku.models import Agency, SKU
 from sklad.models import InventoryState
 from todo.models import Task
+from .models import ProcessingPrintJob
 
 GOODS_TYPE_LABELS = {
     "op": "Оптовый",
@@ -42,6 +54,240 @@ def _format_payload_list(value):
     return text if text else "-"
 
 
+def _non_empty_text(value) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, bool):
+        return "Да" if value else ""
+    if isinstance(value, (int, float)):
+        return "" if value == 0 else str(value)
+    text = str(value).strip()
+    if not text or text in {"-", "0", "0.0"}:
+        return ""
+    if text.isdigit() and int(text) == 0:
+        return ""
+    return text
+
+
+def _format_list_value(value) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, (list, tuple, set)):
+        items = [str(item).strip() for item in value if str(item).strip()]
+        return ", ".join(items)
+    return _non_empty_text(value)
+
+
+def _parse_json_value(raw, fallback):
+    if raw is None:
+        return fallback
+    if isinstance(raw, (dict, list)):
+        return raw
+    text = str(raw).strip()
+    if not text:
+        return fallback
+    try:
+        return json.loads(text)
+    except (TypeError, ValueError):
+        return fallback
+
+
+
+
+def _get_print_agent_token() -> str:
+    return str(getattr(settings, "PRINT_AGENT_TOKEN", "")).strip()
+
+
+def _check_print_agent_token(request):
+    expected = _get_print_agent_token()
+    if not expected:
+        return False, JsonResponse({"ok": False, "error": "PRINT_AGENT_TOKEN not set"}, status=403)
+    token = (
+        request.headers.get("X-Print-Token")
+        or request.GET.get("token")
+        or request.POST.get("token")
+        or ""
+    )
+    if token != expected:
+        return False, JsonResponse({"ok": False, "error": "Invalid token"}, status=403)
+    return True, None
+
+
+def _parse_json_body(request):
+    if not request.body:
+        return {}
+    try:
+        return json.loads(request.body.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return None
+
+
+def _serialize_print_job(job: ProcessingPrintJob) -> dict:
+    return {
+        "id": job.id,
+        "order_id": job.order_id,
+        "card_id": job.card_id,
+        "article": job.article,
+        "barcode": job.barcode,
+        "size": job.size,
+        "printer_name": job.printer_name,
+        "label_png_base64": job.label_png_base64,
+        "label_width_mm": job.label_width_mm,
+        "label_height_mm": job.label_height_mm,
+        "status": job.status,
+        "requested_by": job.requested_by,
+        "created_at": job.created_at.isoformat() if job.created_at else "",
+    }
+
+
+def _short_city(value: str) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    city = text.split(",")[0].strip()
+    lowered = city.lower()
+    for prefix in ("г.", "г ", "город "):
+        if lowered.startswith(prefix):
+            city = city[len(prefix):].strip()
+            break
+    return city or text
+
+
+def _processing_params_from_payload(payload: dict) -> list[dict]:
+    def _add_param(rows: list[dict], label: str, value: str | None, extras: list[str] | None = None) -> None:
+        base = _non_empty_text(value)
+        extra_values = [item for item in (extras or []) if _non_empty_text(item)]
+        if not base and not extra_values:
+            return
+        if base and extra_values:
+            value_text = f"{base}; " + "; ".join(extra_values)
+        elif base:
+            value_text = base
+        else:
+            value_text = "; ".join(extra_values)
+        rows.append({"label": label, "value": value_text})
+
+    insert_types = payload.get("insert_types") or []
+    if isinstance(insert_types, str):
+        insert_types = [insert_types] if insert_types else []
+    insert_other = (payload.get("insert_other") or "").strip()
+    if insert_other:
+        insert_types = list(insert_types) + [insert_other]
+
+    marking_stickers = payload.get("marking_stickers") or []
+    if isinstance(marking_stickers, str):
+        marking_stickers = [marking_stickers] if marking_stickers else []
+    marking_sizes = payload.get("marking_sizes") or []
+    if isinstance(marking_sizes, str):
+        marking_sizes = [marking_sizes] if marking_sizes else []
+
+    processing_params: list[dict] = []
+    _add_param(processing_params, "Маркетплейс", payload.get("marketplace"))
+    defect_percent = _non_empty_text(payload.get("defect_percent"))
+    if defect_percent and defect_percent.isdigit():
+        defect_percent = f"{defect_percent}%"
+    _add_param(processing_params, "Проверка на брак", defect_percent)
+    _add_param(processing_params, "Маркировка 58/40", payload.get("marking_5840_qty"))
+    _add_param(processing_params, "Маркировка 58/40 (шт/чз)", payload.get("marking_5840_each_qty"))
+    _add_param(processing_params, "Замена бирок", payload.get("tag_owner"))
+
+    def _add_pack_param(label: str, base_value: str | None, prefix: str) -> None:
+        extras = []
+        type_value = _non_empty_text(payload.get(f"{prefix}_type"))
+        size_value = _non_empty_text(payload.get(f"{prefix}_size"))
+        qty_value = _non_empty_text(payload.get(f"{prefix}_qty"))
+        supply_value = _non_empty_text(payload.get(f"{prefix}_supply"))
+        if type_value:
+            extras.append(f"Тип: {type_value}")
+        if size_value:
+            extras.append(f"Размер: {size_value}")
+        if qty_value:
+            extras.append(f"Кол-во: {qty_value}")
+        if supply_value:
+            extras.append(f"Закупка: {supply_value}")
+        _add_param(
+            processing_params,
+            label,
+            base_value or payload.get(f"{prefix}_needed"),
+            extras=extras,
+        )
+
+    _add_pack_param("Замена пакета", payload.get("bag_replace_type"), "bag_replace")
+    _add_pack_param("Упаковка в Бабл пленку", payload.get("bubble_wrap_size"), "bubble_wrap")
+    _add_pack_param("Упаковка в термо пленку", payload.get("shrink_wrap_size"), "shrink_wrap")
+    _add_pack_param("Замена гофрокороба", payload.get("box_replace_type"), "box_replace")
+    set_qty = _non_empty_text(payload.get("set_qty"))
+    _add_param(
+        processing_params,
+        "Сборка набора",
+        set_qty and f"Кол-во: {set_qty}" or payload.get("set_build"),
+    )
+    insert_qty = _non_empty_text(payload.get("insert_qty"))
+    insert_types_label = _format_list_value(insert_types)
+    if insert_other and insert_other not in insert_types:
+        insert_types_label = _format_list_value(list(insert_types) + [insert_other])
+    _add_param(
+        processing_params,
+        "Вложение",
+        insert_qty and f"Кол-во: {insert_qty}" or payload.get("insert_needed"),
+        extras=[f"Типы: {insert_types_label}" if insert_types_label else ""],
+    )
+    direction_mode = (payload.get("direction_needed") or "").strip()
+    direction_file = _non_empty_text(payload.get("direction_file"))
+    direction_addresses = _parse_json_value(payload.get("direction_addresses_json"), [])
+    if isinstance(direction_addresses, dict):
+        direction_addresses = direction_addresses.get("directions") or direction_addresses.get("addresses") or []
+    if not isinstance(direction_addresses, list):
+        direction_addresses = []
+    direction_addresses = [str(item).strip() for item in direction_addresses if str(item).strip()]
+    direction_plan = _parse_json_value(payload.get("direction_plan_json"), {})
+    if not isinstance(direction_plan, dict):
+        direction_plan = {}
+    if not direction_addresses:
+        plan_dirs = direction_plan.get("directions") or direction_plan.get("addresses") or []
+        if isinstance(plan_dirs, list):
+            direction_addresses = [str(item).strip() for item in plan_dirs if str(item).strip()]
+    direction_count = _parse_qty_value(payload.get("direction_count"))
+    if not direction_count and direction_addresses:
+        direction_count = len(direction_addresses)
+    direction_value = ""
+    direction_extras: list[str] = []
+    if direction_file or direction_mode in {"file", "Да"}:
+        direction_value = direction_file and f"Файл: {direction_file}" or "Файл"
+    elif direction_mode == "set" or direction_plan.get("rows"):
+        if direction_addresses:
+            direction_value = _format_list_value(direction_addresses)
+        else:
+            direction_value = "Задано"
+    elif direction_mode in {"none", "Нет", "Отсутствует"}:
+        direction_value = "Отсутствует"
+    elif direction_mode:
+        direction_value = direction_mode
+    _add_param(
+        processing_params,
+        "Распределение по направлениям",
+        direction_value,
+        extras=direction_extras,
+    )
+    box_forming = _non_empty_text(payload.get("box_forming"))
+    if box_forming == "other":
+        box_forming = _non_empty_text(payload.get("box_forming_other"))
+    _add_param(processing_params, "Формирование короба", box_forming)
+    _add_param(processing_params, "Прочие", payload.get("comments"))
+    _add_param(processing_params, "Маркировка", _format_list_value(marking_stickers))
+    _add_param(processing_params, "Размеры стикеров", _format_list_value(marking_sizes))
+    _add_param(processing_params, "Информационный", payload.get("marking_info"))
+    _add_param(processing_params, "Вытянуть из мешка и наклеить ЧЗ", payload.get("pull_from_bag"))
+    _add_param(processing_params, "Проверка на брак (кол-во)", payload.get("defect_qty"))
+    _add_param(processing_params, "Обрезание ниток (кол-во)", payload.get("trim_threads_qty"))
+    _add_param(processing_params, "Скрепление скотчем (кол-во)", payload.get("tape_qty"))
+    _add_param(processing_params, "Удаление бирки", payload.get("remove_tag"))
+    _add_param(processing_params, "Удаление бирки (кол-во)", payload.get("remove_tag_qty"))
+    _add_param(processing_params, "Скрепление бирки", payload.get("attach_tag"))
+    _add_param(processing_params, "Скрепление бирки (кол-во)", payload.get("attach_tag_qty"))
+    return processing_params
+
+
 def _parse_qty_value(raw: str | None) -> int | None:
     if raw is None:
         return None
@@ -52,6 +298,44 @@ def _parse_qty_value(raw: str | None) -> int | None:
         return int(text)
     except (TypeError, ValueError):
         return None
+
+
+def _expected_processing_results(payload: dict) -> list[tuple[str, str, str]]:
+    direction_plan = _parse_json_value(payload.get("direction_plan_json"), {})
+    direction_addresses = _parse_json_value(payload.get("direction_addresses_json"), [])
+    if isinstance(direction_addresses, dict):
+        direction_addresses = (
+            direction_addresses.get("directions")
+            or direction_addresses.get("addresses")
+            or []
+        )
+    if not isinstance(direction_addresses, list):
+        direction_addresses = []
+    if not direction_addresses and isinstance(direction_plan, dict):
+        plan_dirs = direction_plan.get("directions") or direction_plan.get("addresses") or []
+        if isinstance(plan_dirs, list):
+            direction_addresses = plan_dirs
+    direction_labels = [_short_city(item) or str(item).strip() for item in direction_addresses]
+    plan_rows = []
+    if isinstance(direction_plan, dict):
+        plan_rows = direction_plan.get("rows") or []
+    if not isinstance(plan_rows, list):
+        plan_rows = []
+    expected = []
+    for row in plan_rows:
+        if not isinstance(row, dict):
+            continue
+        quantities = row.get("quantities") or []
+        if not isinstance(quantities, (list, tuple)):
+            quantities = []
+        article = str(row.get("article") or row.get("product_name") or "").strip().lower()
+        size = str(row.get("size") or "").strip().lower()
+        for idx, label in enumerate(direction_labels):
+            qty = _parse_qty_value(quantities[idx] if idx < len(quantities) else None) or 0
+            if qty <= 0:
+                continue
+            expected.append((article, size, label.lower()))
+    return expected
 
 
 def _is_draft_payload(payload: dict | None) -> bool:
@@ -414,6 +698,13 @@ def _replace_processing_reserves(order_id: str, agency: Agency, stock_rows: list
 
 
 def _submit_processing(request):
+    autosave = (request.POST.get("draft_autosave") or "").strip() == "1"
+
+    def autosave_error(message: str):
+        if not autosave:
+            return None
+        return JsonResponse({"ok": False, "error": message}, status=400)
+
     submit_action = (request.POST.get("submit_action") or "send").strip().lower()
     is_draft = submit_action == "draft"
     draft_order_id = (request.POST.get("draft_order_id") or "").strip()
@@ -425,6 +716,9 @@ def _submit_processing(request):
         agency_id = request.POST.get("agency_id")
         agency = Agency.objects.filter(pk=agency_id).first()
     if not agency:
+        error_response = autosave_error("Выберите клиента.")
+        if error_response:
+            return error_response
         return ProcessingHomeView().get(request, error="Выберите клиента.")
 
     role = get_request_role(request)
@@ -440,6 +734,9 @@ def _submit_processing(request):
             .order_by("created_at")
         )
         if not existing_entries:
+            error_response = autosave_error("Заявка не найдена.")
+            if error_response:
+                return error_response
             return ProcessingHomeView().get(request, error="Заявка не найдена.")
         latest_payload = existing_entries[-1].payload or {}
         preserved_status = (latest_payload.get("status") or latest_payload.get("submit_action") or "").strip()
@@ -448,6 +745,11 @@ def _submit_processing(request):
         status_lower = preserved_status.lower()
         label_lower = preserved_label.lower()
         if status_lower in {"done", "completed", "closed", "finished"} or "выполн" in label_lower:
+            error_response = autosave_error(
+                "Заявка уже утверждена и недоступна для редактирования.",
+            )
+            if error_response:
+                return error_response
             return ProcessingHomeView().get(
                 request,
                 error="Заявка уже утверждена и недоступна для редактирования.",
@@ -516,8 +818,14 @@ def _submit_processing(request):
     if not is_draft:
         if cards_payload:
             if not any(card.get("product_name") for card in cards_payload):
+                error_response = autosave_error("Укажите наименование товара.")
+                if error_response:
+                    return error_response
                 return ProcessingHomeView().get(request, error="Укажите наименование товара.")
         elif not product_name:
+            error_response = autosave_error("Укажите наименование товара.")
+            if error_response:
+                return error_response
             return ProcessingHomeView().get(request, error="Укажите наименование товара.")
 
     def collect_rows(field_map: dict) -> list[dict]:
@@ -632,6 +940,7 @@ def _submit_processing(request):
         "org": (request.POST.get("org") or "").strip(),
         "product_name": product_name,
         "product_photo_url": primary_photo_url,
+        "marketplace": request.POST.get("marketplace"),
         "supplier": request.POST.get("supplier"),
         "brand": request.POST.get("brand"),
         "subject": request.POST.get("subject"),
@@ -713,6 +1022,9 @@ def _submit_processing(request):
         "receive_date": request.POST.get("receive_date"),
         "responsible_name": request.POST.get("responsible_name"),
         "direction_needed": request.POST.get("direction_needed"),
+        "direction_count": request.POST.get("direction_count"),
+        "direction_addresses_json": request.POST.get("direction_addresses_json"),
+        "direction_plan_json": request.POST.get("direction_plan_json"),
         "box_forming": request.POST.get("box_forming"),
         "box_forming_other": request.POST.get("box_forming_other"),
         "comments": request.POST.get("comments"),
@@ -773,9 +1085,29 @@ def _submit_processing(request):
             agency=agency,
         ).delete()
     if edit_order_id:
+        if autosave:
+            return JsonResponse(
+                {
+                    "ok": True,
+                    "order_id": order_id,
+                    "draft_order_id": "",
+                    "status": status_value,
+                    "status_label": status_label,
+                }
+            )
         return redirect(f"/orders/processing/{order_id}/")
     if not is_draft and client_agency:
         _create_processing_manager_task(order_id, agency, request, timezone.localtime())
+    if autosave:
+        return JsonResponse(
+            {
+                "ok": True,
+                "order_id": order_id,
+                "draft_order_id": order_id if is_draft else "",
+                "status": status_value,
+                "status_label": status_label,
+            }
+        )
     return redirect(
         f"/orders/processing/?client={agency.id}&ok=1&status={status_value}&order={order_id}"
     )
@@ -900,6 +1232,26 @@ class ProcessingHomeView(RoleRequiredMixin, TemplateView):
         return ctx
 
 
+class ProcessingDirectionsView(RoleRequiredMixin, TemplateView):
+    template_name = "processing/processing_directions.html"
+    allowed_roles = ("manager", "storekeeper", "head_manager", "director", "admin", "processing_head")
+
+    def dispatch(self, request, *args, **kwargs):
+        client_agency = _client_agency_from_request(request)
+        if client_agency:
+            request._client_agency = client_agency
+            return TemplateView.dispatch(self, request, *args, **kwargs)
+        return super().dispatch(request, *args, **kwargs)
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        ctx["cabinet_url"] = resolve_cabinet_url(get_request_role(self.request))
+        return_url = (self.request.GET.get("return") or "").strip()
+        ctx["return_url"] = return_url
+        ctx["return_url_json"] = json.dumps(return_url, ensure_ascii=True)
+        return ctx
+
+
 class ProcessingStockPickerView(RoleRequiredMixin, TemplateView):
     template_name = "processing/stock_picker.html"
     allowed_roles = ("manager", "storekeeper", "head_manager", "director", "admin")
@@ -951,8 +1303,547 @@ def delete_processing_draft(request, order_id: str):
     return redirect(f"/client/dashboard/?client={client_agency.id}")
 
 
+class ProcessingWorkView(RoleRequiredMixin, TemplateView):
+    template_name = "processing/processing_work.html"
+    allowed_roles = ("storekeeper", "processing_head", "head_manager", "director", "admin")
+
+    def dispatch(self, request, *args, **kwargs):
+        order_id = kwargs.get("order_id")
+        if not order_id:
+            return redirect("/orders/")
+        if _client_agency_from_request(request):
+            return HttpResponseForbidden("Доступ запрещен")
+        latest = (
+            OrderAuditEntry.objects.filter(order_id=order_id, order_type="processing")
+            .select_related("agency")
+            .order_by("-created_at")
+            .first()
+        )
+        if not latest:
+            return redirect("/orders/")
+        payload = latest.payload or {}
+        status_value = (payload.get("status") or payload.get("submit_action") or "").lower()
+        status_label = (payload.get("status_label") or "").lower()
+        is_ready = (
+            status_value in {"processing_head", "processing_in_work"}
+            or ("передан" in status_label and "обработ" in status_label)
+            or "взята" in status_label
+        )
+        if not is_ready:
+            return HttpResponseForbidden("Доступ запрещен")
+        request._processing_work_payload = payload
+        request._processing_work_agency = latest.agency
+        return super().dispatch(request, *args, **kwargs)
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        order_id = kwargs.get("order_id")
+        payload = getattr(self.request, "_processing_work_payload", None) or {}
+        agency = getattr(self.request, "_processing_work_agency", None)
+        status_value = (payload.get("status") or payload.get("submit_action") or "").strip().lower()
+        status_label = (payload.get("status_label") or "").strip()
+        if not status_label:
+            if status_value == "processing_in_work":
+                status_label = "Взята в работу"
+            elif status_value == "processing_head":
+                status_label = "Передано в обработку"
+        ctx["submitted"] = False
+        ctx["draft_saved"] = False
+        ctx["error"] = kwargs.get("error") or self.request.GET.get("error")
+        ctx["cabinet_url"] = resolve_cabinet_url(get_request_role(self.request))
+        ctx["order_number"] = order_id or ""
+        ctx["agency"] = agency
+        ctx["client_view"] = False
+        ctx["draft_order_id"] = ""
+        ctx["edit_order_id"] = ""
+        ctx["draft_payload"] = payload
+        ctx["draft_payload_json"] = json.dumps(payload or {}, ensure_ascii=True)
+        ctx["status_label"] = status_label or "Обработка товара"
+        marking_items = extract_processing_items(payload)
+        counts = (
+            MarkingCode.objects.filter(order_type="processing", order_id=order_id)
+            .values("sku_code", "size")
+            .annotate(count=Count("id"))
+        )
+        counts_map = {
+            (item["sku_code"], item["size"] or ""): item["count"] for item in counts
+        }
+        total_count = 0
+        for item in marking_items:
+            key = (item["sku_code"], item["size"] or "")
+            scanned = counts_map.get(key, 0)
+            expected = item.get("qty") or 0
+            item["scanned"] = scanned
+            item["remaining"] = max(expected - scanned, 0)
+            total_count += scanned
+        ctx["marking_items"] = marking_items
+        ctx["marking_total_count"] = total_count
+        ctx["marking_api_base"] = f"/marking/processing/{order_id}/"
+        return ctx
+
+    def post(self, request, *args, **kwargs):
+        action = (request.POST.get("action") or "").strip().lower()
+        if action != "finish_processing":
+            return HttpResponseForbidden("Доступ запрещен")
+        role = get_request_role(request)
+        if role not in {"storekeeper", "processing_head"}:
+            return HttpResponseForbidden("Доступ запрещен")
+        order_id = kwargs.get("order_id")
+        if not order_id:
+            return redirect("/orders/")
+        entries = list(
+            OrderAuditEntry.objects.filter(order_id=order_id, order_type="processing")
+            .select_related("agency")
+            .order_by("created_at")
+        )
+        if not entries:
+            return redirect("/orders/")
+        latest = entries[-1]
+        payload = dict(latest.payload or {})
+        status_value = (payload.get("status") or payload.get("submit_action") or "").lower()
+        status_label = (payload.get("status_label") or "").lower()
+        if status_value in {"done", "completed", "closed", "finished"} or "выполн" in status_label:
+            return redirect(resolve_cabinet_url(role))
+
+        expected_results = _expected_processing_results(payload)
+        if expected_results:
+            results = payload.get("processing_results") or []
+            results_map = {}
+            if isinstance(results, list):
+                for item in results:
+                    if not isinstance(item, dict):
+                        continue
+                    article_key = str(item.get("article") or "").strip().lower()
+                    size_key = str(item.get("size") or "").strip().lower()
+                    dest_key = str(item.get("destination") or "").strip().lower()
+                    results_map[(article_key, size_key, dest_key)] = item
+            required_fields = ("processed", "defect", "shortage", "shipped_qty")
+            for key in expected_results:
+                saved = results_map.get(key)
+                if not saved:
+                    return self.get(
+                        request,
+                        error="Заполните результаты обработки перед закрытием заявки.",
+                        order_id=order_id,
+                    )
+                for field in required_fields:
+                    if _parse_qty_value(saved.get(field)) is None:
+                        return self.get(
+                            request,
+                            error="Заполните результаты обработки перед закрытием заявки.",
+                            order_id=order_id,
+                        )
+        payload["status"] = "done"
+        payload["status_label"] = "Выполнена"
+        payload["completed_at"] = timezone.localtime().isoformat()
+        log_order_action(
+            "status",
+            order_id=order_id,
+            order_type="processing",
+            user=request.user if request.user.is_authenticated else None,
+            agency=latest.agency if latest else None,
+            description="Обработка завершена",
+            payload=payload,
+        )
+        Task.objects.filter(
+            route=f"/orders/processing/{order_id}/",
+        ).exclude(status="done").update(status="done")
+        return redirect(resolve_cabinet_url(role))
+
+
+class ProcessingCardView(RoleRequiredMixin, TemplateView):
+    template_name = "processing/processing_card.html"
+    allowed_roles = ("storekeeper", "processing_head", "head_manager", "director", "admin")
+
+    def dispatch(self, request, *args, **kwargs):
+        order_id = kwargs.get("order_id")
+        if not order_id:
+            return redirect("/orders/")
+        if _client_agency_from_request(request):
+            return HttpResponseForbidden("Доступ запрещен")
+        latest = (
+            OrderAuditEntry.objects.filter(order_id=order_id, order_type="processing")
+            .select_related("agency")
+            .order_by("-created_at")
+            .first()
+        )
+        if not latest:
+            return redirect("/orders/")
+        payload = latest.payload or {}
+        status_value = (payload.get("status") or payload.get("submit_action") or "").lower()
+        status_label = (payload.get("status_label") or "").lower()
+        allowed = (
+            status_value in {"processing_head", "processing_in_work", "done", "completed", "closed", "finished"}
+            or ("передан" in status_label and "обработ" in status_label)
+            or "взята" in status_label
+            or "выполн" in status_label
+        )
+        if not allowed:
+            return HttpResponseForbidden("Доступ запрещен")
+        request._processing_card_payload = payload
+        request._processing_card_agency = latest.agency
+        request._processing_card_status_label = status_label or payload.get("status_label")
+        return super().dispatch(request, *args, **kwargs)
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        order_id = kwargs.get("order_id") or ""
+        payload = getattr(self.request, "_processing_card_payload", None) or {}
+        agency = getattr(self.request, "_processing_card_agency", None)
+        status_label = (getattr(self.request, "_processing_card_status_label", None) or "").strip()
+        if not status_label:
+            status_value = (payload.get("status") or payload.get("submit_action") or "").strip().lower()
+            if status_value == "processing_in_work":
+                status_label = "Взята в работу"
+            elif status_value == "processing_head":
+                status_label = "Передано в обработку"
+            elif status_value in {"done", "completed", "closed", "finished"}:
+                status_label = "Выполнена"
+        return_url = (self.request.GET.get("return") or "").strip()
+        if return_url:
+            parsed = urlparse(return_url)
+            if parsed.scheme or parsed.netloc:
+                return_url = ""
+            else:
+                return_url = parsed.path or ""
+                if parsed.query:
+                    return_url = f"{return_url}?{parsed.query}"
+                if parsed.fragment:
+                    return_url = f"{return_url}#{parsed.fragment}"
+        if not return_url:
+            return_url = f"/orders/processing/{order_id}/work/"
+        ctx["order_id"] = order_id
+        ctx["return_url"] = return_url
+        ctx["cabinet_url"] = resolve_cabinet_url(get_request_role(self.request))
+        ctx["status_label"] = status_label or "-"
+        ctx["client_label"] = (
+            agency.agn_name or agency.fio_agn or str(agency)
+        ) if agency else "-"
+        printers, printers_meta = load_available_printers_data()
+        ctx["available_printers"] = printers
+        ctx["available_printers_meta"] = printers_meta
+        ctx["label_settings"] = load_label_settings()
+
+        cards = payload.get("cards") or []
+        card_id = kwargs.get("card_id") or ""
+        ctx["card_id"] = card_id
+        article_param = (self.request.GET.get("article") or "").strip()
+        selected_card = None
+        for card in cards:
+            if not isinstance(card, dict):
+                continue
+            if card_id and str(card.get("id") or "") == card_id:
+                selected_card = card
+                break
+        if not selected_card and article_param:
+            for card in cards:
+                if not isinstance(card, dict):
+                    continue
+                if (card.get("article") or "").strip() == article_param:
+                    selected_card = card
+                    break
+        if not selected_card and cards:
+            selected_card = cards[0] if isinstance(cards[0], dict) else None
+
+        fallback_rows = payload.get("stock_rows") or payload.get("size_rows") or []
+        selected_card = selected_card or {
+            "article": payload.get("article") or "",
+            "product_name": payload.get("product_name") or "",
+            "photo_url": payload.get("product_photo_url") or "",
+            "goods_type": payload.get("goods_type") or "",
+            "rows": fallback_rows,
+        }
+
+        article_value = (selected_card.get("article") or payload.get("article") or "").strip()
+        product_name = (selected_card.get("product_name") or payload.get("product_name") or "").strip()
+        goods_type = (selected_card.get("goods_type") or payload.get("goods_type") or "").strip().lower()
+        goods_type_label = GOODS_TYPE_LABELS.get(goods_type, goods_type) if goods_type else ""
+        photo_url = (selected_card.get("photo_url") or selected_card.get("product_photo_url") or payload.get("product_photo_url") or "").strip()
+        supplier_value = str(payload.get("supplier") or "").strip()
+        if not supplier_value and agency:
+            supplier_value = (agency.agn_name or agency.fio_agn or str(agency) or "").strip()
+        label_base = {
+            "article": article_value,
+            "name": product_name,
+            "brand": (payload.get("brand") or ""),
+            "subject": (payload.get("subject") or ""),
+            "color": (payload.get("color") or ""),
+            "composition": (payload.get("composition") or ""),
+            "supplier": supplier_value,
+            "country": (payload.get("made_in") or ""),
+            "barcode_extra": (payload.get("source_reference") or article_value or ""),
+        }
+        ctx["label_base_json"] = json.dumps(label_base, ensure_ascii=True)
+
+        card_fields = []
+
+        def add_field(label: str, value: str | None) -> None:
+            text = _non_empty_text(value)
+            if not text:
+                return
+            card_fields.append({"label": label, "value": text})
+
+        add_field("Наименование товара", product_name)
+        add_field("Артикул", article_value)
+        add_field("Тип товара", goods_type_label)
+        add_field("Поставщик", payload.get("supplier"))
+        add_field("Бренд", payload.get("brand"))
+        add_field("Предмет", payload.get("subject"))
+        add_field("Цвет", payload.get("color"))
+        add_field("Состав", payload.get("composition"))
+        add_field("Пол", payload.get("gender"))
+        add_field("Сезон", payload.get("season"))
+        add_field("Заказ №", payload.get("order_no"))
+        add_field("Артикул WB", payload.get("wb_article"))
+
+        rows_source = selected_card.get("rows") or []
+        if not rows_source:
+            rows_source = fallback_rows
+        card_rows = []
+        for row in rows_source:
+            if not isinstance(row, dict):
+                continue
+            size_value = row.get("size") or row.get("size_value") or row.get("size_no") or ""
+            barcode_value = row.get("barcode") or row.get("barcode_value") or ""
+            qty_value = row.get("qty")
+            if qty_value in (None, ""):
+                qty_value = row.get("recount_qty")
+            if qty_value in (None, ""):
+                qty_value = row.get("processing_qty")
+            if not (size_value or barcode_value or qty_value):
+                continue
+            card_rows.append(
+                {
+                    "size": size_value,
+                    "barcode": barcode_value,
+                    "qty": qty_value if qty_value not in (None, "") else "-",
+                }
+            )
+
+        ctx["card"] = {
+            "article": article_value,
+            "product_name": product_name,
+            "photo_url": photo_url,
+            "goods_type": goods_type_label,
+        }
+        ctx["card_fields"] = card_fields
+        ctx["card_rows"] = card_rows
+        ctx["processing_params"] = _processing_params_from_payload(payload)
+        direction_tables = []
+        direction_plan = _parse_json_value(payload.get("direction_plan_json"), {})
+        direction_addresses = _parse_json_value(payload.get("direction_addresses_json"), [])
+        if isinstance(direction_addresses, dict):
+            direction_addresses = (
+                direction_addresses.get("directions")
+                or direction_addresses.get("addresses")
+                or []
+            )
+        if not isinstance(direction_addresses, list):
+            direction_addresses = []
+        if not direction_addresses and isinstance(direction_plan, dict):
+            plan_dirs = direction_plan.get("directions") or direction_plan.get("addresses") or []
+            if isinstance(plan_dirs, list):
+                direction_addresses = plan_dirs
+        direction_addresses = [
+            str(item).strip() for item in direction_addresses if str(item).strip()
+        ]
+        plan_rows = []
+        if isinstance(direction_plan, dict):
+            plan_rows = direction_plan.get("rows") or []
+        if not isinstance(plan_rows, list):
+            plan_rows = []
+        filtered_rows = []
+        if article_value:
+            article_lower = article_value.lower()
+            for row in plan_rows:
+                if not isinstance(row, dict):
+                    continue
+                row_article = str(row.get("article") or "").strip().lower()
+                if row_article and row_article != article_lower:
+                    continue
+                filtered_rows.append(row)
+        elif product_name:
+            product_lower = product_name.lower()
+            for row in plan_rows:
+                if not isinstance(row, dict):
+                    continue
+                row_product = str(row.get("product_name") or "").strip().lower()
+                if row_product and row_product != product_lower:
+                    continue
+                filtered_rows.append(row)
+        if not filtered_rows and plan_rows:
+            filtered_rows = [row for row in plan_rows if isinstance(row, dict)]
+        barcode_map = {}
+        for row in card_rows:
+            size_key = str(row.get("size") or "").strip().lower()
+            barcode_value = str(row.get("barcode") or "").strip()
+            if size_key and barcode_value and size_key not in barcode_map:
+                barcode_map[size_key] = barcode_value
+
+        def parse_dir_qty(value) -> int:
+            qty = _parse_qty_value(value)
+            return qty if qty is not None else 0
+
+        direction_labels = [_short_city(item) or str(item).strip() for item in direction_addresses]
+
+        for idx, address in enumerate(direction_addresses):
+            total = 0
+            rows_out = []
+            for row in filtered_rows:
+                if not isinstance(row, dict):
+                    continue
+                quantities = row.get("quantities") or []
+                if not isinstance(quantities, (list, tuple)):
+                    quantities = []
+                qty = parse_dir_qty(quantities[idx] if idx < len(quantities) else None)
+                if qty <= 0:
+                    continue
+                size_value = str(row.get("size") or "").strip()
+                barcode_value = barcode_map.get(size_value.lower(), "") if size_value else ""
+                rows_out.append(
+                    {
+                        "size": size_value or "-",
+                        "barcode": barcode_value or "-",
+                        "qty": qty,
+                    }
+                )
+                total += qty
+            direction_tables.append(
+                {"address": address, "total": total, "rows": rows_out}
+            )
+        results_map = {}
+        saved_results = payload.get("processing_results") or []
+        if isinstance(saved_results, list):
+            for item in saved_results:
+                if not isinstance(item, dict):
+                    continue
+                article_key = str(item.get("article") or "").strip().lower()
+                size_key = str(item.get("size") or "").strip().lower()
+                dest_key = str(item.get("destination") or "").strip().lower()
+                results_map[(article_key, size_key, dest_key)] = item
+
+        results_rows = []
+        if filtered_rows and direction_labels:
+            for row in filtered_rows:
+                if not isinstance(row, dict):
+                    continue
+                size_value = str(row.get("size") or "").strip()
+                row_article = str(
+                    row.get("article") or row.get("product_name") or article_value or ""
+                ).strip()
+                barcode_value = barcode_map.get(size_value.lower(), "") if size_value else ""
+                quantities = row.get("quantities") or []
+                if not isinstance(quantities, (list, tuple)):
+                    quantities = []
+                for idx, label in enumerate(direction_labels):
+                    qty = parse_dir_qty(quantities[idx] if idx < len(quantities) else None)
+                    key = (row_article.lower(), size_value.lower(), (label or "").lower())
+                    saved = results_map.get(key, {})
+                    results_rows.append(
+                        {
+                            "article": row_article or "-",
+                            "size": size_value or "-",
+                            "barcode": barcode_value or "-",
+                            "received": qty,
+                            "destination": label or "-",
+                            "processed": saved.get("processed") or "",
+                            "defect": saved.get("defect") or "",
+                            "shortage": saved.get("shortage") or "",
+                            "shipped_qty": saved.get("shipped_qty") or "",
+                        }
+                    )
+        ctx["results_rows"] = results_rows
+        ctx["direction_tables"] = direction_tables
+        role = get_request_role(self.request)
+        ctx["can_edit_results"] = role in {
+            "processing_head",
+            "head_manager",
+            "director",
+            "admin",
+        }
+        return ctx
+
+    def render_to_response(self, context, **response_kwargs):
+        response = super().render_to_response(context, **response_kwargs)
+        response["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+        response["Pragma"] = "no-cache"
+        response["Vary"] = "Cookie"
+        return response
+
+    def post(self, request, *args, **kwargs):
+        action = (request.POST.get("action") or "").strip().lower()
+        if action != "save_results":
+            return HttpResponseForbidden("Доступ запрещен")
+        role = get_request_role(request)
+        if role not in {"processing_head", "head_manager", "director", "admin"}:
+            return HttpResponseForbidden("Доступ запрещен")
+        order_id = kwargs.get("order_id")
+        if not order_id:
+            return redirect("/orders/")
+        entries = list(
+            OrderAuditEntry.objects.filter(order_id=order_id, order_type="processing")
+            .select_related("agency")
+            .order_by("created_at")
+        )
+        if not entries:
+            return redirect("/orders/")
+        latest = entries[-1]
+        payload = dict(latest.payload or {})
+
+        articles = request.POST.getlist("result_article[]")
+        sizes = request.POST.getlist("result_size[]")
+        destinations = request.POST.getlist("result_destination[]")
+        received_list = request.POST.getlist("result_received[]")
+        processed_list = request.POST.getlist("result_processed[]")
+        defect_list = request.POST.getlist("result_defect[]")
+        shortage_list = request.POST.getlist("result_shortage[]")
+        shipped_list = request.POST.getlist("result_shipped_qty[]")
+        total_rows = max(
+            len(articles),
+            len(sizes),
+            len(destinations),
+            len(received_list),
+            len(processed_list),
+            len(defect_list),
+            len(shortage_list),
+            len(shipped_list),
+        )
+        results = []
+        for idx in range(total_rows):
+            article = articles[idx].strip() if idx < len(articles) else ""
+            size = sizes[idx].strip() if idx < len(sizes) else ""
+            destination = destinations[idx].strip() if idx < len(destinations) else ""
+            if not any((article, size, destination)):
+                continue
+            results.append(
+                {
+                    "article": article,
+                    "size": size,
+                    "destination": destination,
+                    "received": received_list[idx].strip() if idx < len(received_list) else "",
+                    "processed": processed_list[idx].strip() if idx < len(processed_list) else "",
+                    "defect": defect_list[idx].strip() if idx < len(defect_list) else "",
+                    "shortage": shortage_list[idx].strip() if idx < len(shortage_list) else "",
+                    "shipped_qty": shipped_list[idx].strip() if idx < len(shipped_list) else "",
+                }
+            )
+        payload["processing_results"] = results
+        payload["processing_results_updated_at"] = timezone.localtime().isoformat()
+        log_order_action(
+            "result",
+            order_id=order_id,
+            order_type="processing",
+            user=request.user if request.user.is_authenticated else None,
+            agency=latest.agency if latest else None,
+            description="Результаты обработки",
+            payload=payload,
+        )
+        return redirect(request.get_full_path())
+
+
 class ProcessingDetailView(OrdersDetailView):
     order_type = "processing"
+    allowed_roles = ("manager", "storekeeper", "head_manager", "director", "admin", "processing_head")
 
     def dispatch(self, request, *args, **kwargs):
         order_id = kwargs.get("order_id")
@@ -1024,41 +1915,6 @@ class ProcessingDetailView(OrdersDetailView):
                     }
                 )
 
-        def _non_empty(value) -> str:
-            if value is None:
-                return ""
-            if isinstance(value, bool):
-                return "Да" if value else ""
-            if isinstance(value, (int, float)):
-                return "" if value == 0 else str(value)
-            text = str(value).strip()
-            if not text or text in {"-", "0", "0.0"}:
-                return ""
-            if text.isdigit() and int(text) == 0:
-                return ""
-            return text
-
-        def _format_list_value(value) -> str:
-            if value is None:
-                return ""
-            if isinstance(value, (list, tuple, set)):
-                items = [str(item).strip() for item in value if str(item).strip()]
-                return ", ".join(items)
-            return _non_empty(value)
-
-        def _add_param(rows: list[dict], label: str, value: str | None, extras: list[str] | None = None) -> None:
-            base = _non_empty(value)
-            extra_values = [item for item in (extras or []) if _non_empty(item)]
-            if not base and not extra_values:
-                return
-            if base and extra_values:
-                value_text = f"{base}; " + "; ".join(extra_values)
-            elif base:
-                value_text = base
-            else:
-                value_text = "; ".join(extra_values)
-            rows.append({"label": label, "value": value_text})
-
         insert_types = payload.get("insert_types") or []
         if isinstance(insert_types, str):
             insert_types = [insert_types] if insert_types else []
@@ -1072,79 +1928,7 @@ class ProcessingDetailView(OrdersDetailView):
         marking_sizes = payload.get("marking_sizes") or []
         if isinstance(marking_sizes, str):
             marking_sizes = [marking_sizes] if marking_sizes else []
-
-        processing_params = []
-        defect_percent = _non_empty(payload.get("defect_percent"))
-        if defect_percent and defect_percent.isdigit():
-            defect_percent = f"{defect_percent}%"
-        _add_param(processing_params, "Проверка на брак", defect_percent)
-        _add_param(processing_params, "Маркировка 58/40", payload.get("marking_5840_qty"))
-        _add_param(processing_params, "Маркировка 58/40 (шт/чз)", payload.get("marking_5840_each_qty"))
-        _add_param(processing_params, "Замена бирок", payload.get("tag_owner"))
-
-        def _add_pack_param(label: str, base_value: str | None, prefix: str) -> None:
-            extras = []
-            type_value = _non_empty(payload.get(f"{prefix}_type"))
-            size_value = _non_empty(payload.get(f"{prefix}_size"))
-            qty_value = _non_empty(payload.get(f"{prefix}_qty"))
-            supply_value = _non_empty(payload.get(f"{prefix}_supply"))
-            if type_value:
-                extras.append(f"Тип: {type_value}")
-            if size_value:
-                extras.append(f"Размер: {size_value}")
-            if qty_value:
-                extras.append(f"Кол-во: {qty_value}")
-            if supply_value:
-                extras.append(f"Закупка: {supply_value}")
-            _add_param(
-                processing_params,
-                label,
-                base_value or payload.get(f"{prefix}_needed"),
-                extras=extras,
-            )
-
-        _add_pack_param("Замена пакета", payload.get("bag_replace_type"), "bag_replace")
-        _add_pack_param("Упаковка в Бабл пленку", payload.get("bubble_wrap_size"), "bubble_wrap")
-        _add_pack_param("Упаковка в термо пленку", payload.get("shrink_wrap_size"), "shrink_wrap")
-        _add_pack_param("Замена гофрокороба", payload.get("box_replace_type"), "box_replace")
-        set_qty = _non_empty(payload.get("set_qty"))
-        _add_param(
-            processing_params,
-            "Сборка набора",
-            set_qty and f"Кол-во: {set_qty}" or payload.get("set_build"),
-        )
-        insert_qty = _non_empty(payload.get("insert_qty"))
-        insert_types_label = _format_list_value(insert_types)
-        if insert_other and insert_other not in insert_types:
-            insert_types_label = _format_list_value(list(insert_types) + [insert_other])
-        _add_param(
-            processing_params,
-            "Вложение",
-            insert_qty and f"Кол-во: {insert_qty}" or payload.get("insert_needed"),
-            extras=[f"Типы: {insert_types_label}" if insert_types_label else ""],
-        )
-        direction_file = _non_empty(payload.get("direction_file"))
-        _add_param(
-            processing_params,
-            "Распределение по направлениям",
-            direction_file and f"Файл: {direction_file}" or payload.get("direction_needed"),
-        )
-        box_forming = _non_empty(payload.get("box_forming"))
-        if box_forming == "other":
-            box_forming = _non_empty(payload.get("box_forming_other"))
-        _add_param(processing_params, "Формирование короба", box_forming)
-        _add_param(processing_params, "Прочие", payload.get("comments"))
-        _add_param(processing_params, "Маркировка", _format_list_value(marking_stickers))
-        _add_param(processing_params, "Размеры стикеров", _format_list_value(marking_sizes))
-        _add_param(processing_params, "Информационный", payload.get("marking_info"))
-        _add_param(processing_params, "Вытянуть из мешка и наклеить ЧЗ", payload.get("pull_from_bag"))
-        _add_param(processing_params, "Проверка на брак (кол-во)", payload.get("defect_qty"))
-        _add_param(processing_params, "Обрезание ниток (кол-во)", payload.get("trim_threads_qty"))
-        _add_param(processing_params, "Скрепление скотчем (кол-во)", payload.get("tape_qty"))
-        _add_param(processing_params, "Удаление бирки", payload.get("remove_tag"))
-        _add_param(processing_params, "Удаление бирки (кол-во)", payload.get("remove_tag_qty"))
-        _add_param(processing_params, "Скрепление бирки", payload.get("attach_tag"))
-        _add_param(processing_params, "Скрепление бирки (кол-во)", payload.get("attach_tag_qty"))
+        processing_params = _processing_params_from_payload(payload)
 
         def format_pack(prefix: str, title: str):
             needed = _format_payload_value(payload.get(f"{prefix}_needed"))
@@ -1172,6 +1956,7 @@ class ProcessingDetailView(OrdersDetailView):
 
         processing_fields = [
             {"label": "Наименование товара", "value": _format_payload_value(payload.get("product_name"))},
+            {"label": "Маркетплейс", "value": _format_payload_value(payload.get("marketplace"))},
             {"label": "Поставщик", "value": _format_payload_value(payload.get("supplier"))},
             {"label": "Бренд", "value": _format_payload_value(payload.get("brand"))},
             {"label": "Предмет", "value": _format_payload_value(payload.get("subject"))},
@@ -1250,18 +2035,34 @@ class ProcessingDetailView(OrdersDetailView):
         status_payload = entries_list[-1].payload if entries_list else {}
         status_value = (status_payload.get("status") or status_payload.get("submit_action") or "").lower()
         status_label = (status_payload.get("status_label") or "").lower()
+        if status_value == "processing_in_work" or "взята" in status_label:
+            Task.objects.filter(
+                route=f"/orders/processing/{order_id}/",
+                assigned_to__role="processing_head",
+            ).update(status="in_progress")
         is_done = (
-            status_value in {"done", "completed", "closed", "finished", "processing_head"}
+            status_value in {"done", "completed", "closed", "finished", "processing_head", "processing_in_work"}
             or "выполн" in status_label
             or "утверж" in status_label
             or "передан" in status_label
+            or "взята" in status_label
         )
         is_waiting = status_value in {"sent_unconfirmed", "send", "submitted"} or "подтверждени" in status_label
         role = get_request_role(self.request)
         can_manage = role in {"manager", "head_manager", "director", "admin"}
         client_view = bool(ctx.get("client_view"))
+        is_ready_for_work = (
+            status_value == "processing_head"
+            or ("передан" in status_label and "обработ" in status_label)
+        )
         ctx["can_approve_processing"] = bool(can_manage and not client_view and is_waiting and not is_done)
         ctx["can_edit_processing"] = bool(can_manage and not client_view and not is_done)
+        ctx["can_take_processing"] = bool(
+            not client_view
+            and role in {"storekeeper", "processing_head"}
+            and is_ready_for_work
+        )
+        ctx["processing_work_url"] = f"/orders/processing/{order_id}/work/"
         if ctx["can_edit_processing"]:
             agency = ctx.get("agency")
             if agency and getattr(agency, "id", None):
@@ -1277,6 +2078,41 @@ class ProcessingDetailView(OrdersDetailView):
         if not order_id:
             return redirect("/orders/")
         action = (request.POST.get("action") or "").strip().lower()
+        if action == "take_processing":
+            role = get_request_role(request)
+            if role not in {"storekeeper", "processing_head"}:
+                return HttpResponseForbidden("Доступ запрещен")
+            entries = list(
+                OrderAuditEntry.objects.filter(order_id=order_id, order_type=self.order_type)
+                .select_related("agency")
+                .order_by("created_at")
+            )
+            if not entries:
+                return redirect("/orders/")
+            latest = entries[-1]
+            status_payload = latest.payload or {}
+            status_value = (status_payload.get("status") or status_payload.get("submit_action") or "").lower()
+            status_label = (status_payload.get("status_label") or "").lower()
+            if status_value == "processing_in_work" or "взята" in status_label:
+                return redirect(f"/orders/processing/{order_id}/work/")
+            payload = dict(self._payload_from_entries(entries))
+            payload["status"] = "processing_in_work"
+            payload["status_label"] = "Взята в работу"
+            payload["work_started_at"] = timezone.localtime().isoformat()
+            log_order_action(
+                "status",
+                order_id=order_id,
+                order_type=self.order_type,
+                user=request.user if request.user.is_authenticated else None,
+                agency=latest.agency if latest else None,
+                description="Заявка на обработку принята в работу",
+                payload=payload,
+            )
+            Task.objects.filter(
+                route=f"/orders/processing/{order_id}/",
+                assigned_to__role="processing_head",
+            ).update(status="in_progress")
+            return redirect(f"/orders/processing/{order_id}/work/")
         if action == "approve_processing":
             role = get_request_role(request)
             if role not in {"manager", "head_manager", "director", "admin"}:
@@ -1336,3 +2172,161 @@ class ProcessingDetailView(OrdersDetailView):
                 payload={"comment": comment},
             )
         return redirect(f"/orders/processing/{order_id}/")
+
+
+@login_required
+@require_POST
+def enqueue_processing_print_job(request):
+    data = _parse_json_body(request)
+    if data is None:
+        return HttpResponseBadRequest("Invalid JSON")
+    barcode = str(data.get("barcode") or "").strip()
+    if not barcode:
+        return JsonResponse({"ok": False, "error": "Barcode is required"}, status=400)
+    label_png_base64 = str(data.get("label_png_base64") or "").strip()
+    if not label_png_base64:
+        return JsonResponse({"ok": False, "error": "Label image is required"}, status=400)
+    try:
+        label_width_mm = int(data.get("label_width_mm") or 58)
+    except (TypeError, ValueError):
+        label_width_mm = 58
+    try:
+        label_height_mm = int(data.get("label_height_mm") or 40)
+    except (TypeError, ValueError):
+        label_height_mm = 40
+    job = ProcessingPrintJob.objects.create(
+        order_id=str(data.get("order_id") or "").strip(),
+        card_id=str(data.get("card_id") or "").strip(),
+        article=str(data.get("article") or "").strip(),
+        barcode=barcode,
+        size=str(data.get("size") or "").strip(),
+        printer_name=str(data.get("printer_name") or "").strip(),
+        label_png_base64=label_png_base64,
+        label_width_mm=label_width_mm,
+        label_height_mm=label_height_mm,
+        requested_by=request.user.username if request.user.is_authenticated else "",
+    )
+    return JsonResponse({"ok": True, "job_id": job.id})
+
+
+@require_GET
+def processing_print_jobs_next(request):
+    ok, response = _check_print_agent_token(request)
+    if not ok:
+        return response
+    agent_name = (request.GET.get("agent") or request.headers.get("X-Print-Agent") or "").strip()
+    save_print_agent_status(agent_name)
+    with transaction.atomic():
+        job = (
+            ProcessingPrintJob.objects.select_for_update()
+            .filter(status=ProcessingPrintJob.STATUS_PENDING)
+            .order_by("created_at")
+            .first()
+        )
+        if not job:
+            return JsonResponse({"ok": True, "has_job": False})
+        job.status = ProcessingPrintJob.STATUS_PRINTING
+        if agent_name:
+            job.agent = agent_name
+        job.save(update_fields=["status", "agent", "updated_at"])
+    return JsonResponse({"ok": True, "has_job": True, "job": _serialize_print_job(job)})
+
+
+@csrf_exempt
+@require_POST
+def processing_print_jobs_complete(request):
+    ok, response = _check_print_agent_token(request)
+    if not ok:
+        return response
+    data = _parse_json_body(request)
+    if data is None:
+        data = request.POST
+    job_id = data.get("job_id") or data.get("id")
+    if not job_id:
+        return JsonResponse({"ok": False, "error": "job_id is required"}, status=400)
+    job = ProcessingPrintJob.objects.filter(pk=job_id).first()
+    if not job:
+        return JsonResponse({"ok": False, "error": "Job not found"}, status=404)
+    status_value = str(data.get("status") or "").strip().lower()
+    error_text = str(data.get("error") or "").strip()
+    if status_value not in {
+        ProcessingPrintJob.STATUS_PRINTED,
+        ProcessingPrintJob.STATUS_FAILED,
+        ProcessingPrintJob.STATUS_PENDING,
+    }:
+        status_value = ProcessingPrintJob.STATUS_PRINTED
+    job.status = status_value
+    job.error = error_text
+    job.save(update_fields=["status", "error", "updated_at"])
+    return JsonResponse({"ok": True})
+
+
+@login_required
+@require_GET
+def download_processing_print_agent_cmd(request):
+    token = _get_print_agent_token()
+    if not token:
+        return HttpResponseBadRequest("PRINT_AGENT_TOKEN not set")
+    server_url = request.build_absolute_uri("/").rstrip("/")
+    script_url = f"{server_url}/orders/processing/print-agent/script/?token={token}"
+    content = (
+        "@echo off\r\n"
+        f"set SERVER_URL={server_url}\r\n"
+        f"set TOKEN={token}\r\n"
+        "set AGENT_DIR=%~dp0\r\n"
+        "powershell -ExecutionPolicy Bypass -Command "
+        f"\"Invoke-WebRequest -Uri '{script_url}' -OutFile '%AGENT_DIR%\\print_agent.ps1'\""
+        "\r\n"
+        "powershell -ExecutionPolicy Bypass -File \"%AGENT_DIR%print_agent.ps1\" "
+        "-ServerUrl \"%SERVER_URL%\" -Token \"%TOKEN%\"\r\n"
+        "pause\r\n"
+    )
+    response = HttpResponse(content, content_type="application/octet-stream")
+    response["Content-Disposition"] = "attachment; filename=print_agent_start.cmd"
+    return response
+
+
+@login_required
+@require_GET
+def download_processing_print_agent_install_cmd(request):
+    token = _get_print_agent_token()
+    if not token:
+        return HttpResponseBadRequest("PRINT_AGENT_TOKEN not set")
+    server_url = request.build_absolute_uri("/").rstrip("/")
+    script_url = f"{server_url}/orders/processing/print-agent/script/?token={token}"
+    content = (
+        "@echo off\r\n"
+        "setlocal\r\n"
+        f"set SERVER_URL={server_url}\r\n"
+        f"set TOKEN={token}\r\n"
+        "set AGENT_DIR=%APPDATA%\\FullboxPrintAgent\r\n"
+        "if not exist \"%AGENT_DIR%\" mkdir \"%AGENT_DIR%\"\r\n"
+        "powershell -ExecutionPolicy Bypass -Command "
+        f"\"Invoke-WebRequest -Uri '{script_url}' -OutFile '%AGENT_DIR%\\print_agent.ps1'\""
+        "\r\n"
+        "set STARTUP_DIR=%APPDATA%\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\r\n"
+        "set VBS_FILE=%STARTUP_DIR%\\FullboxPrintAgent.vbs\r\n"
+        "> \"%VBS_FILE%\" echo Set WshShell = CreateObject(\"WScript.Shell\")\r\n"
+        ">> \"%VBS_FILE%\" echo WshShell.Run \"powershell -WindowStyle Hidden -ExecutionPolicy Bypass -File \"\"%AGENT_DIR%\\print_agent.ps1\"\" -ServerUrl \"\"%SERVER_URL%\"\" -Token \"\"%TOKEN%\"\"\", 0\r\n"
+        ">> \"%VBS_FILE%\" echo Set WshShell = Nothing\r\n"
+        "wscript \"%VBS_FILE%\"\r\n"
+        "echo Autostart installed.\r\n"
+        "pause\r\n"
+    )
+    response = HttpResponse(content, content_type="application/octet-stream")
+    response["Content-Disposition"] = "attachment; filename=print_agent_install.cmd"
+    return response
+
+
+@require_GET
+def download_processing_print_agent_script(request):
+    ok, response = _check_print_agent_token(request)
+    if not ok:
+        return response
+    path = settings.BASE_DIR.parent / "print_agent.ps1"
+    if not path.exists():
+        return HttpResponseBadRequest("print_agent.ps1 not found")
+    content = path.read_text(encoding="utf-8")
+    response = HttpResponse(content, content_type="text/plain")
+    response["Content-Disposition"] = "attachment; filename=print_agent.ps1"
+    return response

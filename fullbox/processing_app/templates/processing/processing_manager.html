@@ -334,6 +334,13 @@
     .params-table .param-label {
       font-weight: 600;
     }
+    .params-table .highlight-row td {
+      background: rgba(242,183,71,0.2);
+      border-bottom-color: rgba(242,183,71,0.45);
+    }
+    .params-table .highlight-row .param-label {
+      color: #7a4a00;
+    }
     .param-inline {
       display: flex;
       align-items: center;
@@ -397,11 +404,16 @@
       font-size: 12px;
       font-weight: 600;
     }
-    .row-action:hover {
-      border-color: rgba(14,107,91,0.4);
-      box-shadow: 0 10px 24px rgba(14,107,91,0.14);
-    }
-    .actions { display: flex; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
+      .row-action:hover {
+        border-color: rgba(14,107,91,0.4);
+        box-shadow: 0 10px 24px rgba(14,107,91,0.14);
+      }
+      .direction-actions {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+      .actions { display: flex; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
     @media (max-width: 1200px) {
       body { overflow: auto; }
       .layout { grid-template-columns: 1fr; }
@@ -673,6 +685,22 @@
                       </tr>
                     </thead>
                     <tbody>
+                      <tr class="highlight-row">
+                        <td class="param-label">Маркетплейс</td>
+                        <td>
+                          <div class="param-value">
+                            <select name="marketplace" class="param-select">
+                              <option value="" {% if not draft_payload.marketplace %}selected{% endif %}>-</option>
+                              <option value="WB" {% if draft_payload.marketplace == "WB" %}selected{% endif %}>Wildberries</option>
+                              <option value="Ozon" {% if draft_payload.marketplace == "Ozon" %}selected{% endif %}>Ozon</option>
+                              <option value="Yandex" {% if draft_payload.marketplace == "Yandex" %}selected{% endif %}>Яндекс Маркет</option>
+                              <option value="Sber" {% if draft_payload.marketplace == "Sber" %}selected{% endif %}>СберМегаМаркет</option>
+                              <option value="AliExpress" {% if draft_payload.marketplace == "AliExpress" %}selected{% endif %}>AliExpress</option>
+                              <option value="Lamoda" {% if draft_payload.marketplace == "Lamoda" %}selected{% endif %}>Lamoda</option>
+                            </select>
+                          </div>
+                        </td>
+                      </tr>
                       <tr>
                         <td class="param-label">Проверка на брак</td>
                         <td>
@@ -815,14 +843,15 @@
                         </td>
                       </tr>
                       <tr>
-                        <td class="param-label">Распределение по направлениям</td>
+                        <td class="param-label"><span data-direction="label">Распределение по направлениям</span></td>
                         <td>
                           <div class="param-value">
                             <select name="direction_needed" class="param-select">
-                              <option value="" {% if not draft_payload.direction_needed and not draft_payload.direction_file %}selected{% endif %}>-</option>
-                              <option value="Да" {% if draft_payload.direction_needed == "Да" or draft_payload.direction_file %}selected{% endif %}>Файл</option>
+                              <option value="none" {% if not draft_payload.direction_needed and not draft_payload.direction_file and not draft_payload.direction_plan_json and not draft_payload.direction_addresses_json %}selected{% endif %}>Отсутствует</option>
+                              <option value="file" {% if draft_payload.direction_needed == "file" or draft_payload.direction_needed == "Да" or draft_payload.direction_file %}selected{% endif %}>Файл</option>
+                              <option value="set" {% if draft_payload.direction_needed == "set" or draft_payload.direction_plan_json or draft_payload.direction_addresses_json %}selected{% endif %}>Задать</option>
                             </select>
-                            <div class="param-extra" data-owner="direction_needed" data-show-when="any">
+                            <div class="param-extra" data-owner="direction_needed" data-show-when="file">
                               <div class="param-inline">
                                 <span class="param-note">Прикрепить файл</span>
                                 <input type="file" name="direction_file">
@@ -830,6 +859,17 @@
                                   <span class="param-note">Файл: {{ draft_payload.direction_file }}</span>
                                 {% endif %}
                               </div>
+                            </div>
+                            <div class="param-extra" data-owner="direction_needed" data-show-when="set">
+                              <input type="hidden" name="direction_count" value="{{ draft_payload.direction_count|default:'' }}">
+                              <input type="hidden" name="direction_addresses_json" value="{{ draft_payload.direction_addresses_json|default:'' }}">
+                              <input type="hidden" name="direction_plan_json" value="{{ draft_payload.direction_plan_json|default:'' }}">
+                              <div class="param-note" data-direction="summary"></div>
+                              <div class="direction-actions" data-direction="actions" hidden>
+                                <button type="button" class="row-action" data-direction-action="edit">Редактировать</button>
+                                <button type="button" class="row-action" data-direction-action="clear">Удалить</button>
+                              </div>
+                              <button type="button" class="row-action" data-direction-action="open">Сформировать таблицу</button>
                             </div>
                           </div>
                         </td>
@@ -1264,6 +1304,7 @@
           // ignore storage parse errors
         }
       }
+      window.processingCollectCards = collectCards;
     })();
   </script>
   <script>
@@ -1300,6 +1341,273 @@
         select.addEventListener('change', () => toggleExtras(select));
       });
     })();
+  </script>
+  <script>
+    (() => {
+      const form = document.getElementById('processing-form');
+      if (!form || !window.sessionStorage) {
+        return;
+      }
+      const storage = window.sessionStorage;
+      const STORAGE_KEYS = {
+        cards: 'processingDirectionCards',
+        plan: 'processingDirectionPlan',
+        addresses: 'processingDirectionAddresses',
+        count: 'processingDirectionCount',
+        returnUrl: 'processingDirectionReturn',
+        context: 'processingDirectionContext',
+      };
+        const openBtn = form.querySelector('[data-direction-action="open"]');
+        const editBtn = form.querySelector('[data-direction-action="edit"]');
+        const clearBtn = form.querySelector('[data-direction-action="clear"]');
+        const planInput = form.querySelector('input[name="direction_plan_json"]');
+        const addressesInput = form.querySelector('input[name="direction_addresses_json"]');
+        const countInput = form.querySelector('input[name="direction_count"]');
+        const summary = form.querySelector('[data-direction="summary"]');
+        const label = form.querySelector('[data-direction="label"]');
+        const actionsWrap = form.querySelector('[data-direction="actions"]');
+        const directionSelect = form.querySelector('select[name="direction_needed"]');
+        const cardsInput = form.querySelector('input[name="cards_json"]');
+        if (!planInput || !addressesInput) {
+          return;
+        }
+        let isSavingDraft = false;
+
+      const safeParse = (raw, fallback) => {
+        if (!raw) {
+          return fallback;
+        }
+        try {
+          return JSON.parse(raw);
+        } catch (err) {
+          return fallback;
+        }
+      };
+
+      const getContextKey = () => {
+        const draftId = form.querySelector('input[name="draft_order_id"]')?.value || '';
+        const editId = form.querySelector('input[name="edit_order_id"]')?.value || '';
+        const agencyId = form.querySelector('input[name="agency_id"]')?.value || '';
+        const orderId = document.body?.dataset?.orderId || '';
+        const combined = [draftId, editId, orderId, agencyId].filter(Boolean).join('|');
+        return combined || window.location.pathname;
+      };
+
+        const buildSummary = () => {
+          if (!summary) {
+            return;
+        }
+        const plan = safeParse(planInput.value, {});
+        let addresses = safeParse(addressesInput.value, []);
+        if (!Array.isArray(addresses)) {
+          addresses = [];
+        }
+        if (!addresses.length && Array.isArray(plan?.directions)) {
+          addresses = plan.directions;
+        }
+        if (!summary) {
+          return;
+        }
+        summary.textContent = addresses.length ? addresses.join(', ') : '';
+        syncDirectionUI();
+      };
+
+        const hasDistribution = () => {
+          const plan = safeParse(planInput.value, {});
+          const rows = Array.isArray(plan?.rows) ? plan.rows : [];
+          const planDirections = Array.isArray(plan?.directions) ? plan.directions : [];
+          const parsedAddresses = safeParse(addressesInput.value, []);
+          const addresses = Array.isArray(parsedAddresses) ? parsedAddresses : [];
+          return Boolean(rows.length || planDirections.length || addresses.length);
+        };
+
+        const toggleHidden = (el, shouldShow) => {
+          if (!el) {
+            return;
+          }
+          if (shouldShow) {
+            el.removeAttribute('hidden');
+          } else {
+            el.setAttribute('hidden', '');
+          }
+        };
+
+        const syncDirectionUI = () => {
+          const hasData = hasDistribution();
+          if (label) {
+            label.textContent = hasData ? 'Распределение задано' : 'Распределение по направлениям';
+          }
+          if (directionSelect && hasData && directionSelect.value !== 'set') {
+            directionSelect.value = 'set';
+            directionSelect.dispatchEvent(new Event('change'));
+          }
+          if (directionSelect) {
+            toggleHidden(directionSelect, !hasData);
+          }
+          toggleHidden(actionsWrap, hasData);
+          toggleHidden(openBtn, !hasData);
+        };
+
+        const applyStored = () => {
+          const storedContext = storage.getItem(STORAGE_KEYS.context) || '';
+          const contextKey = getContextKey();
+        if (storedContext && contextKey && storedContext !== contextKey) {
+          buildSummary();
+          return;
+        }
+        const storedPlan = storage.getItem(STORAGE_KEYS.plan);
+        const storedAddresses = storage.getItem(STORAGE_KEYS.addresses);
+        const storedCount = storage.getItem(STORAGE_KEYS.count);
+        if (storedPlan !== null && (storedPlan || !planInput.value)) {
+          planInput.value = storedPlan;
+        }
+        if (storedAddresses !== null && (storedAddresses || !addressesInput.value)) {
+          addressesInput.value = storedAddresses;
+        }
+          if (countInput && storedCount !== null && (storedCount || !countInput.value)) {
+            countInput.value = storedCount;
+          }
+          buildSummary();
+          syncDirectionUI();
+        };
+
+      applyStored();
+
+        const stashDirections = () => {
+          const collector = window.processingCollectCards;
+          const cards = typeof collector === 'function' ? collector() : [];
+          storage.setItem(STORAGE_KEYS.cards, JSON.stringify(cards));
+          storage.setItem(STORAGE_KEYS.plan, planInput.value || '');
+          storage.setItem(STORAGE_KEYS.addresses, addressesInput.value || '');
+          storage.setItem(STORAGE_KEYS.count, countInput?.value || '');
+          storage.setItem(STORAGE_KEYS.context, getContextKey());
+          storage.setItem(STORAGE_KEYS.returnUrl, window.location.href);
+        };
+
+        const updateUrlWithDraft = (orderId) => {
+          if (!orderId || !window.history || !window.history.replaceState) {
+            return;
+          }
+          const url = new URL(window.location.href);
+          const agencyId = form.querySelector('input[name="agency_id"]')?.value || '';
+          if (agencyId) {
+            url.searchParams.set('client', agencyId);
+          }
+          url.searchParams.set('order', orderId);
+          url.searchParams.delete('ok');
+          url.searchParams.delete('status');
+          window.history.replaceState({}, '', url.toString());
+        };
+
+        const ensureDraftId = (orderId) => {
+          if (!orderId) {
+            return;
+          }
+          if (form.querySelector('input[name="edit_order_id"]')) {
+            updateUrlWithDraft(orderId);
+            return;
+          }
+          let draftInput = form.querySelector('input[name="draft_order_id"]');
+          if (!draftInput) {
+            draftInput = document.createElement('input');
+            draftInput.type = 'hidden';
+            draftInput.name = 'draft_order_id';
+            form.appendChild(draftInput);
+          }
+          draftInput.value = orderId;
+          updateUrlWithDraft(orderId);
+        };
+
+        const autosaveDraft = async () => {
+          if (isSavingDraft) {
+            return null;
+          }
+          const collector = window.processingCollectCards;
+          const cards = typeof collector === 'function' ? collector() : [];
+          if (cardsInput) {
+            cardsInput.value = JSON.stringify(cards);
+          }
+          const formData = new FormData(form);
+          formData.set('submit_action', 'draft');
+          formData.set('draft_autosave', '1');
+          if (cardsInput) {
+            formData.set('cards_json', cardsInput.value);
+          } else {
+            formData.set('cards_json', JSON.stringify(cards));
+          }
+          isSavingDraft = true;
+          if (openBtn) {
+            openBtn.disabled = true;
+          }
+          if (editBtn) {
+            editBtn.disabled = true;
+          }
+          try {
+            const response = await fetch(window.location.href, {
+              method: 'POST',
+              headers: { 'X-Requested-With': 'XMLHttpRequest' },
+              body: formData,
+            });
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok || !data || data.ok === false) {
+              const message = data?.error || 'Не удалось сохранить черновик.';
+              window.alert(message);
+              return null;
+            }
+            return data;
+          } catch (err) {
+            window.alert('Не удалось сохранить черновик.');
+            return null;
+          } finally {
+            isSavingDraft = false;
+            if (openBtn) {
+              openBtn.disabled = false;
+            }
+            if (editBtn) {
+              editBtn.disabled = false;
+            }
+          }
+        };
+
+        const openDirections = async (mode) => {
+          const saved = await autosaveDraft();
+          if (!saved) {
+            return;
+          }
+          const draftId = saved.draft_order_id || saved.order_id || '';
+          ensureDraftId(draftId);
+          stashDirections();
+          let target = `/orders/processing/directions/?return=${encodeURIComponent(window.location.href)}`;
+          if (mode === 'view') {
+            target += '&view=1';
+          }
+          window.location.href = target;
+        };
+
+        if (openBtn) {
+          openBtn.addEventListener('click', () => openDirections('edit'));
+        }
+        if (editBtn) {
+          editBtn.addEventListener('click', () => openDirections('edit'));
+        }
+        if (clearBtn) {
+          clearBtn.addEventListener('click', () => {
+            planInput.value = '';
+            addressesInput.value = '';
+            if (countInput) {
+              countInput.value = '';
+            }
+            if (summary) {
+              summary.textContent = '';
+            }
+            storage.removeItem(STORAGE_KEYS.plan);
+            storage.removeItem(STORAGE_KEYS.addresses);
+            storage.removeItem(STORAGE_KEYS.count);
+            storage.removeItem(STORAGE_KEYS.context);
+            syncDirectionUI();
+          });
+        }
+      })();
   </script>
 </body>
 </html>

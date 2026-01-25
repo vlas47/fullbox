@@ -56,6 +56,13 @@
 - If no: test in incognito or disable extensions; share pending requests if any.
 
 ## AI Action Log
+- 2026-01-18 10:50: added labels app with settings page (printers/scanners/label previews), centralized label markup/styles, updated SKU + processing card label previews to 58x40, and linked from head manager; updated LABEL_PRINT.md.
+- 2026-01-18 10:55: deployed labels/print updates to server and restarted fullbox service.
+- 2026-01-15 18:32: moved processing direction distribution into a dedicated full-width screen and connected it back to the main form via session storage.
+- 2026-01-15 18:38: hardened direction screen button handling and sessionStorage access to avoid dead clicks.
+- 2026-01-15 18:44: fixed directions screen JS syntax error by embedding return URL JSON without extra quotes.
+- 2026-01-15 19:03: added head manager editor for marketplace warehouse addresses saved in `marketplace_warehouses.json`.
+- 2026-01-15 18:10: expanded processing direction distribution (none/file/set), added addresses/table capture in forms and payload summary.
 - 2026-01-09 10:14: keep in-box inputs empty unless user types manually; scan only updates box counts.
 - 2026-01-09 10:07: show active box qty in the in-box input when no manual value and clear only the scanned row's manual input.
 - 2026-01-09 10:01: focus scanned row using pending element after render to prevent cursor staying in the previous in-box input.
@@ -193,6 +200,25 @@
 - 2026-01-06 07:32: uploaded updated `fullbox/todo/models.py` to `/opt/fullbox` and restarted `fullbox` service.
 - 2026-01-06 07:44: updated order title logic for empty receiving orders (orders/client_cabinet/todo), deployed changes, restarted `fullbox`.
 - 2026-01-06 08:08: added manual restore prompt for receiving autosave drafts so new orders start clean; deployed updated `orders/index.html`, restarted `fullbox`.
+- 2026-01-16 05:15: reviewed repo overview (README/description/PROJECT_CONTEXT) and core config (settings/urls) to re-familiarize with the project.
+- 2026-01-16 05:19: inspected client cabinet processing request flow (client_cabinet dashboard, processing_app views/templates, orders detail integration).
+- 2026-01-16 05:27: updated processing direction UI to hide the select when data exists and show view/edit/delete buttons with the "Распределение задано" label.
+- 2026-01-16 05:29: deployed updated processing templates (processing, manager, work) to `/opt/fullbox` and restarted `fullbox` service.
+- 2026-01-16 06:01: removed the "view" direction button, simplified direction summary to show only cities, and redeployed processing templates.
+- 2026-01-16 06:10: changed processing direction params to show only cities in summary values and redeployed `processing_app/views.py`.
+- 2026-01-16 06:19: added per-direction shipment tables to processing card view and deployed updated `processing_app/views.py` and `processing_card.html`.
+- 2026-01-16 06:24: merged sizes and direction shipment tables into a single processing card block and redeployed `processing_card.html`.
+- 2026-01-16 06:25: renamed processing card sizes header to "Всего к обработке" and redeployed `processing_card.html`.
+- 2026-01-16 06:32: added processing results block table to processing card and redeployed `processing_card.html`.
+- 2026-01-16 06:40: populated processing results table with received qty per direction and short city names from distribution plan, redeployed `processing_app/views.py` and `processing_card.html`.
+- 2026-01-16 06:45: added "К заявке" button on processing card and redeployed `processing_card.html`.
+- 2026-01-16 06:49: updated processing card to return to processing form via return URL, wired processing work cards to pass the return URL, redeployed templates and `processing_app/views.py`.
+- 2026-01-16 07:22: made processing results editable on the card view, added validation to block closing until results are filled, and redeployed templates plus `processing_app/views.py`.
+- 2026-01-16 07:33: widened processing card layout to full width and redeployed `processing_card.html`.
+- 2026-01-16 11:38: added "Доступные принтеры" block to processing card sidebar and redeployed `processing_card.html`.
+- 2026-01-16 11:56: added available printers loading, template loop, and local sync script; deployed `processing_app/views.py` and `processing_card.html`, restarted `fullbox`.
+- 2026-01-16 12:02: added printers sync button (copies PowerShell command) with last-sync metadata in processing card sidebar, deployed updated `processing_app/views.py` and `processing_card.html`.
+- 2026-01-16 12:08: fixed `sync_printers.ps1` scp target interpolation and renamed `Host` param to `HostName`.
 - 2026-01-06 08:19: added client line to order task cards in task panel (todo template tag + `_task_panel.html`), deployed and restarted `fullbox`.
 - 2026-01-06 08:26: removed stray todo files on server; highlighted client/status values and shortened "Индивидуальный предприниматель" to "ИП" in task cards; deployed and restarted `fullbox`.
 - 2026-01-06 08:28: colored task card status values (waiting red, done green) in `_task_panel.html`, deployed and restarted `fullbox`.
@@ -437,3 +463,171 @@
 - 2026-01-15 09:05: removed processing detail table from main column and renamed right-side "Информация" to "Детали заявки" in order detail (`fullbox/orders/templates/orders/detail.html`).
 - 2026-01-15 09:17: removed manager edit sidebar navigation links from processing edit template (`fullbox/processing_app/templates/processing/processing_manager.html`).
 - 2026-01-15 09:23: after manager approval, processing orders are marked as sent to processing head and create processing_head tasks (`fullbox/processing_app/views.py`).
+- 2026-01-15 09:51: show processing head as current responsible for processing orders after manager approval (`fullbox/orders/views.py`).
+- 2026-01-15 09:54: show processing head as responsible in processing status history rows (`fullbox/orders/views.py`).
+- 2026-01-15 10:01: removed extra navigation buttons from the processing head cabinet sidebar (`fullbox/templates/processing_head/dashboard.html`).
+- 2026-01-15 10:05: added processing journal button in processing head cabinet and added journal filter by order type (`fullbox/templates/processing_head/dashboard.html`, `fullbox/orders/views.py`).
+- 2026-01-15 10:08: allowed processing head role to open processing order detail pages (`fullbox/processing_app/views.py`).
+- 2026-01-15 10:12: allowed processing head role to open orders journal and forced processing-only filter for that role (`fullbox/orders/views.py`).
+- 2026-01-15 10:25: added processing work view/template and "Принять в работу" action for processing orders, with status logging and responsible display updates (`fullbox/processing_app/views.py`, `fullbox/processing_app/urls.py`, `fullbox/processing_app/templates/processing/processing_work.html`, `fullbox/orders/templates/orders/detail.html`, `fullbox/orders/views.py`).
+- 2026-01-15 11:52: keep processing_head task open when taking processing order in work (set status to in_progress, not done) (`fullbox/processing_app/views.py`).
+- 2026-01-15 12:01: reopen processing_head tasks when status is "Взята в работу" and update task status without excluding done (`fullbox/processing_app/views.py`).
+- 2026-01-15 12:06: task panel now prefers open tasks over done tasks when multiple tasks share the same route (`fullbox/todo/templatetags/todo_panel.py`).
+- 2026-01-15 12:18: task panel treats processing orders with status "Взята в работу" as in-progress so they don't appear in "Готово" (`fullbox/todo/templatetags/todo_panel.py`).
+- 2026-01-15 12:30: processing tasks with status "Взята в работу" now link to the work template instead of the detail page (`fullbox/todo/templatetags/todo_panel.py`).
+- 2026-01-15 13:15: customized processing work template for processing head (view-only params, finish/return buttons) and added finish-processing action (`fullbox/processing_app/templates/processing/processing_work.html`, `fullbox/processing_app/views.py`).
+- 2026-01-15 13:35: added per-item processing card template and route, plus "Открыть карту обработки" button in work view (`fullbox/processing_app/templates/processing/processing_card.html`, `fullbox/processing_app/templates/processing/processing_work.html`, `fullbox/processing_app/views.py`, `fullbox/processing_app/urls.py`).
+- 2026-01-15 15:57: added reachtruck cabinet with pallet move workflow, move audit journal, driver role/user, and location updates to placement acts (`fullbox/reachtruck`, `fullbox/audit`, `fullbox/employees`, `fullbox/fullbox`, templates).
+- 2026-01-15 16:58: added marketplace field (highlighted) to processing parameters with payload support (`fullbox/processing_app/views.py`, `fullbox/processing_app/templates/processing/processing.html`, `fullbox/processing_app/templates/processing/processing_manager.html`, `fullbox/processing_app/templates/processing/processing_work.html`).
+- 2026-01-15 21:10: added marketplace warehouse sync for head manager (sync view + form, client lookup, save with meta, WB error handling tweaks) (`fullbox/head_manager/views.py`, `fullbox/head_manager/urls.py`, `fullbox/head_manager/templates/head_manager/marketplace_warehouses.html`).
+- 2026-01-16 03:24: reviewed repo structure and core docs plus Django settings/urls/views to refresh project understanding.
+- 2026-01-16 03:25: checked recent action log to answer what was done yesterday.
+- 2026-01-16 03:28: diagnosed head manager 500 as task_panel role_filter bug and guarded filtering in `fullbox/todo/templatetags/todo_panel.py`.
+- 2026-01-16 03:30: deployed updated `fullbox/todo/templatetags/todo_panel.py` to server and restarted `fullbox` service.
+- 2026-01-16 03:43: investigated marketplace sync errors (WB DNS/endpoint, Ozon empty list), updated WB endpoint/error handling and Ozon empty-list message, deployed `fullbox/head_manager/views.py`, restarted `fullbox`.
+- 2026-01-16 03:45: checked Keizi WB credentials on server; token present but marketplace warehouses call returns 401 token scope not allowed.
+- 2026-01-16 03:46: checked Keizi Ozon credentials; API responds 200 with empty warehouse list (tokens valid, but no warehouses returned).
+- 2026-01-16 03:48: validated Ozon Keizi endpoints for warehouse/delivery-method lists; all return empty lists with 200, indicating no warehouses/delivery methods available for the credentials.
+- 2026-01-16 03:55: attempted to open Ozon seller API docs for WarehouseList; docs site returns 403/redirect loop from CLI, unable to fetch content.
+- 2026-01-16 03:58: reviewed user-provided Ozon WarehouseList doc screenshot and extracted endpoint/params/rate limit details.
+- 2026-01-16 04:00: reviewed second Ozon WarehouseList screenshot with response schema/fields and example response.
+- 2026-01-16 04:05: tested Ozon /v1/cluster/list for Keizi; requires numeric cluster_type (1/2) and returns clusters list (key `clusters`).
+- 2026-01-16 04:09: added Ozon cluster list fallback in `fullbox/head_manager/views.py` and deployed to server with restart.
+- 2026-01-16 04:14: checked all WB client tokens on server; all existing WB credentials return 401 token scope not allowed for warehouse list.
+- 2026-01-16 04:25: traced /orders/processing/directions route usage in processing templates and views to explain the link purpose.
+- 2026-01-16 04:35: added "Нераспределенный товар" column, remaining-qty logic, and spinnerless numeric inputs in `fullbox/processing_app/templates/processing/processing_directions.html`, deployed and restarted `fullbox`.
+- 2026-01-16 12:18: adjusted available_printers.json reader to use utf-8-sig (BOM safe) and deployed updated \ullbox/processing_app/views.py\, restarted fullbox.
+- 2026-01-16 12:22: updated processing card layout to full width, merged sizes with per-direction shipment tables, renamed sizes block to 'Всего к обработке', simplified directions summary to cities only, removed 'Посмотреть' button, added results block with editable inputs and validation before closing, and added return-to-processing link to work form (templates + views).
+- 2026-01-16 12:22: added printers sidebar with available printers list, sync button, and server-side loader for available_printers.json; created sync_printers.ps1 to collect local printers and upload list; fixed script variable interpolation issues.
+- 2026-01-16 12:22: fixed available_printers.json BOM handling via utf-8-sig reader, deployed views.py and restarted fullbox.
+- 2026-01-18 19:35: added autosave draft when opening processing directions and JSON autosave response; updated processing templates JS to save draft before navigation.
+- 2026-01-18 19:37: deployed processing autosave changes to server and restarted fullbox service.
+- 2026-01-18 20:09: updated journal.md with entries for 2026-01-17 and 2026-01-18; uploaded journal to server.
+- 2026-01-18 20:13: revised journal entries for 2026-01-17/2026-01-18 with label app and autosave details; uploaded journal to server.
+- 2026-01-20 07:02: listed repo root; reviewed README.md, description.md, and PROJECT_CONTEXT.md to refresh project understanding.
+- 2026-01-20 07:20: tried to fetch /labels/settings in CLI (403); reviewed labels settings view, urls, and template locally for analysis.
+- 2026-01-20 07:28: restyled labels/settings template to match head manager dashboard layout and navigation.
+- 2026-01-20 07:30: uploaded labels/settings template to server and restarted fullbox service.
+- 2026-01-20 07:36: added tab buttons on labels/settings to show only one block (labels/scanners/printers) and deployed the template; restarted fullbox service.
+- 2026-01-20 07:40: laid out label preview cards in a single horizontal row with scroll and deployed the template; restarted fullbox service.
+- 2026-01-20 07:46: widened label preview cards for horizontal fit in labels/settings and deployed; restarted fullbox service.
+- 2026-01-20 08:19: switched label preview list to a single horizontal row (one card per view) with scroll-snap; deployed and restarted fullbox service.
+- 2026-01-20 08:23: added label size tabs (item/box/pallet) to show only the selected preview card on labels/settings; deployed and restarted fullbox service.
+- 2026-01-20 08:28: removed per-label preview scaling in labels/settings to keep previews at real size; deployed and restarted fullbox service.
+- 2026-01-20 08:31: moved the labels/settings header panel (title + tabs) from main column to the right rail; deployed and restarted fullbox service.
+- 2026-01-20 08:38: compacted labels tab header/fields to free vertical space for the preview area; deployed and restarted fullbox service.
+- 2026-01-20 08:45: enforced 1:1 label preview scale in labels/settings to prevent shifted previews; deployed and restarted fullbox service.
+- 2026-01-20 08:53: stopped label preview card from stretching to full height on labels/settings; deployed and restarted fullbox service.
+- 2026-01-20 08:58: resized label preview cards to shrink-to-fit and avoid stretching inside labels/settings; deployed and restarted fullbox service.
+- 2026-01-20 09:05: doubled label preview scale and compacted label inputs/buttons for labels/settings; deployed and restarted fullbox service.
+- 2026-01-20 09:10: further compacted label inputs and enlarged label preview scale for labels/settings; deployed and restarted fullbox service.
+- 2026-01-20 09:19: replaced label input grid with a table that controls text and font size, and wired live font-size updates in label previews; deployed and restarted fullbox service.
+- 2026-01-20 09:21: made labels settings table shrink-to-fit instead of full-width; deployed and restarted fullbox service.
+- 2026-01-20 09:23: constrained labels settings table to max-content width and fixed input widths; deployed and restarted fullbox service.
+- 2026-01-20 09:45: added label settings save/refresh flow with per-size persistence and applied saved font sizes in SKU/processing label previews; deployed and restarted fullbox service.
+- 2026-01-20 10:17: ensured labels settings table always triggers live preview updates on input/change; deployed and restarted fullbox service.
+- 2026-01-20 10:31: forced font-size overrides in label previews to apply immediately; deployed and restarted fullbox service.
+- 2026-01-20 12:44: switched label font-size updates to CSS variables (labels/settings, SKU, processing), updated font-size inputs, deployed templates, and restarted fullbox service.
+- 2026-01-20 13:09: added inline font-size fallback updates in labels settings preview to reflect changes instantly; deployed and restarted fullbox service.
+- 2026-01-20 13:24: added style-tag fallback with !important for label font sizes in settings preview to ensure live updates; deployed and restarted fullbox service.
+- 2026-01-20 13:48: removed early return and added label preview selector fallback in labels settings JS; deployed and restarted fullbox service.
+- 2026-01-20 14:18: added a separate labels settings preview binder script (table -> preview) to force live updates; deployed and restarted fullbox service.
+- 2026-01-20 14:31: switched live preview font-size application to px (from mm) to force visible size changes; deployed and restarted fullbox service.
+- 2026-01-20 14:45: disabled legacy label settings JS and rebuilt label preview binding (table->preview, size/mode/save/refresh) with a new script; deployed and restarted fullbox service.
+- 2026-01-20 16:21: added font-size transform scaling fallback in labels settings preview (to force visible size changes), deployed and restarted fullbox service.
+- 2026-01-20 16:39: switched labels settings preview font-size updates to CSS variables on the label preview root to reflect live mm sizing; pending deploy.
+- 2026-01-20 16:41: deployed label preview CSS-variable font-size binding update in labels/settings and restarted fullbox service.
+- 2026-01-20 17:12: forced labels settings preview font sizes to apply via CSS variables and inline font-size (px) per field for immediate visual updates; pending deploy.
+- 2026-01-20 17:13: deployed labels settings preview inline font-size enforcement and restarted fullbox service.
+- 2026-01-20 17:26: moved label preview font sizing into setInfoLine/setNoCzLine and applied inline font-size per field to force immediate updates; pending deploy.
+- 2026-01-20 17:26: deployed inline per-line font sizing for labels settings preview and restarted fullbox service.
+- 2026-01-20 18:06: added inline font-size application to the active labels settings preview script (setInfoLine/setNoCzLine) to fix font size updates; pending deploy.
+- 2026-01-20 18:07: deployed active-script inline font sizing fix for labels settings preview and restarted fullbox service.
+- 2026-01-20 18:14: self-hosted JsBarcode for labels settings preview (added ullbox/static/vendor/jsbarcode.min.js and switched script tags to local static); deployed and restarted fullbox service.
+- 2026-01-20 18:20: increased the 4th (bottom) no-CZ label row by 5mm and reduced the country/size row by 5mm via new --no-cz-row-base grid sizing; pending deploy.
+- 2026-01-20 18:21: deployed no-CZ label row height adjustment (+5mm to bottom row) and restarted fullbox service.
+- 2026-01-20 18:24: anchored no-CZ barcode block to the bottom of the 4th row so it renders in the lower label area; pending deploy.
+- 2026-01-20 18:26: deployed no-CZ bottom barcode alignment changes and restarted fullbox service.
+- 2026-01-20 18:30: copied jsbarcode/qrcode assets into /opt/fullbox/staticfiles/vendor to ensure /static loads them; restarted fullbox service.
+- 2026-01-20 18:34: switched labels/settings script tags to Django static URLs (load static) for jsbarcode/qrcode assets; pending deploy.
+- 2026-01-20 18:35: deployed Django static-tag script URLs for jsbarcode/qrcode in labels settings and restarted fullbox service.
+- 2026-01-21 10:36: moved static assets into /opt/fullbox/fullbox/staticfiles/vendor and switched labels/settings script tags back to absolute /static URLs; restarted fullbox service.
+- 2026-01-21 10:47: added EAN13 checksum validation with CODE128 fallback in labels settings barcode rendering to prevent JsBarcode failures; deployed and restarted fullbox service.
+- 2026-01-21 10:53: narrowed barcode block by adding 3mm left/right padding in CZ and no-CZ barcode containers; pending deploy.
+- 2026-01-21 10:54: deployed barcode left/right padding (3mm) update in label preview and restarted fullbox service.
+- 2026-01-21 11:13: added print button overlay on label preview cards and simple print popup rendering current preview HTML; pending deploy.
+- 2026-01-21 11:14: deployed label preview print button and restarted fullbox service.
+- 2026-01-21 11:17: positioned label stage relative and raised print button z-index so the preview print button is visible; pending deploy.
+- 2026-01-21 11:18: deployed label stage positioning fix for print button visibility and restarted fullbox service.
+- 2026-01-21 11:25: moved label print button into the card header row (next to title) and removed overlay placement; pending deploy.
+- 2026-01-21 11:26: deployed label print button position change and restarted fullbox service.
+- 2026-01-21 11:34: added printers mini-card to labels tab and synced printer inputs/sync buttons via data attributes; pending deploy.
+- 2026-01-21 11:35: deployed labels tab printers mini-card and input sync changes; restarted fullbox service.
+- 2026-01-21 11:39: moved the printers mini-card into the labels card grid, enabled flex-wrap for label cards, and added a warm highlight background for the labels panel; pending deploy.
+- 2026-01-21 11:40: deployed labels panel color highlight and responsive card wrapping updates; restarted fullbox service.
+- 2026-01-21 11:44: added print status and agent availability rows to the labels-tab printers card; pending deploy.
+- 2026-01-21 11:45: deployed print status/agent lines in labels printers card and restarted fullbox service.
+- 2026-01-21 11:56: added real print agent status tracking (heartbeat file updated on print-agent poll), surfaced queue/error info in labels printers card, and deployed/restarted fullbox service.
+- 2026-01-21 12:00: fixed labels settings print button to inject CSS inside <style> and trigger print on window load with fallback timeout; pending deploy.
+- 2026-01-21 12:01: deployed labels settings print button timing/CSS fix and restarted fullbox service.
+- 2026-01-21 12:24: added html2canvas vendor, switched labels settings font-size updates to CSS variables, and wired labels print button to enqueue real print jobs with immediate status UI updates; pending deploy.
+- 2026-01-21 12:33: copied html2canvas.min.js to /opt/fullbox/fullbox/staticfiles/vendor and uploaded labels/settings.html to the server.
+- 2026-01-21 12:58: updated journal.md with detailed entries for 2026-01-18 through 2026-01-21.
+- 2026-01-21 13:00: uploaded journal.md to /opt/fullbox/journal.md on the server.
+- 2026-01-21 13:11: improved labels/settings print queue error/status feedback (status line updates, CSRF fallback, image build failure handling) and uploaded settings.html to the server.
+- 2026-01-21 13:28: fixed missing applyFontSizes in labels/settings print script (prevented JS errors and print handler execution) and uploaded settings.html to the server.
+- 2026-01-21 13:40: removed dead JS block (duplicate handlers) from labels/settings to avoid script parsing issues and uploaded settings.html to the server.
+- 2026-01-22 13:35: reviewed README.md, PROJECT_CONTEXT.md, description.md, and app directory list to refresh project overview.
+- 2026-01-22 13:45: reviewed labels app (urls.py, views.py, utils.py, templates) to summarize label settings, preview, and printing flow.
+- 2026-01-22 16:10: inspected labels settings JS and processing_app print job endpoints to investigate print button no-op reports.
+- 2026-01-22 16:20: switched labels settings JSON embedding to Django json_script to avoid script breakage from unsafe label settings content.
+- 2026-01-22 17:13: added print agent logging for selected printer resolution per job.
+- 2026-01-22 17:15: added print agent logging for label image pixel size, embedded DPI, and target size at printer DPI.
+- 2026-01-22 17:23: reviewed screenshot showing /orders/processing/print-agent/script/ invalid token response and confirmed direct script link requires token.
+- 2026-01-22 17:42: checked server .env and confirmed PRINT_AGENT_TOKEN is present (masked in output) while diagnosing print agent 403 errors.
+- 2026-01-22 17:51: adjusted labels settings html2canvas print scale to ~203 DPI to reduce downscaling on TE200.
+- 2026-01-22 18:00: raised no-CZ barcode block by 3mm via bottom padding adjustment in label styles.
+- 2026-01-22 18:20: added label field enable checkboxes with 30-char truncation and propagated settings to SKU/processing label previews.
+- 2026-01-23 12:21: reviewed README.md, description.md, requirements.txt, PROJECT_CONTEXT.md, and app directory list to study project structure.
+- 2026-01-23 12:23: reviewed labels module (urls, views, utils, templates) to understand label settings and printing flow.
+- 2026-01-23 12:26: removed label mode toggle and refresh button from labels settings header, leaving only Save.
+- 2026-01-23 12:40: made labels settings table values per-label size (draft caching per size, preview updates only active label).
+- 2026-01-23 13:32: изучил структуру репозитория и основные документы (README.md, description.md, PROJECT_CONTEXT.md), просмотрел настройки Django в fullbox/fullbox/settings.py.
+- 2026-01-23 13:57: посмотрел processing_app/models.py и processing_app/views.py, чтобы понять текущую обработку заявок и наличие учета ЧЗ (учета кодов пока нет).
+- 2026-01-23 14:17: добавил приложение marking для учета кодов ЧЗ, API сканирования/импорта/сводки и интеграцию с processing_work (UI + подсчет), создал миграцию.
+- 2026-01-24 10:39: обновил journal.md записью за 2026-01-23 (учет ЧЗ и деплой).
+- 2026-01-24 10:41: добавил запись в journal.md за 2026-01-22 и подготовил обновление на сервере.
+- 2026-01-24 10:59: обновил дизайн этикетки "Товар 58x40 ЧЗ" (бейдж ЧЗ и настройки QR-зоны).
+- 2026-01-24 11:13: переработал макет "Товар 58x40 ЧЗ" под образец (новая разметка строк, префиксы, QR-код с подписью).
+- 2026-01-24 11:36: залил обновления этикетки "Товар 58x40 ЧЗ" на сервер и перезапустил fullbox.
+- 2026-01-24 11:43: очистил макет "Товар 58x40 ЧЗ" и оставил сетку 6x6 для нового дизайна.
+- 2026-01-24 11:45: залил очищенный макет "Товар 58x40 ЧЗ" (сетка 6x6) на сервер и перезапустил fullbox.
+- 2026-01-24 11:47: поменял сетку "Товар 58x40 ЧЗ" на 10x10.
+- 2026-01-24 11:49: настроил сетку "Товар 58x40 ЧЗ" как 6 по горизонтали и 10 по вертикали.
+- 2026-01-24 11:51: переключил сетку "Товар 58x40 ЧЗ" на 10 по горизонтали и 6 по вертикали.
+- 2026-01-24 11:59: добавил разметку под образец (блок ШК слева и QR/ЧЗ справа) поверх сетки 10x6.
+- 2026-01-24 12:06: заменил красные зоны на реальные элементы (вертикальный штрихкод и QR ЧЗ) для "Товар 58x40 ЧЗ".
+- 2026-01-24 12:15: расширил зону QR на одну клетку вправо для "Товар 58x40 ЧЗ".
+- 2026-01-24 12:17: сделал QR в зоне ЧЗ квадратным и вписал в доступную область.
+- 2026-01-24 12:24: добавил строку "Код ЧЗ" в таблицу настроек (только для item_cz) и связал QR с этим значением.
+- 2026-01-25 07:53: привязал размер цифр штрихкода к настройке шрифта ШК для "Товар 58x40 ЧЗ".
+- 2026-01-25 07:57: вывел текст "Код ЧЗ" под QR в выделенной зоне и связал с настройками шрифта.
+- 2026-01-25 08:03: добавил поле "Код ЧЗ" в список сохраняемых полей таблицы настроек.
+- 2026-01-25 08:07: включил перенос "Код ЧЗ" внутри своей зоны под QR (без выхода за границы).
+- 2026-01-25 08:12: увеличил зону "Код ЧЗ" до 4 строк под QR (QR сократил до 2 строк) для полного отображения кода.
+- 2026-01-25 08:15: вернул размеры зоны QR/Код ЧЗ к предыдущим (QR 3 строки, код 1 строка).
+- 2026-01-25 08:17: снял обрезку текста "Код ЧЗ" в зоне под QR.
+- 2026-01-25 08:22: убрал лимит 30 символов для поля "Код ЧЗ" при сохранении настроек.
+- 2026-01-25 08:28: добавил EAC PNG в правый нижний угол (зона 2x2) для "Товар 58x40 ЧЗ".
+- 2026-01-25 08:31: увеличил EAC на 40% и прижал к правому нижнему углу зоны.
+- 2026-01-25 08:37: заменил EAC PNG на предоставленный файл.
+- 2026-01-25 08:39: уменьшил EAC на 40% (scale 0.84) и сохранил привязку к правому нижнему углу.
+- 2026-01-25 08:42: добавил строку "Арт." в верхние 6 клеток слева и связал с размером шрифта артикула.
+- 2026-01-25 08:52: разложил поля бренд/название/цвет/состав/поставщик по зонам и включил префикс "Арт." только для item_cz.
+- 2026-01-25 08:58: сделал перенос до 2 строк с обрезкой и прижал текст полей к верхней линии; добавил префиксы "Бренд:" и "Поставщик:" для item_cz.
+- 2026-01-25 08:02: изучил структуру проекта (README.md, description.md, requirements.txt, DEPLOY.md, PROJECT_CONTEXT.md) и список приложений в `fullbox/`.
+- 2026-01-25 09:16: очистил шаблон "Короб · 58x60" и развернул предпросмотр горизонтально (swap width/height в CSS).
+- 2026-01-25 09:19: добавил подписи размеров вдоль сторон для этикетки "Короб · 58x60" (60 мм по горизонтали, 58 мм по вертикали).
+- 2026-01-25 09:18: обновил `journal.md` записями за 2026-01-24 и 2026-01-25.
+- 2026-01-25 09:20: дополнил `journal.md` подробным списком изменений за 2026-01-25.
+- 2026-01-25 09:20: добавил в `journal.md` пункт про подписи размеров для этикетки "Короб · 58x60".

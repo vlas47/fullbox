@@ -7,6 +7,7 @@ from .models import (
     get_agency_journal,
     get_sku_journal,
     get_staff_overactions_journal,
+    get_stock_move_journal,
     OrderAuditEntry,
 )
 
@@ -104,6 +105,39 @@ class StaffOveractionsListView(RoleRequiredMixin, ListView):
         journal = get_staff_overactions_journal()
         qs = (
             AuditEntry.objects.select_related("user", "agency")
+            .filter(journal=journal)
+            .order_by("-created_at")
+        )
+        action = self.request.GET.get("action")
+        search = (self.request.GET.get("q") or "").strip()
+        if action:
+            qs = qs.filter(action=action)
+        if search:
+            qs = qs.filter(
+                models.Q(description__icontains=search)
+                | models.Q(user__username__icontains=search)
+                | models.Q(agency__agn_name__icontains=search)
+            )
+        return qs
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        ctx["current_action"] = self.request.GET.get("action", "")
+        ctx["search_value"] = self.request.GET.get("q", "")
+        ctx["actions"] = dict(AuditEntry.ACTION_CHOICES)
+        return ctx
+
+
+class StockMoveAuditListView(ListView):
+    template_name = "audit/stock_moves_list.html"
+    model = AuditEntry
+    context_object_name = "entries"
+    paginate_by = 25
+
+    def get_queryset(self):
+        journal = get_stock_move_journal()
+        qs = (
+            AuditEntry.objects.select_related("user", "agency", "journal")
             .filter(journal=journal)
             .order_by("-created_at")
         )

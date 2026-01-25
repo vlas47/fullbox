@@ -11,6 +11,7 @@ from employees.models import Employee
 
 
 _RECEIVING_ROUTE_RE = re.compile(r"/orders/receiving/([^/]+)/")
+_PROCESSING_ROUTE_RE = re.compile(r"/orders/processing/([^/]+)/")
 _STATUS_ONLY_KEYS = {"comment", "message", "status", "status_label", "submit_action"}
 
 
@@ -18,6 +19,15 @@ def _extract_receiving_order_id(route: str | None) -> str | None:
     if not route:
         return None
     match = _RECEIVING_ROUTE_RE.search(route)
+    if not match:
+        return None
+    return match.group(1)
+
+
+def _extract_processing_order_id(route: str | None) -> str | None:
+    if not route:
+        return None
+    match = _PROCESSING_ROUTE_RE.search(route)
     if not match:
         return None
     return match.group(1)
@@ -128,6 +138,10 @@ class Task(models.Model):
             payload = _payload_for_receiving_order(order_id)
             title = _receiving_title_from_payload(payload)
             self._display_title_cache = f"{title} №{order_id}"
+            return self._display_title_cache
+        order_id = _extract_processing_order_id(self.route)
+        if order_id:
+            self._display_title_cache = f"Заявка на обработку №{order_id}"
             return self._display_title_cache
         self._display_title_cache = self.title
         return self._display_title_cache

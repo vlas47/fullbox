@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Склады маркетплейсов | FULLBOX</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@500;600;700&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #f2efe8;
+      --surface: #fffdf8;
+      --surface-2: #f7f2ea;
+      --ink: #1c1f1a;
+      --muted: #6b6f66;
+      --accent: #0e6b5b;
+      --accent-strong: #0b5246;
+      --sun: #f2b747;
+      --danger: #d4543c;
+      --stroke: rgba(28,31,26,0.12);
+      --shadow: 0 18px 45px rgba(15,23,42,0.12);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Manrope", system-ui, sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(1200px 540px at -10% -20%, rgba(242,183,71,0.22), transparent 60%),
+        radial-gradient(900px 520px at 110% 10%, rgba(14,107,91,0.18), transparent 55%),
+        var(--bg);
+      min-height: 100vh;
+    }
+    .wrap {
+      width: 100%;
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 24px 20px 64px;
+    }
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+      flex-wrap: wrap;
+      margin-bottom: 18px;
+    }
+    h1 {
+      margin: 0;
+      font-family: "Bricolage Grotesque", "Manrope", sans-serif;
+      font-size: 24px;
+    }
+    .muted { color: var(--muted); }
+    .actions { display: flex; gap: 10px; flex-wrap: wrap; }
+    .btn {
+      padding: 10px 14px;
+      border-radius: 12px;
+      border: 1px solid var(--stroke);
+      background: rgba(28,31,26,0.04);
+      color: var(--ink);
+      font-weight: 700;
+      cursor: pointer;
+      transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+      text-decoration: none;
+    }
+    .btn:hover {
+      transform: translateY(-1px);
+      border-color: rgba(14,107,91,0.4);
+      box-shadow: 0 10px 24px rgba(14,107,91,0.14);
+    }
+    .btn.primary {
+      background: linear-gradient(120deg, var(--sun), #ffd88a);
+      border-color: transparent;
+      color: #2a2110;
+    }
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--stroke);
+      border-radius: 22px;
+      box-shadow: var(--shadow);
+      padding: 18px;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 14px;
+    }
+    .field {
+      display: grid;
+      gap: 6px;
+    }
+    .field label {
+      font-size: 12px;
+      color: var(--muted);
+      font-weight: 600;
+    }
+    input[type="text"] {
+      padding: 10px 12px;
+      border-radius: 12px;
+      border: 1px solid var(--stroke);
+      background: #ffffff;
+      font-family: inherit;
+      font-size: 13px;
+    }
+    textarea {
+      min-height: 240px;
+      resize: vertical;
+      padding: 10px 12px;
+      border-radius: 12px;
+      border: 1px solid var(--stroke);
+      background: var(--surface-2);
+      font-family: inherit;
+      font-size: 13px;
+      line-height: 1.35;
+    }
+    .hint {
+      font-size: 12px;
+      color: var(--muted);
+      margin-top: 8px;
+    }
+    .alert {
+      padding: 10px 12px;
+      border-radius: 12px;
+      border: 1px solid transparent;
+      margin-bottom: 12px;
+      font-size: 13px;
+    }
+    .alert.success {
+      background: rgba(14,107,91,0.12);
+      border-color: rgba(14,107,91,0.35);
+      color: var(--accent-strong);
+    }
+    .alert.error {
+      background: rgba(212,84,60,0.12);
+      border-color: rgba(212,84,60,0.35);
+      color: #7f1d1d;
+    }
+    .sync-card {
+      display: grid;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+    .sync-row {
+      display: grid;
+      gap: 12px;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      align-items: end;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="header">
+      <div>
+        <h1>Склады маркетплейсов</h1>
+        <div class="muted">Список складов по маркетплейсам (не ПВЗ). По одному адресу в строке.</div>
+      </div>
+      <div class="actions">
+        <a class="btn" href="/head-manager/">В кабинет</a>
+        <button class="btn primary" type="submit" form="warehouses-form">Сохранить</button>
+      </div>
+    </div>
+
+    {% if request.GET.saved %}
+      <div class="alert success">Список складов обновлен.</div>
+    {% endif %}
+    {% if error %}
+      <div class="alert error">{{ error }}</div>
+    {% endif %}
+    {% if sync_info %}
+      <div class="alert success">{{ sync_info }}{% if sync_agency %} Клиент: {{ sync_agency }}.{% endif %}</div>
+    {% endif %}
+    {% if sync_errors %}
+      <div class="alert error">{{ sync_errors|join:"<br>"|safe }}</div>
+    {% endif %}
+
+    <form method="post" action="/head-manager/marketplace-warehouses/sync/" class="card sync-card">
+      {% csrf_token %}
+      <div>
+        <strong>Синхронизация складов (WB/Ozon)</strong>
+        <div class="muted">Берем ключи из базы клиента и обновляем список складов.</div>
+      </div>
+      <div class="sync-row">
+        <div class="field">
+          <label for="client_id">ID клиента (внутренний)</label>
+          <input id="client_id" name="client_id" type="text" placeholder="Например 2763">
+        </div>
+        <div class="field">
+          <label for="client_name">Название клиента</label>
+          <input id="client_name" name="client_name" type="text" value="{{ sync_default_name }}" placeholder="Кейзи">
+        </div>
+        <div class="field">
+          <button class="btn primary" type="submit">Синхронизировать</button>
+        </div>
+      </div>
+    </form>
+
+    <form id="warehouses-form" method="post" class="card">
+      {% csrf_token %}
+      <div class="grid">
+        <div class="field">
+          <label for="wb">Wildberries (WB)</label>
+          <textarea id="wb" name="wb" placeholder="Адрес склада">{{ warehouses.wb }}</textarea>
+        </div>
+        <div class="field">
+          <label for="ozon">Ozon</label>
+          <textarea id="ozon" name="ozon" placeholder="Адрес склада">{{ warehouses.ozon }}</textarea>
+        </div>
+        <div class="field">
+          <label for="yandex">Яндекс Маркет</label>
+          <textarea id="yandex" name="yandex" placeholder="Адрес склада">{{ warehouses.yandex }}</textarea>
+        </div>
+        <div class="field">
+          <label for="sber">Сбер</label>
+          <textarea id="sber" name="sber" placeholder="Адрес склада">{{ warehouses.sber }}</textarea>
+        </div>
+      </div>
+      <div class="hint">Формат: одна строка — один склад (можно “Название — адрес”).</div>
+    </form>
+  </div>
+</body>
+</html>

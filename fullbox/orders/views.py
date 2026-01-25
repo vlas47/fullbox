@@ -16,7 +16,7 @@ from openpyxl.cell.cell import MergedCell
 
 from audit.models import OrderAuditEntry, log_order_action, log_staff_overaction
 from employees.models import Employee
-from employees.access import RoleRequiredMixin, get_request_role, resolve_cabinet_url
+from employees.access import RoleRequiredMixin, get_request_role, resolve_cabinet_url, is_staff_role
 from sku.models import Agency, SKU, SKUBarcode
 from todo.models import Task
 from stockmap.views import _OS_CELLS_PER_TIER, _OS_ROW_SECTIONS, _OS_TIERS
@@ -206,6 +206,15 @@ def _storekeeper_full_name() -> str:
     return storekeeper.full_name.strip() if storekeeper and storekeeper.full_name else ""
 
 
+def _processing_head_full_name() -> str:
+    head = (
+        Employee.objects.filter(role="processing_head", is_active=True)
+        .order_by("full_name")
+        .first()
+    )
+    return head.full_name.strip() if head and head.full_name else ""
+
+
 def _manager_full_name() -> str:
     manager = (
         Employee.objects.filter(role="manager", is_active=True)
@@ -277,6 +286,24 @@ def _current_responsible_label(entry):
         return f"Клиент {base}" if base else "Клиент"
     if status_value in {"done", "completed", "closed", "finished"} or "выполн" in status_label:
         return "Выполнено"
+    if status_value == "processing_head" or (
+        "передан" in status_label and "обработ" in status_label
+    ):
+        head_full = _processing_head_full_name()
+        return (
+            f"Руководитель обработки {head_full}"
+            if head_full
+            else "Руководитель обработки"
+        )
+    if entry.order_type == "processing" and (
+        status_value == "processing_in_work" or "взята" in status_label
+    ):
+        head_full = _processing_head_full_name()
+        return (
+            f"Руководитель обработки {head_full}"
+            if head_full
+            else "Руководитель обработки"
+        )
     if status_value in {"warehouse", "on_warehouse"} or any(token in status_label for token in ("склад", "прием", "приём", "ожидании поставки")):
         stored_name = (payload.get("storekeeper_name") or "").strip()
         storekeeper = (
@@ -314,6 +341,21 @@ def _actor_label(user=None, agency=None, client_view=False):
 def _history_actor_label(entry, client_view=False, client_label: str | None = None):
     if not entry:
         return "-"
+    if entry.action == "status":
+        payload = entry.payload or {}
+        status_value = (payload.get("status") or payload.get("submit_action") or "").lower()
+        status_label = (payload.get("status_label") or "").lower()
+        if entry.order_type == "processing" and (
+            status_value in {"processing_head", "processing_in_work"}
+            or ("передан" in status_label and "обработ" in status_label)
+            or "взята" in status_label
+        ):
+            head_full = _processing_head_full_name()
+            return (
+                f"Руководитель обработки {head_full}"
+                if head_full
+                else "Руководитель обработки"
+            )
     if entry.action == "create":
         if entry.agency:
             base = entry.agency.fio_agn or entry.agency.agn_name or "клиент"
@@ -771,6 +813,9 @@ def _flow_closed_from_entries(entries):
     return False
 def _client_agency_from_request(request):
     if not request.user.is_authenticated:
+        return None
+    role = get_request_role(request)
+    if is_staff_role(role):
         return None
     client_id = request.GET.get("client") or request.GET.get("agency")
     if client_id:
@@ -2085,7 +2130,7 @@ def print_receiving_act_mx1(request, order_id: str):
 
 class OrdersHomeView(RoleRequiredMixin, TemplateView):
     template_name = 'orders/index.html'
-    allowed_roles = ("manager", "storekeeper", "head_manager", "director", "admin")
+    allowed_roles = ("manager", "storekeeper", "head_manager", "director", "admin", "processing_head")
 
     def dispatch(self, request, *args, **kwargs):
         client_agency = _client_agency_from_request(request)
@@ -2422,6 +2467,12 @@ class OrdersHomeView(RoleRequiredMixin, TemplateView):
             raw_entries = OrderAuditEntry.objects.select_related("user", "agency").order_by("-created_at")
             if agency:
                 raw_entries = raw_entries.filter(agency=agency)
+            role = get_request_role(self.request)
+            order_type_filter = (self.request.GET.get("order_type") or "").strip().lower()
+            if role == "processing_head":
+                order_type_filter = "processing"
+            if order_type_filter in {"receiving", "packing", "processing", "shipping"}:
+                raw_entries = raw_entries.filter(order_type=order_type_filter)
             raw_entries = list(raw_entries)
             manager_label = _manager_label()
             storekeeper_label = _storekeeper_label()
@@ -2728,6 +2779,21 @@ class OrdersDetailView(RoleRequiredMixin, TemplateView):
         ctx["order_title"] = _order_title_label(self.order_type, payload)
         ctx["agency"] = latest.agency if latest else client_agency
         ctx["client_view"] = client_view
+        client_param = self.request.GET.get("client") or self.request.GET.get("agency")
+        client_id = None
+        if client_param:
+            try:
+                client_id = int(client_param)
+            except (TypeError, ValueError):
+                client_id = None
+        if not client_id and client_view:
+            if client_agency and getattr(client_agency, "id", None):
+                client_id = client_agency.id
+            elif latest and latest.agency_id:
+                client_id = latest.agency_id
+        if client_id:
+            ctx["client_cabinet_url"] = f"/client/dashboard/?client={client_id}"
+            ctx["client_orders_url"] = f"/orders/?client={client_id}"
         status_text = _status_label_from_entry(status_entry) if status_entry else "-"
         ctx["status_label"] = status_text
         ctx["responsible"] = _current_responsible_label(status_entry)

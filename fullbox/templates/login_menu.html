@@ -68,6 +68,8 @@
             <a class="btn" href="/dev-login/manager/?next=/team-manager/">{{ user.label }}</a>
           {% elif user.username == "storekeeper" %}
             <a class="btn" href="/dev-login/storekeeper/?next=/sklad/">{{ user.label }}</a>
+          {% elif user.username == "reachtruck_driver" %}
+            <a class="btn" href="/dev-login/reachtruck_driver/?next=/reachtruck/">{{ user.label }}</a>
           {% else %}
             <a class="btn" href="/dev-login/{{ user.username }}/">{{ user.label }}</a>
           {% endif %}

@@ -169,6 +169,34 @@ def log_staff_overaction(
     )
 
 
+def get_stock_move_journal():
+    return AuditJournal.objects.get_or_create(
+        code="stock_move",
+        defaults={
+            "name": "Перемещение товара",
+            "description": "Фиксация перемещений паллет между местами хранения.",
+        },
+    )[0]
+
+
+def log_stock_move(
+    action: str,
+    user=None,
+    agency=None,
+    description: str = "",
+    snapshot: dict | None = None,
+):
+    journal = get_stock_move_journal()
+    AuditEntry.objects.create(
+        journal=journal,
+        action=action,
+        agency=agency,
+        user=user,
+        description=description,
+        snapshot=snapshot or {},
+    )
+
+
 class OrderAuditEntry(models.Model):
     ACTION_CHOICES = [
         ("create", "Создание"),

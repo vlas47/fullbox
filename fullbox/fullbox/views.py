@@ -27,6 +27,7 @@ DEV_USERS = [
     ("processing_head", "Руководитель участка обработки"),
     ("manager", "Менеджер"),
     ("storekeeper", "Кладовщик"),
+    ("reachtruck_driver", "Водитель ричтрака"),
     ("picker", "Сборщик"),
     ("developer", "Разработчик"),
 ]
@@ -82,6 +83,8 @@ def dev_login(request, username):
         employee_role = "manager"
     elif username == "storekeeper":
         employee_role = "storekeeper"
+    elif username == "reachtruck_driver":
+        employee_role = "reachtruck_driver"
 
     if employee_role:
         employee = (

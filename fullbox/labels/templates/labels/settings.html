@@ -1,0 +1,1741 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Настройки оборудования | FULLBOX</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@500;600;700&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #f2efe8;
+      --surface: #fffdf8;
+      --surface-2: #f7f2ea;
+      --ink: #1c1f1a;
+      --muted: #6b6f66;
+      --accent: #0e6b5b;
+      --accent-strong: #0b5246;
+      --accent-soft: rgba(14,107,91,0.12);
+      --sun: #f2b747;
+      --sun-soft: rgba(242,183,71,0.18);
+      --danger: #d4543c;
+      --stroke: rgba(28,31,26,0.12);
+      --shadow: 0 18px 45px rgba(15,23,42,0.12);
+      --card: var(--surface);
+      --card-soft: var(--surface-2);
+      --text: var(--ink);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Manrope", system-ui, sans-serif;
+      color: var(--ink);
+      overflow: hidden;
+      background:
+        radial-gradient(1200px 540px at -10% -20%, rgba(242,183,71,0.22), transparent 60%),
+        radial-gradient(900px 520px at 110% 10%, rgba(14,107,91,0.18), transparent 55%),
+        var(--bg);
+      min-height: 100vh;
+    }
+    body::before,
+    body::after {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 0;
+    }
+    body::before {
+      background-image:
+        linear-gradient(rgba(28,31,26,0.06) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(28,31,26,0.06) 1px, transparent 1px);
+      background-size: 36px 36px;
+      opacity: 0.08;
+    }
+    body::after {
+      background:
+        radial-gradient(420px 240px at 20% 20%, rgba(242,183,71,0.18), transparent 70%),
+        radial-gradient(360px 220px at 85% 30%, rgba(14,107,91,0.12), transparent 70%);
+      opacity: 0.7;
+    }
+    a { color: inherit; text-decoration: none; }
+    .wrap {
+      position: relative;
+      z-index: 1;
+      width: 100%;
+      max-width: 100%;
+      margin: 0 auto;
+      padding: 24px 24px 72px;
+    }
+    .layout {
+      display: grid;
+      grid-template-columns: 260px minmax(0, 1fr) 300px;
+      gap: 20px;
+      align-items: stretch;
+      min-height: calc(100vh - 96px);
+    }
+    .side {
+      background: var(--surface);
+      border: 1px solid var(--stroke);
+      border-radius: 22px;
+      padding: 18px;
+      box-shadow: var(--shadow);
+      display: grid;
+      gap: 16px;
+      max-height: calc(100vh - 96px);
+      overflow: auto;
+    }
+    .brand {
+      display: grid;
+      gap: 4px;
+    }
+    .brand-title {
+      font-family: "Bricolage Grotesque", "Manrope", sans-serif;
+      font-size: 22px;
+      letter-spacing: 0.6px;
+    }
+    .profile {
+      display: grid;
+      gap: 6px;
+      padding: 12px;
+      border-radius: 16px;
+      background: var(--surface-2);
+      border: 1px solid var(--stroke);
+    }
+    .profile-value { font-weight: 600; }
+    .nav {
+      display: grid;
+      gap: 10px;
+    }
+    .nav-link {
+      display: grid;
+      gap: 4px;
+      padding: 12px 12px;
+      border-radius: 16px;
+      border: 1px solid var(--stroke);
+      background: var(--surface-2);
+      transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+    }
+    .nav-link:hover {
+      transform: translateY(-1px);
+      border-color: rgba(14,107,91,0.4);
+      box-shadow: 0 12px 24px rgba(14,107,91,0.12);
+    }
+    .nav-link.primary {
+      background: linear-gradient(135deg, rgba(242,183,71,0.45), rgba(14,107,91,0.15));
+      border-color: transparent;
+    }
+    .nav-title { font-weight: 700; }
+    .nav-sub { font-size: 12px; color: var(--muted); }
+    .side-footer {
+      display: grid;
+      gap: 10px;
+    }
+    .content {
+      display: grid;
+      gap: 18px;
+      height: 100%;
+      max-height: calc(100vh - 96px);
+      overflow: auto;
+      padding-right: 4px;
+    }
+    .rail {
+      display: grid;
+      gap: 18px;
+      align-self: start;
+      max-height: calc(100vh - 96px);
+      overflow: auto;
+      padding-right: 4px;
+    }
+    .panel,
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--stroke);
+      border-radius: 22px;
+      box-shadow: var(--shadow);
+    }
+    .panel { padding: 18px; }
+    .card {
+      padding: 18px;
+      display: grid;
+      gap: 14px;
+    }
+    .panel-header,
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 14px;
+      flex-wrap: wrap;
+    }
+    .panel-title {
+      margin: 0;
+      font-family: "Bricolage Grotesque", "Manrope", sans-serif;
+      font-size: 20px;
+    }
+    .panel-subtitle {
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .btn {
+      padding: 10px 14px;
+      border-radius: 12px;
+      border: 1px solid var(--stroke);
+      background: rgba(28,31,26,0.04);
+      color: var(--ink);
+      font-weight: 700;
+      transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+    }
+    .btn:hover {
+      transform: translateY(-1px);
+      border-color: rgba(14,107,91,0.4);
+      box-shadow: 0 10px 24px rgba(14,107,91,0.14);
+    }
+    .btn.primary {
+      background: linear-gradient(120deg, var(--sun), #ffd88a);
+      border-color: transparent;
+      color: #2a2110;
+    }
+    .btn.ghost { background: transparent; }
+    .muted { color: var(--muted); }
+    .actions { display: flex; gap: 10px; flex-wrap: wrap; }
+    .grid { display: grid; gap: 18px; }
+    .grid.cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .card.wide { grid-column: 1 / -1; }
+    .tab-panels { display: grid; gap: 18px; }
+    .tab-panel { display: none; }
+    .tab-panel.active { display: grid; }
+    .field-grid {
+      display: grid;
+      gap: 10px;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    }
+    .field label {
+      display: block;
+      font-size: 12px;
+      color: var(--muted);
+      margin-bottom: 6px;
+    }
+    .field input {
+      width: 100%;
+      padding: 10px 12px;
+      border-radius: 10px;
+      border: 1px solid var(--stroke);
+      background: var(--surface-2);
+      color: var(--ink);
+      font-size: 14px;
+    }
+    .label-grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      align-items: flex-start;
+      min-height: 0;
+      padding: 6px;
+    }
+    .labels-panel {
+      padding: 12px;
+      display: grid;
+      gap: 8px;
+      grid-template-rows: auto auto auto;
+      background: rgba(242,183,71,0.12);
+    }
+    .labels-panel .card-header { gap: 4px; }
+    .labels-panel h2 { margin: 0; font-size: 15px; }
+    .labels-panel .muted { font-size: 10px; }
+    .labels-panel .field-grid {
+      grid-template-columns: repeat(7, minmax(0, 1fr));
+      gap: 4px;
+    }
+    .label-table {
+      width: auto;
+      max-width: 100%;
+      justify-self: start;
+      align-self: start;
+      table-layout: auto;
+      border-collapse: collapse;
+      font-size: 11px;
+      background: var(--surface-2);
+      border-radius: 14px;
+      overflow: hidden;
+      border: 1px solid var(--stroke);
+      display: inline-table;
+    }
+    .label-table th,
+    .label-table td {
+      padding: 4px 6px;
+      border-bottom: 1px dashed var(--stroke);
+      vertical-align: middle;
+      text-align: left;
+    }
+    .label-table th {
+      font-size: 10px;
+      color: var(--muted);
+      letter-spacing: 0.3px;
+      text-transform: uppercase;
+      background: rgba(28,31,26,0.04);
+    }
+    .label-table tr:last-child td { border-bottom: none; }
+    .label-table input {
+      width: 160px;
+      padding: 4px 6px;
+      border-radius: 8px;
+      border: 1px solid var(--stroke);
+      background: #fff;
+      color: var(--ink);
+      font-size: 10px;
+    }
+    .label-table .check-cell {
+      text-align: center;
+    }
+    .label-table .check-input {
+      width: 14px;
+      height: 14px;
+      padding: 0;
+      border-radius: 4px;
+    }
+    .label-table .size-input {
+      width: 88px;
+      text-align: right;
+    }
+    .labels-panel .field label {
+      font-size: 9px;
+      margin-bottom: 1px;
+    }
+    .labels-panel .field input {
+      padding: 4px 6px;
+      font-size: 10px;
+    }
+    .labels-panel .label-mode .btn,
+    .labels-panel .label-tabs .btn {
+      padding: 6px 10px;
+      font-size: 12px;
+      border-radius: 10px;
+    }
+    .labels-panel .label-grid { height: auto; }
+    .labels-panel .label-card {
+      height: auto;
+      grid-template-rows: auto auto auto;
+    }
+    .labels-panel .label-stage {
+      --label-scale: 2;
+      width: calc(var(--label-width) * var(--label-scale) + 16px);
+      height: calc(var(--label-height) * var(--label-scale) + 16px);
+      padding: 8px;
+      position: relative;
+      display: inline-flex;
+      align-items: flex-start;
+      justify-content: flex-start;
+      min-height: 0;
+    }
+    .label-card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+    .label-card-header .label-title {
+      margin: 0;
+    }
+    .label-print-btn {
+      padding: 6px 10px;
+      font-size: 11px;
+      border-radius: 999px;
+      border: 1px solid var(--stroke);
+      background: rgba(255,255,255,0.92);
+      color: var(--ink);
+      cursor: pointer;
+    }
+    .label-print-btn:hover {
+      transform: translateY(-1px);
+    }
+    .label-printers-card {
+      display: grid;
+      gap: 8px;
+      padding: 12px;
+      border-radius: 14px;
+      border: 1px dashed var(--stroke);
+      background: var(--surface-2);
+      width: fit-content;
+      max-width: 100%;
+    }
+    .label-printers-title {
+      font-weight: 700;
+      font-size: 13px;
+    }
+    .label-printers-card .printer-row input {
+      width: 260px;
+    }
+    .label-card {
+      width: 100%;
+      max-width: 100%;
+      scroll-snap-align: start;
+      padding: 14px;
+      border-radius: 18px;
+      border: 1px solid var(--stroke);
+      background: var(--surface-2);
+      display: grid;
+      gap: 12px;
+    }
+    .labels-panel .label-card {
+      width: fit-content;
+      max-width: 100%;
+      display: inline-grid;
+    }
+    .label-title {
+      font-weight: 700;
+      font-size: 15px;
+    }
+    .label-sub {
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .label-mode {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+    .label-tabs {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      align-items: center;
+      width: 100%;
+    }
+    .label-tabs-group {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+    .label-actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      align-items: center;
+      margin-left: auto;
+    }
+    .printer-row {
+      display: grid;
+      gap: 8px;
+    }
+    .printer-row label {
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: var(--muted);
+    }
+    .printer-row input {
+      width: 100%;
+      padding: 10px 12px;
+      border-radius: 10px;
+      border: 1px solid var(--stroke);
+      background: var(--surface-2);
+      font-size: 14px;
+    }
+    .printer-meta {
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      border: 1px solid var(--stroke);
+      background: rgba(14,107,91,0.08);
+      color: var(--accent-strong);
+      font-size: 12px;
+      font-weight: 600;
+    }
+    .list {
+      display: grid;
+      gap: 6px;
+      padding: 0;
+      margin: 0;
+      list-style: none;
+      font-size: 13px;
+    }
+    .list li {
+      padding: 6px 8px;
+      border-radius: 10px;
+      border: 1px dashed var(--stroke);
+      background: var(--surface);
+    }
+    .stat-list {
+      display: grid;
+      gap: 12px;
+      margin-top: 12px;
+    }
+    .stat-item {
+      padding: 12px;
+      border-radius: 14px;
+      border: 1px solid var(--stroke);
+      background: var(--surface-2);
+    }
+    .stat-value {
+      font-size: 20px;
+      font-weight: 700;
+    }
+    .stat-label {
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .meta-line {
+      margin-top: 12px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .tip {
+      margin-top: 12px;
+      padding: 10px 12px;
+      border-radius: 12px;
+      border: 1px dashed var(--stroke);
+      background: rgba(242,183,71,0.12);
+      font-size: 12px;
+      color: #4b3b18;
+    }
+    .reveal {
+      animation: rise 0.7s ease both;
+      animation-delay: calc(var(--i, 0) * 70ms);
+    }
+    @keyframes rise {
+      from { opacity: 0; transform: translateY(12px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .reveal { animation: none; }
+      .btn:hover,
+      .nav-link:hover { transform: none; }
+    }
+    {% include "labels/_label_styles.css" %}
+    @media (max-width: 1200px) {
+      body { overflow: auto; }
+      .layout { grid-template-columns: 1fr; }
+      .side,
+      .content,
+      .rail {
+        max-height: none;
+        overflow: visible;
+        padding-right: 0;
+      }
+      .content { height: auto; }
+      .grid.cols-2 { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 900px) {
+      .label-stage { min-height: 260px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="layout">
+      <aside class="side">
+        <div class="brand">
+          <div class="brand-title">FULLBOX</div>
+        </div>
+        <div class="profile">
+          <div class="profile-value">
+            Кабинет главного менеджера<br>
+            {% if request.user.is_authenticated and request.user.employee_profile %}
+              {{ request.user.employee_profile.full_name }}
+            {% elif request.session.employee_name %}
+              {{ request.session.employee_name }}
+            {% elif request.user.is_authenticated %}
+              {{ request.user.get_full_name|default:request.user.username }}
+            {% else %}
+              Гость
+            {% endif %}
+          </div>
+        </div>
+        <nav class="nav">
+          <a class="nav-link" href="/todo/">
+            <span class="nav-title">Задачи</span>
+            <span class="nav-sub">Контроль потока</span>
+          </a>
+          <a class="nav-link" href="/orders/">
+            <span class="nav-title">Заявки</span>
+            <span class="nav-sub">Журнал и приемки</span>
+          </a>
+          <a class="nav-link" href="/client/">
+            <span class="nav-title">Клиенты</span>
+            <span class="nav-sub">Справочник</span>
+          </a>
+          <a class="nav-link" href="/employees/">
+            <span class="nav-title">Сотрудники</span>
+            <span class="nav-sub">Список и роли</span>
+          </a>
+          <a class="nav-link" href="/sklad/journal/">
+            <span class="nav-title">Складские остатки</span>
+            <span class="nav-sub">Актуальные стоки</span>
+          </a>
+          <a class="nav-link" href="/head-manager/marketplace-warehouses/">
+            <span class="nav-title">Склады маркетплейсов</span>
+            <span class="nav-sub">Справочник адресов</span>
+          </a>
+          <a class="nav-link" href="/audit/orders/">
+            <span class="nav-title">Журнал заявок</span>
+            <span class="nav-sub">История изменений</span>
+          </a>
+          <a class="nav-link" href="/audit/overactions/">
+            <span class="nav-title">Избыточные действия</span>
+            <span class="nav-sub">Корректировки кладовщиков</span>
+          </a>
+          <a class="nav-link" href="/scanner-settings/">
+            <span class="nav-title">Настройка сканеров</span>
+            <span class="nav-sub">Тест и подключение</span>
+          </a>
+          <a class="nav-link primary" href="/labels/settings/">
+            <span class="nav-title">Этикетки и принтеры</span>
+            <span class="nav-sub">Шаблоны и оборудование</span>
+          </a>
+          <a class="nav-link" href="/dev/">
+            <span class="nav-title">Dev</span>
+            <span class="nav-sub">Инструменты</span>
+          </a>
+        </nav>
+        <div class="side-footer">
+          <a class="btn ghost" href="/logout/">Выход</a>
+        </div>
+      </aside>
+
+      <main class="content">
+        <div class="tab-panels">
+          <section class="card tab-panel reveal labels-panel" data-tab="labels" style="--i:2">
+            <div class="card-header">
+              <div>
+                <h2>Этикетки</h2>
+                <div class="muted">Дизайн как в SKU. Размеры: товар 58x40, короб 58x60, паллет 75x120.</div>
+              </div>
+              <div class="label-tabs">
+                <div class="label-tabs-group">
+                  {% for label in label_sizes %}
+                    <button class="btn" type="button" data-label-key="{{ label.key }}">
+                      {% if label.key == "item_cz" %}
+                        Товар {{ label.width_mm }}x{{ label.height_mm }} ЧЗ
+                      {% else %}
+                        {{ label.title }} {{ label.width_mm }}x{{ label.height_mm }}
+                      {% endif %}
+                    </button>
+                  {% endfor %}
+                </div>
+                <div class="label-actions">
+                  <button class="btn primary" type="button" id="label-save-btn">Сохранить</button>
+                </div>
+              </div>
+            </div>
+            <table class="label-table" data-label-table>
+              <thead>
+                <tr>
+                  <th>Наименование</th>
+                  <th>Текст</th>
+                  <th>Печать</th>
+                  <th>Размер шрифта (мм)</th>
+                </tr>
+              </thead>
+                <tbody>
+                  <tr data-field="barcode">
+                    <td>ШК</td>
+                    <td><input id="label-input-barcode" data-label-text value="{{ label_sample_barcode }}"></td>
+                    <td class="check-cell"><input class="check-input" id="label-enabled-barcode" data-label-enabled type="checkbox" checked></td>
+                    <td><input class="size-input" id="label-font-barcode" data-label-font type="text" inputmode="decimal" value="0.9"></td>
+                  </tr>
+                  <tr data-field="cz_code" data-label-only="item_cz">
+                    <td>Код ЧЗ</td>
+                    <td><input id="label-input-cz_code" data-label-text placeholder="Код ЧЗ"></td>
+                    <td class="check-cell"><input class="check-input" id="label-enabled-cz_code" data-label-enabled type="checkbox" checked></td>
+                    <td><input class="size-input" id="label-font-cz_code" data-label-font type="text" inputmode="decimal" value="0.9"></td>
+                  </tr>
+                <tr data-field="article">
+                  <td>Артикул</td>
+                  <td><input id="label-input-article" data-label-text value="{{ label_sample.article }}"></td>
+                  <td class="check-cell"><input class="check-input" id="label-enabled-article" data-label-enabled type="checkbox" checked></td>
+                  <td><input class="size-input" id="label-font-article" data-label-font type="text" inputmode="decimal" value="1.0"></td>
+                </tr>
+                <tr data-field="name">
+                  <td>Название</td>
+                  <td><input id="label-input-name" data-label-text value="{{ label_sample.name }}"></td>
+                  <td class="check-cell"><input class="check-input" id="label-enabled-name" data-label-enabled type="checkbox" checked></td>
+                  <td><input class="size-input" id="label-font-name" data-label-font type="text" inputmode="decimal" value="1.0"></td>
+                </tr>
+                <tr data-field="size">
+                  <td>Размер</td>
+                  <td><input id="label-input-size" data-label-text value="{{ label_sample.size }}"></td>
+                  <td class="check-cell"><input class="check-input" id="label-enabled-size" data-label-enabled type="checkbox" checked></td>
+                  <td><input class="size-input" id="label-font-size" data-label-font type="text" inputmode="decimal" value="1.0"></td>
+                </tr>
+                <tr data-field="brand">
+                  <td>Бренд</td>
+                  <td><input id="label-input-brand" data-label-text value="{{ label_sample.brand }}"></td>
+                  <td class="check-cell"><input class="check-input" id="label-enabled-brand" data-label-enabled type="checkbox" checked></td>
+                  <td><input class="size-input" id="label-font-brand" data-label-font type="text" inputmode="decimal" value="1.0"></td>
+                </tr>
+                <tr data-field="color">
+                  <td>Цвет</td>
+                  <td><input id="label-input-color" data-label-text value="{{ label_sample.color }}"></td>
+                  <td class="check-cell"><input class="check-input" id="label-enabled-color" data-label-enabled type="checkbox" checked></td>
+                  <td><input class="size-input" id="label-font-color" data-label-font type="text" inputmode="decimal" value="0.9"></td>
+                </tr>
+                <tr data-field="composition">
+                  <td>Состав</td>
+                  <td><input id="label-input-composition" data-label-text value="{{ label_sample.composition }}"></td>
+                  <td class="check-cell"><input class="check-input" id="label-enabled-composition" data-label-enabled type="checkbox" checked></td>
+                  <td><input class="size-input" id="label-font-composition" data-label-font type="text" inputmode="decimal" value="0.9"></td>
+                </tr>
+                <tr data-field="supplier">
+                  <td>Поставщик</td>
+                  <td><input id="label-input-supplier" data-label-text value="{{ label_sample.supplier }}"></td>
+                  <td class="check-cell"><input class="check-input" id="label-enabled-supplier" data-label-enabled type="checkbox" checked></td>
+                  <td><input class="size-input" id="label-font-supplier" data-label-font type="text" inputmode="decimal" value="0.9"></td>
+                </tr>
+                <tr data-field="country">
+                  <td>Страна</td>
+                  <td><input id="label-input-country" data-label-text value="{{ label_sample.country }}"></td>
+                  <td class="check-cell"><input class="check-input" id="label-enabled-country" data-label-enabled type="checkbox" checked></td>
+                  <td><input class="size-input" id="label-font-country" data-label-font type="text" inputmode="decimal" value="0.9"></td>
+                </tr>
+              </tbody>
+            </table>
+            <form id="label-settings-csrf" style="display:none">
+              {% csrf_token %}
+            </form>
+            <div class="label-grid">
+              <div class="label-printers-card">
+              <div class="label-printers-title">Принтеры</div>
+              <div class="printer-meta" data-print-status>Статус печати: {{ print_status_line }}</div>
+              <div class="printer-meta" data-print-agent>Агент печати: {{ print_agent_line }}</div>
+              <div class="printer-meta" data-print-last-activity{% if not print_last_job_time %} style="display:none"{% endif %}>
+                Последняя активность: {{ print_last_job_time }}
+              </div>
+              <div class="printer-meta" data-print-last-error{% if not print_last_error %} style="display:none"{% endif %}>
+                Последняя ошибка: {{ print_last_error }}
+              </div>
+                <div class="printer-row">
+                  <label for="label-printer-quick">Принтер этикеток</label>
+                  <input id="label-printer-quick" data-label-printer list="label-printers" placeholder="Выберите или введите">
+                </div>
+                <div class="actions">
+                  <button class="btn" type="button" data-sync-printers>Синхронизировать</button>
+                  <button class="btn" type="button" data-tab-target="printers">Все настройки</button>
+                </div>
+                {% if available_printers_meta.updated_at %}
+                  <div class="printer-meta">
+                    Последняя синхронизация: {{ available_printers_meta.updated_at }}
+                    {% if available_printers_meta.updated_by %} · {{ available_printers_meta.updated_by }}{% endif %}
+                  </div>
+                {% else %}
+                  <div class="printer-meta">Список принтеров пока не синхронизирован.</div>
+                {% endif %}
+              </div>
+              {% for label in label_sizes %}
+                <div class="label-card" data-label-card="{{ label.key }}" data-label-width="{{ label.width_mm }}" data-label-height="{{ label.height_mm }}">
+                  <div class="label-card-header">
+                    <div class="label-title">
+                      {% if label.key == "item_cz" %}
+                        Товар {{ label.width_mm }}x{{ label.height_mm }} ЧЗ
+                      {% else %}
+                        {{ label.title }} · {{ label.width_mm }}x{{ label.height_mm }} мм
+                      {% endif %}
+                    </div>
+                    <button class="label-print-btn" type="button" data-label-print>Печать</button>
+                  </div>
+                  <div class="label-sub">{{ label.description }}</div>
+                  <div class="label-stage" style="--label-width: {{ label.width_mm }}mm; --label-height: {{ label.height_mm }}mm;">
+                    <div class="label-size-badge">{{ label.width_mm }}x{{ label.height_mm }} мм</div>
+                    <div class="label-preview" data-label-root data-label-type="{{ label.key }}">
+                      {% if label.key == "item" %}
+                        {% include "labels/_label_item.html" %}
+                      {% elif label.key == "item_cz" %}
+                        {% include "labels/_label_item_cz.html" %}
+                      {% elif label.key == "box" %}
+                        {% include "labels/_label_box.html" %}
+                      {% elif label.key == "pallet" %}
+                        {% include "labels/_label_pallet.html" %}
+                      {% else %}
+                        {% include "labels/_label_markup.html" %}
+                      {% endif %}
+                    </div>
+                  </div>
+                </div>
+              {% endfor %}
+            </div>
+          </section>
+
+          <section class="card tab-panel reveal" data-tab="scanners" style="--i:3">
+            <h2>Сканеры</h2>
+            <div class="muted">Быстрые ссылки на инструкции и тестирование сканеров.</div>
+            <div class="actions">
+              <a class="btn" href="/scanner-settings/">Инструкция</a>
+              <a class="btn" href="/scanner-test/">Тест сканера</a>
+              <a class="btn" href="/scanner/ims-2290hd/">IMS-2290HD_K</a>
+            </div>
+          </section>
+
+          <section class="card tab-panel reveal" data-tab="printers" style="--i:4">
+            <h2>Принтеры</h2>
+            <div class="muted">Синхронизация списка принтеров и управление агентом печати.</div>
+            <div class="printer-row">
+              <label for="label-printer">Принтер этикеток</label>
+              <input id="label-printer" data-label-printer list="label-printers" placeholder="Выберите или введите">
+              <datalist id="label-printers">
+                {% for printer in available_printers %}
+                  <option value="{{ printer }}"></option>
+                {% endfor %}
+              </datalist>
+            </div>
+            {% if available_printers_meta.updated_at %}
+              <div class="printer-meta">
+                Последняя синхронизация: {{ available_printers_meta.updated_at }}
+                {% if available_printers_meta.updated_by %} · {{ available_printers_meta.updated_by }}{% endif %}
+              </div>
+            {% else %}
+              <div class="printer-meta">Список принтеров пока не синхронизирован.</div>
+            {% endif %}
+            <div class="actions">
+              <a class="btn" href="/orders/processing/print-agent/install/" target="_blank" rel="noopener">Автозапуск агента</a>
+              <a class="btn" href="/orders/processing/print-agent/script/" target="_blank" rel="noopener">Скрипт агента</a>
+              <button class="btn" type="button" id="sync-printers-btn" data-sync-printers>Синхронизировать</button>
+            </div>
+            <div class="muted" style="font-size:12px;">
+              Команда синхронизации копируется в буфер, затем выполните ее в PowerShell из папки проекта.
+            </div>
+            {% if available_printers %}
+              <ul class="list">
+                {% for printer in available_printers %}
+                  <li>{{ printer }}</li>
+                {% endfor %}
+              </ul>
+            {% endif %}
+          </section>
+        </div>
+      </main>
+
+      <aside class="rail">
+        <section class="panel reveal" style="--i:1">
+          <div class="panel-header">
+            <div>
+              <h1 class="panel-title">Настройки оборудования и этикеток</h1>
+              <div class="panel-subtitle">Единая страница управления этикетками, принтерами и сканерами.</div>
+            </div>
+            <div class="actions">
+              <button class="btn primary" type="button" data-tab-target="labels">Этикетки</button>
+              <button class="btn" type="button" data-tab-target="scanners">Сканеры</button>
+              <button class="btn" type="button" data-tab-target="printers">Принтеры</button>
+              <a class="btn" href="/head-manager/">В кабинет</a>
+            </div>
+          </div>
+        </section>
+        <section class="panel reveal" style="--i:3">
+          <div class="panel-header">
+            <div>
+              <h2 class="panel-title">Сводка</h2>
+              <div class="panel-subtitle">Шаблоны и синхронизация оборудования.</div>
+            </div>
+          </div>
+          <div class="stat-list">
+            <div class="stat-item">
+              <div class="stat-value">{{ label_sizes|length }}</div>
+              <div class="stat-label">Шаблонов этикеток</div>
+            </div>
+            <div class="stat-item">
+              <div class="stat-value">{{ available_printers|length }}</div>
+              <div class="stat-label">Принтеров в списке</div>
+            </div>
+          </div>
+          {% if available_printers_meta.updated_at %}
+            <div class="meta-line">
+              Последняя синхронизация: {{ available_printers_meta.updated_at }}
+              {% if available_printers_meta.updated_by %} · {{ available_printers_meta.updated_by }}{% endif %}
+            </div>
+          {% else %}
+            <div class="meta-line">Список принтеров пока не синхронизирован.</div>
+          {% endif %}
+          <div class="tip">
+            Синхронизация выполняется на рабочем ПК из папки проекта, список хранится локально.
+          </div>
+        </section>
+      </aside>
+    </div>
+  </div>
+  {{ label_settings|json_script:"label-settings-data" }}
+  <script src="/static/vendor/jsbarcode.min.js"></script>
+  <script src="/static/vendor/qrcode.min.js"></script>
+  <script src="/static/vendor/html2canvas.min.js"></script>
+  <script>
+    (() => {
+      const tabButtons = Array.from(document.querySelectorAll('[data-tab-target]'));
+      const tabPanels = Array.from(document.querySelectorAll('[data-tab]'));
+      const tabStorageKey = 'labels_settings_tab';
+
+      const setTab = (next) => {
+        const target = tabPanels.find((panel) => panel.dataset.tab === next);
+        const normalized = target ? next : 'labels';
+        tabPanels.forEach((panel) => {
+          panel.classList.toggle('active', panel.dataset.tab === normalized);
+        });
+        tabButtons.forEach((button) => {
+          button.classList.toggle('primary', button.dataset.tabTarget === normalized);
+        });
+        localStorage.setItem(tabStorageKey, normalized);
+        return normalized;
+      };
+
+      if (tabPanels.length && tabButtons.length) {
+        const storedTab = localStorage.getItem(tabStorageKey);
+        setTab(storedTab || 'labels');
+        tabButtons.forEach((button) => {
+          button.addEventListener('click', () => setTab(button.dataset.tabTarget));
+        });
+      }
+
+      const labelSizeButtons = Array.from(document.querySelectorAll('[data-label-key]'));
+      const labelCards = Array.from(document.querySelectorAll('[data-label-card]'));
+      const labelSizeStorageKey = 'labels_settings_size';
+      const labelSettingsEl = document.getElementById('label-settings-data');
+      let labelSettings = {};
+      if (labelSettingsEl) {
+        try {
+          labelSettings = JSON.parse(labelSettingsEl.textContent || '{}') || {};
+        } catch (err) {
+          labelSettings = {};
+        }
+      }
+      const draftSettings = {};
+        const labelFields = [
+          'barcode',
+          'cz_code',
+          'article',
+        'name',
+        'size',
+        'brand',
+        'subject',
+        'color',
+        'composition',
+        'supplier',
+        'country',
+      ];
+      const textInputs = {};
+      const fontInputs = {};
+      const enabledInputs = {};
+      labelFields.forEach((field) => {
+        textInputs[field] = document.getElementById(`label-input-${field}`);
+        fontInputs[field] = document.getElementById(`label-font-${field}`);
+        enabledInputs[field] = document.getElementById(`label-enabled-${field}`);
+      });
+      const defaultText = {};
+      const defaultFonts = {};
+      const defaultEnabled = {};
+      labelFields.forEach((field) => {
+        defaultText[field] = textInputs[field] ? textInputs[field].value : '';
+        defaultFonts[field] = fontInputs[field] ? fontInputs[field].value : '';
+        defaultEnabled[field] = enabledInputs[field] ? enabledInputs[field].checked : true;
+      });
+      let activeLabelKey = null;
+
+      const readTextValues = () => {
+        const data = {};
+        labelFields.forEach((field) => {
+          data[field] = textInputs[field] ? (textInputs[field].value || '').trim() : '';
+        });
+        return data;
+      };
+
+      const readFontValues = () => {
+        const data = {};
+        labelFields.forEach((field) => {
+          const raw = fontInputs[field] ? fontInputs[field].value : '';
+          const parsed = parseFloat(String(raw).replace(',', '.'));
+          if (Number.isFinite(parsed)) {
+            data[field] = parsed;
+          }
+        });
+        return data;
+      };
+
+      const getSettingsForKey = (key) => {
+        const entry = (labelSettings && labelSettings[key]) || {};
+        const text = Object.assign({}, defaultText, entry.text || {});
+        const fonts = Object.assign({}, defaultFonts, entry.fonts || {});
+        const enabled = Object.assign({}, defaultEnabled, entry.enabled || {});
+        return { text, fonts, enabled };
+      };
+
+      const applyTableSettings = (key) => {
+        const settings = getSettingsForKey(key);
+        labelFields.forEach((field) => {
+          if (textInputs[field]) {
+            textInputs[field].value = settings.text[field] || '';
+          }
+          if (fontInputs[field]) {
+            const fontValue = settings.fonts[field];
+            if (fontValue !== undefined && fontValue !== null && fontValue !== '') {
+              fontInputs[field].value = fontValue;
+            }
+          }
+          if (enabledInputs[field]) {
+            enabledInputs[field].checked = settings.enabled[field] !== false;
+          }
+        });
+      };
+
+      const snapshotSettings = () => {};
+
+      const setLabelSize = (nextKey) => {
+        if (activeLabelKey) {
+          snapshotSettings(activeLabelKey);
+        }
+        const fallbackKey = labelCards[0] ? labelCards[0].dataset.labelCard : null;
+        const normalized = labelCards.find((card) => card.dataset.labelCard === nextKey)
+          ? nextKey
+          : fallbackKey;
+        labelCards.forEach((card) => {
+          card.style.display = card.dataset.labelCard === normalized ? 'inline-grid' : 'none';
+        });
+        labelSizeButtons.forEach((button) => {
+          button.classList.toggle('primary', button.dataset.labelKey === normalized);
+        });
+        if (normalized) {
+          activeLabelKey = normalized;
+            applyTableSettings(normalized);
+            if (typeof toggleLabelOnlyRows === 'function') {
+              toggleLabelOnlyRows(normalized);
+            }
+            localStorage.setItem(labelSizeStorageKey, normalized);
+        }
+        return normalized;
+      };
+
+      const syncButtons = Array.from(document.querySelectorAll('[data-sync-printers]'));
+      if (syncButtons.length) {
+        const command = 'powershell -ExecutionPolicy Bypass -File sync_printers.ps1';
+        syncButtons.forEach((btn) => {
+          btn.addEventListener('click', async () => {
+            try {
+              await navigator.clipboard.writeText(command);
+              alert('Команда синхронизации скопирована. Вставьте ее в PowerShell, запущенный в папке проекта.');
+            } catch (err) {
+              prompt('Скопируйте команду и выполните в PowerShell (в папке проекта):', command);
+            }
+          });
+        });
+      }
+
+      const printerInputs = Array.from(document.querySelectorAll('[data-label-printer]'));
+      if (printerInputs.length) {
+        const setPrinterValue = (value) => {
+          printerInputs.forEach((input) => {
+            if (input.value !== value) {
+              input.value = value;
+            }
+          });
+        };
+        const stored = localStorage.getItem('processing_label_printer') || localStorage.getItem('label_printer');
+        if (stored) {
+          setPrinterValue(stored);
+        }
+        printerInputs.forEach((input) => {
+          input.addEventListener('change', () => {
+            const value = input.value.trim();
+            setPrinterValue(value);
+            localStorage.setItem('processing_label_printer', value);
+            localStorage.setItem('label_printer', value);
+          });
+        });
+      }
+    })();
+  </script>
+  <script>
+    (() => {
+      const panel = document.querySelector('[data-tab="labels"]');
+      if (!panel) {
+        return;
+      }
+
+      const table = panel.querySelector('[data-label-table]');
+      const labelCards = Array.from(panel.querySelectorAll('[data-label-card]'));
+      const labelRootByKey = new Map();
+      labelCards.forEach((card) => {
+        const key = card.dataset.labelCard;
+        const root = card.querySelector('.label-preview');
+        if (key && root) {
+          labelRootByKey.set(key, root);
+        }
+      });
+      if (!table || !labelRootByKey.size) {
+        return;
+      }
+
+      const labelSizeButtons = Array.from(panel.querySelectorAll('[data-label-key]'));
+      const refreshBtn = panel.querySelector('#label-refresh-btn');
+      const saveBtn = panel.querySelector('#label-save-btn');
+      const statusLine = panel.querySelector('[data-print-status]');
+        const lastActivityLine = panel.querySelector('[data-print-last-activity]');
+        const lastErrorLine = panel.querySelector('[data-print-last-error]');
+        const printButtons = Array.from(panel.querySelectorAll('[data-label-print]'));
+
+        const toggleLabelOnlyRows = (key) => {
+          const rows = Array.from(table.querySelectorAll('[data-label-only]'));
+          rows.forEach((row) => {
+            const onlyKey = row.dataset.labelOnly || '';
+            row.style.display = onlyKey && key !== onlyKey ? 'none' : '';
+          });
+        };
+
+      const labelSettingsEl = document.getElementById('label-settings-data');
+      let labelSettings = {};
+      if (labelSettingsEl) {
+        try {
+          labelSettings = JSON.parse(labelSettingsEl.textContent || '{}') || {};
+        } catch (err) {
+          labelSettings = {};
+        }
+      }
+      const draftSettings = {};
+
+        const fields = [
+          'barcode',
+          'cz_code',
+          'article',
+        'name',
+        'size',
+        'brand',
+        'subject',
+        'color',
+        'composition',
+        'supplier',
+        'country',
+      ];
+      const inputs = {};
+      fields.forEach((field) => {
+        const row = table.querySelector(`[data-field="${field}"]`);
+        if (!row) {
+          return;
+        }
+        inputs[field] = {
+          text: row.querySelector('[data-label-text]'),
+          font: row.querySelector('[data-label-font]'),
+          enabled: row.querySelector('[data-label-enabled]'),
+        };
+      });
+
+      const defaultText = {};
+      const defaultFonts = {};
+      const defaultEnabled = {};
+      fields.forEach((field) => {
+        defaultText[field] = inputs[field] && inputs[field].text ? inputs[field].text.value : '';
+        defaultFonts[field] = inputs[field] && inputs[field].font ? inputs[field].font.value : '';
+        defaultEnabled[field] = inputs[field] && inputs[field].enabled
+          ? inputs[field].enabled.checked
+          : true;
+      });
+
+      const labelSizeStorageKey = 'labels_settings_size';
+      const modeStorageKeys = ['processing_label_mode', 'label_mode', 'labels_label_mode'];
+      const labelModeByKey = {
+        item: 'no-cz',
+        item_cz: 'cz',
+      };
+      let activeLabelKey = null;
+      const getActiveKey = () => (
+        activeLabelKey || (labelCards[0] ? labelCards[0].dataset.labelCard : null)
+      );
+      const getStoredMode = () => {
+        for (const key of modeStorageKeys) {
+          const value = localStorage.getItem(key);
+          if (value) {
+            return value;
+          }
+        }
+        return 'cz';
+      };
+      const resolveMode = (key) => labelModeByKey[key] || getStoredMode();
+
+      const parseFont = (value) => {
+        const raw = (value || '').trim();
+        if (!raw) {
+          return null;
+        }
+        const parsed = parseFloat(raw.replace(',', '.'));
+        return Number.isFinite(parsed) ? parsed : null;
+      };
+
+      const limitText = (value, maxLength = 30) => {
+        const text = value ? String(value).trim() : '';
+        if (!text) {
+          return '';
+        }
+        if (text.length <= maxLength) {
+          return text;
+        }
+        return text.slice(0, maxLength);
+      };
+
+      const readEnabledValues = () => {
+        const data = {};
+        fields.forEach((field) => {
+          const enabled = inputs[field] && inputs[field].enabled
+            ? inputs[field].enabled.checked
+            : true;
+          data[field] = enabled;
+        });
+        return data;
+      };
+
+      const readTextValues = (enabled) => {
+        const data = {};
+        fields.forEach((field) => {
+          let value = inputs[field] && inputs[field].text ? inputs[field].text.value : '';
+          value = value ? String(value).trim() : '';
+          if (enabled && enabled[field] === false) {
+            value = '';
+          }
+            if (field !== 'barcode' && field !== 'cz_code') {
+              value = limitText(value);
+            }
+          data[field] = value;
+        });
+        return data;
+      };
+
+      const readFontValues = () => {
+        const data = {};
+        fields.forEach((field) => {
+          const value = inputs[field] && inputs[field].font ? inputs[field].font.value : '';
+          const parsed = parseFont(value);
+          if (Number.isFinite(parsed)) {
+            data[field] = parsed;
+          }
+        });
+        return data;
+      };
+
+      const snapshotSettings = (key) => {
+        if (!key) {
+          return;
+        }
+        const enabled = readEnabledValues();
+        draftSettings[key] = {
+          text: readTextValues(enabled),
+          fonts: readFontValues(),
+          enabled,
+        };
+      };
+
+      const getSettingsForKey = (key) => {
+        const entry = (draftSettings && draftSettings[key])
+          || (labelSettings && labelSettings[key])
+          || {};
+        const text = Object.assign({}, defaultText, entry.text || {});
+        const fonts = Object.assign({}, defaultFonts, entry.fonts || {});
+        const enabled = Object.assign({}, defaultEnabled, entry.enabled || {});
+        return { text, fonts, enabled };
+      };
+
+      const applyTableSettings = (key) => {
+        const settings = getSettingsForKey(key);
+        fields.forEach((field) => {
+          if (inputs[field] && inputs[field].text) {
+            inputs[field].text.value = settings.text[field] || '';
+          }
+          if (inputs[field] && inputs[field].font) {
+            const fontValue = settings.fonts[field];
+            if (fontValue !== undefined && fontValue !== null && fontValue !== '') {
+              inputs[field].font.value = fontValue;
+            }
+          }
+          if (inputs[field] && inputs[field].enabled) {
+            inputs[field].enabled.checked = settings.enabled[field] !== false;
+          }
+        });
+      };
+
+      const setLabelSize = (nextKey) => {
+        const fallbackKey = labelCards[0] ? labelCards[0].dataset.labelCard : null;
+        const normalized = labelCards.find((card) => card.dataset.labelCard === nextKey)
+          ? nextKey
+          : fallbackKey;
+        labelCards.forEach((card) => {
+          card.style.display = card.dataset.labelCard === normalized ? 'inline-grid' : 'none';
+        });
+        labelSizeButtons.forEach((button) => {
+          button.classList.toggle('primary', button.dataset.labelKey === normalized);
+        });
+          if (normalized) {
+            activeLabelKey = normalized;
+            applyTableSettings(normalized);
+            if (typeof toggleLabelOnlyRows === 'function') {
+              toggleLabelOnlyRows(normalized);
+            }
+            localStorage.setItem(labelSizeStorageKey, normalized);
+          }
+        return normalized;
+      };
+
+      const applyInlineFont = (el, size) => {
+        if (!el) {
+          return;
+        }
+        if (Number.isFinite(size)) {
+          const px = Math.round(size * 3.78 * 100) / 100;
+          el.style.setProperty('font-size', `${px}px`, 'important');
+          el.style.setProperty('line-height', '1.05', 'important');
+        } else {
+          el.style.removeProperty('font-size');
+          el.style.removeProperty('line-height');
+        }
+      };
+
+      const setInfoLine = (root, key, value, label, size) => {
+        const el = root.querySelector(`[data-info="${key}"]`);
+        if (!el) {
+          return;
+        }
+        const text = value ? String(value).trim() : '';
+        if (text) {
+          el.textContent = label ? `${label}${text}` : text;
+          el.style.display = '';
+          applyInlineFont(el, size);
+        } else {
+          el.textContent = '';
+          el.style.display = 'none';
+        }
+      };
+
+      const setNoCzLine = (root, key, value, label, size) => {
+        const el = root.querySelector(`[data-no-cz="${key}"]`);
+        if (!el) {
+          return;
+        }
+        const text = value ? String(value).trim() : '';
+        if (text) {
+          el.textContent = label ? `${label}${text}` : text;
+          el.style.display = '';
+          applyInlineFont(el, size);
+        } else {
+          el.textContent = '';
+          el.style.display = 'none';
+        }
+      };
+
+      const setRowVisible = (root, selector, hasValue) => {
+        const row = root.querySelector(selector);
+        if (!row) {
+          return;
+        }
+        row.style.display = hasValue ? '' : 'none';
+      };
+
+      const renderBarcode = (root, value) => {
+        const raw = value ? String(value).trim() : '';
+        const digits = raw.replace(/\D/g, '');
+        const isValidEan13 = (code) => {
+          if (!/^\d{13}$/.test(code)) {
+            return false;
+          }
+          let sum = 0;
+          for (let i = 0; i < 12; i += 1) {
+            const digit = Number(code[i]);
+            sum += (i % 2 === 0 ? 1 : 3) * digit;
+          }
+          const check = (10 - (sum % 10)) % 10;
+          return check === Number(code[12]);
+        };
+        const payload = digits || raw || '0000000000000';
+        const format = isValidEan13(digits) ? 'ean13' : 'CODE128';
+        root.querySelectorAll('[data-barcode-value]').forEach((el) => {
+          if (digits || raw) {
+            el.textContent = digits || raw;
+            el.style.display = '';
+          } else {
+            el.textContent = '';
+            el.style.display = 'none';
+          }
+        });
+        if (!digits && !raw) {
+          root.querySelectorAll('[data-barcode-svg]').forEach((el) => { el.innerHTML = ''; });
+          root.querySelectorAll('[data-barcode-no-cz]').forEach((el) => { el.innerHTML = ''; });
+          return;
+        }
+        if (!window.JsBarcode) {
+          return;
+        }
+        const baseOptions = {
+          displayValue: false,
+          margin: 0,
+          lineColor: '#111',
+          height: 24,
+          width: 1,
+          fontSize: 5,
+          textMargin: 0,
+        };
+        const draw = (svg) => {
+          try {
+            JsBarcode(svg, payload, Object.assign({ format }, baseOptions));
+          } catch (err) {
+            JsBarcode(svg, raw || digits || '0000000000000', Object.assign({ format: 'CODE128' }, baseOptions));
+          }
+          svg.setAttribute('preserveAspectRatio', 'none');
+          svg.setAttribute('width', '100%');
+          svg.setAttribute('height', '100%');
+        };
+        root.querySelectorAll('[data-barcode-svg]').forEach(draw);
+        root.querySelectorAll('[data-barcode-no-cz]').forEach(draw);
+      };
+
+      const renderQr = (root, value, enabled) => {
+        const box = root.querySelector('[data-qr-box]');
+        if (!box) {
+          return;
+        }
+        box.innerHTML = '';
+        const text = value ? String(value).trim() : '';
+        if (!enabled || !text || !window.QRCode) {
+          return;
+        }
+        new QRCode(box, {
+          text,
+          width: 64,
+          height: 64,
+          correctLevel: QRCode.CorrectLevel.M,
+        });
+      };
+
+      const applyFontVar = (root, name, size) => {
+        if (!root) {
+          return;
+        }
+        if (Number.isFinite(size)) {
+          root.style.setProperty(name, `${size}mm`);
+        } else {
+          root.style.removeProperty(name);
+        }
+      };
+
+      const applyFontSizes = (root, sizes) => {
+        const safeSizes = sizes || {};
+        applyFontVar(root, '--font-barcode', safeSizes.barcode);
+        applyFontVar(root, '--font-article', safeSizes.article);
+        applyFontVar(root, '--font-name', safeSizes.name);
+        applyFontVar(root, '--font-size', safeSizes.size);
+        applyFontVar(root, '--font-brand', safeSizes.brand);
+        applyFontVar(root, '--font-subject', safeSizes.subject);
+        applyFontVar(root, '--font-color', safeSizes.color);
+        applyFontVar(root, '--font-composition', safeSizes.composition);
+        applyFontVar(root, '--font-supplier', safeSizes.supplier);
+        applyFontVar(root, '--font-country', safeSizes.country);
+      };
+
+        const updateLabelRoot = (root, data, mode, sizes) => {
+          const safeSizes = sizes || {};
+          const labelType = root ? root.dataset.labelType : '';
+          const isCzLabel = labelType === 'item_cz';
+          root.classList.toggle('no-cz', mode === 'no-cz');
+          applyFontSizes(root, safeSizes);
+          setInfoLine(root, 'name', data.name, null);
+          setInfoLine(root, 'size', data.size, 'р-р: ');
+          setInfoLine(root, 'brand', data.brand, isCzLabel ? 'Бренд: ' : null);
+          setInfoLine(root, 'subject', data.subject, null);
+          setInfoLine(root, 'color', data.color, null);
+          setInfoLine(root, 'composition', data.composition, isCzLabel ? null : 'Состав: ');
+          setInfoLine(root, 'supplier', data.supplier, 'Поставщик: ');
+          setInfoLine(root, 'article', data.article, isCzLabel ? 'Арт. ' : 'Артикул: ', safeSizes.article);
+          setInfoLine(root, 'cz_code', data.cz_code, null, safeSizes.cz_code);
+
+        setNoCzLine(root, 'article', data.article ? `Артикул: ${data.article}` : '', null);
+        setNoCzLine(root, 'name', data.name, null);
+        setNoCzLine(root, 'brand', data.brand, 'Бренд: ', safeSizes.brand);
+        setNoCzLine(root, 'color', data.color, 'Цвет: ');
+        setNoCzLine(root, 'composition', data.composition, 'Состав: ');
+        setNoCzLine(root, 'supplier', data.supplier, 'Поставщик: ');
+        setNoCzLine(root, 'country', data.country, 'Страна: ');
+        setNoCzLine(root, 'size', data.size, 'Р-р: ');
+        const hasBrandColor = Boolean(data.brand || data.color);
+        setRowVisible(root, '[data-info-row="brand-color"]', hasBrandColor);
+        setRowVisible(root, '[data-no-cz-row="brand-color"]', hasBrandColor);
+
+          renderBarcode(root, data.barcode);
+          const qrValue = (labelType === 'item_cz' && data.cz_code)
+            ? data.cz_code
+            : [data.barcode, data.article].filter(Boolean).join(' ');
+          renderQr(root, qrValue, mode === 'cz');
+        };
+
+      const updateActivePreview = () => {
+        const key = getActiveKey();
+        const root = key ? labelRootByKey.get(key) : null;
+        if (!root) {
+          return;
+        }
+        const enabled = readEnabledValues();
+        const data = readTextValues(enabled);
+        const sizes = readFontValues();
+        const mode = resolveMode(key);
+        updateLabelRoot(root, data, mode, sizes);
+      };
+
+      const syncActiveSettings = () => {
+        const key = getActiveKey();
+        snapshotSettings(key);
+      };
+
+      const formatDateTime = (date) => {
+        const pad = (value) => String(value).padStart(2, '0');
+        return `${pad(date.getDate())}.${pad(date.getMonth() + 1)}.${date.getFullYear()} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+      };
+
+      const setStatusLine = (text) => {
+        if (statusLine) {
+          statusLine.textContent = `Статус печати: ${text}`;
+        }
+      };
+
+      const bumpQueueStatus = () => {
+        if (!statusLine) {
+          return;
+        }
+        const current = statusLine.textContent || '';
+        const match = current.match(/В очереди:\s*(\d+)/);
+        const count = match ? Number(match[1]) : 0;
+        const suffix = current.includes('агент не активен') ? ' (агент не активен)' : '';
+        setStatusLine(`В очереди: ${Math.max(count + 1, 1)}${suffix}`);
+      };
+
+      const setLastActivity = (text) => {
+        if (!lastActivityLine) {
+          return;
+        }
+        lastActivityLine.textContent = `Последняя активность: ${text}`;
+        lastActivityLine.style.display = '';
+      };
+
+      const clearLastError = () => {
+        if (!lastErrorLine) {
+          return;
+        }
+        lastErrorLine.style.display = 'none';
+      };
+
+      const getSelectedPrinter = () => {
+        const printerInputs = Array.from(document.querySelectorAll('[data-label-printer]'));
+        for (const input of printerInputs) {
+          const value = (input.value || '').trim();
+          if (value) {
+            return value;
+          }
+        }
+        return (
+          localStorage.getItem('processing_label_printer')
+          || localStorage.getItem('label_printer')
+          || ''
+        ).trim();
+      };
+
+      const getLabelDimensions = (card, root) => {
+        const width = parseFloat((card && card.dataset.labelWidth) || (root && root.dataset.labelWidth)) || 58;
+        const height = parseFloat((card && card.dataset.labelHeight) || (root && root.dataset.labelHeight)) || 40;
+        return { width, height };
+      };
+
+      const applyLabelDimensions = (target, dims) => {
+        if (!target || !dims) {
+          return;
+        }
+        target.style.setProperty('--label-width', `${dims.width}mm`);
+        target.style.setProperty('--label-height', `${dims.height}mm`);
+        target.style.setProperty('--label-scale', '1');
+      };
+
+      const buildLabelImage = async (root, data, mode, sizes, dims) => {
+        if (!window.html2canvas) {
+          alert('Библиотека печати не загружена.');
+          return '';
+        }
+        const clone = root.cloneNode(true);
+        applyLabelDimensions(clone, dims);
+        const holder = document.createElement('div');
+        holder.style.position = 'fixed';
+        holder.style.left = '-9999px';
+        holder.style.top = '0';
+        holder.style.background = '#ffffff';
+        holder.style.padding = '0';
+        holder.style.margin = '0';
+        holder.appendChild(clone);
+        document.body.appendChild(holder);
+        updateLabelRoot(clone, data, mode, sizes);
+        await new Promise((resolve) => requestAnimationFrame(() => resolve()));
+        try {
+          const printScale = 2.12;
+          const canvas = await window.html2canvas(clone, {
+            backgroundColor: '#ffffff',
+            scale: printScale,
+            logging: false,
+            useCORS: true,
+          });
+          return canvas.toDataURL('image/png');
+        } catch (err) {
+          return '';
+        } finally {
+          holder.remove();
+        }
+      };
+
+      const enqueuePrintJob = async (card) => {
+        if (!card) {
+          return;
+        }
+        const root = card.querySelector('.label-preview');
+        if (!root) {
+          return;
+        }
+        const enabled = readEnabledValues();
+        const data = readTextValues(enabled);
+        const sizes = readFontValues();
+        const mode = resolveMode(card.dataset.labelCard);
+        const printer = getSelectedPrinter();
+        if (!printer) {
+          setStatusLine('Не выбран принтер');
+          alert('Выберите принтер этикеток.');
+          return;
+        }
+        if (!data.barcode) {
+          setStatusLine('Не заполнен ШК');
+          alert('Заполните ШК для печати.');
+          return;
+        }
+        setStatusLine('Подготовка этикетки…');
+        clearLastError();
+        const dims = getLabelDimensions(card, root);
+        const image = await buildLabelImage(root, data, mode, sizes, dims);
+        const base64 = image.split(',')[1] || '';
+        if (!base64) {
+          setStatusLine('Ошибка формирования этикетки');
+          alert('Не удалось сформировать этикетку.');
+          return;
+        }
+        try {
+          setStatusLine('Отправка в очередь печати…');
+          const resp = await fetch('/orders/processing/print-jobs/', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-CSRFToken': getCsrfToken(),
+            },
+            credentials: 'same-origin',
+            body: JSON.stringify({
+              order_id: '',
+              card_id: '',
+              article: data.article || '',
+              barcode: data.barcode || '',
+              size: data.size || '',
+              printer_name: printer,
+              label_png_base64: base64,
+              label_width_mm: dims.width,
+              label_height_mm: dims.height,
+            }),
+          });
+          if (!resp.ok) {
+            const message = await resp.text();
+            setStatusLine('Ошибка очереди печати');
+            alert(`Ошибка очереди печати: ${message || resp.status}`);
+            return;
+          }
+          bumpQueueStatus();
+          setLastActivity(formatDateTime(new Date()));
+          clearLastError();
+        } catch (err) {
+          setStatusLine('Ошибка отправки на печать');
+          alert('Не удалось отправить задание на печать.');
+        }
+      };
+
+      if (printButtons.length) {
+        printButtons.forEach((btn) => {
+          btn.addEventListener('click', () => {
+            const card = btn.closest('[data-label-card]');
+            enqueuePrintJob(card);
+          });
+        });
+      }
+
+      const handleTableUpdate = () => {
+        syncActiveSettings();
+        updateActivePreview();
+      };
+      table.addEventListener('input', handleTableUpdate);
+      table.addEventListener('change', handleTableUpdate);
+
+      if (refreshBtn) {
+        refreshBtn.addEventListener('click', () => {
+          const key = getActiveKey();
+          if (!key) {
+            return;
+          }
+          applyTableSettings(key);
+          updateActivePreview();
+        });
+      }
+
+      const getCsrfToken = () => {
+        const match = document.cookie.match(/csrftoken=([^;]+)/);
+        if (match) {
+          return decodeURIComponent(match[1]);
+        }
+        const hidden = document.querySelector('#label-settings-csrf input[name="csrfmiddlewaretoken"]');
+        return hidden ? hidden.value : '';
+      };
+
+      if (saveBtn) {
+        saveBtn.addEventListener('click', async () => {
+          const key = getActiveKey();
+          if (!key) {
+            return;
+          }
+          const enabled = readEnabledValues();
+          const payload = {
+            key,
+            text: readTextValues(enabled),
+            fonts: readFontValues(),
+            enabled,
+          };
+          try {
+            const resp = await fetch(window.location.pathname, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCsrfToken(),
+              },
+              body: JSON.stringify(payload),
+            });
+            if (!resp.ok) {
+              const message = await resp.text();
+              alert(`Ошибка сохранения: ${message || resp.status}`);
+              return;
+            }
+            labelSettings[key] = payload;
+            draftSettings[key] = payload;
+            alert('Параметры сохранены.');
+          } catch (err) {
+            alert('Не удалось сохранить параметры.');
+          }
+        });
+      }
+
+      if (labelSizeButtons.length && labelCards.length) {
+        const storedSize = localStorage.getItem(labelSizeStorageKey);
+        setLabelSize(storedSize || labelCards[0].dataset.labelCard);
+        labelSizeButtons.forEach((btn) => {
+          btn.addEventListener('click', () => {
+            setLabelSize(btn.dataset.labelKey);
+            updateActivePreview();
+          });
+        });
+      }
+
+      updateActivePreview();
+    })();
+  </script>
+</body>
+</html>
