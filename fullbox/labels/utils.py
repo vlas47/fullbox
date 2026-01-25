@@ -42,6 +42,9 @@ LABEL_SIZES = [
 
 LABEL_FIELDS = [
     "barcode",
+    "box_client",
+    "box_basis",
+    "box_pallet_number",
     "cz_code",
     "article",
     "name",
