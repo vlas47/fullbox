@@ -17,6 +17,7 @@ class Employee(models.Model):
         ('processing_head', 'Руководитель участка обработки'),
         ('manager', 'Менеджер'),
         ('storekeeper', 'Кладовщик'),
+        ('reachtruck_driver', 'Водитель ричтрака'),
         ('picker', 'Сборщик'),
         ('developer', 'Разработчик'),
     ]

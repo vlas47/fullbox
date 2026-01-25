@@ -7,6 +7,7 @@ from django.shortcuts import get_object_or_404, redirect
 from .models import SKU
 from .forms import SKUForm
 from audit.models import log_sku_change
+from labels.utils import load_label_settings
 
 
 class SKUListView(ListView):
@@ -253,6 +254,7 @@ class SKUFormMixin:
         ctx["mode"] = getattr(self, "mode", "edit")
         ctx["title"] = getattr(self, "title", "SKU")
         ctx["submit_label"] = getattr(self, "submit_label", "Сохранить")
+        ctx["label_settings"] = load_label_settings()
         return ctx
 
 

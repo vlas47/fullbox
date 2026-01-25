@@ -337,6 +337,14 @@
       gap: 6px;
       transition: transform 0.2s ease, box-shadow 0.2s ease;
     }
+    .order-card.order-receiving {
+      border-color: rgba(245,158,11,0.3);
+      background: linear-gradient(135deg, rgba(245,158,11,0.12), rgba(255,248,230,0.8));
+    }
+    .order-card.order-processing {
+      border-color: rgba(14,107,91,0.26);
+      background: linear-gradient(135deg, rgba(14,107,91,0.12), rgba(14,107,91,0.04));
+    }
     .order-card.attention {
       border-color: var(--sun);
       background: linear-gradient(135deg, rgba(242,183,71,0.2), rgba(14,107,91,0.08));
@@ -460,10 +468,6 @@
               <span class="nav-title">Заявка на обработку</span>
               <span class="nav-sub">Техническая карта</span>
             </a>
-            <a class="nav-link" href="/orders/packing/?client={{ selected_client.id }}">
-              <span class="nav-title">Заявка на упаковку</span>
-              <span class="nav-sub">Подготовка товара</span>
-            </a>
             <a class="nav-link" href="/sklad/journal/?client={{ selected_client.id }}">
               <span class="nav-title">Складские остатки</span>
               <span class="nav-sub">Актуальные стоки</span>
@@ -517,7 +521,7 @@
                 <div class="orders-list">
                   {% if column.orders %}
                     {% for order in column.orders %}
-                      <article class="order-card{% if order.attention %} attention{% endif %}">
+                      <article class="order-card{% if order.order_type == "receiving" %} order-receiving{% elif order.order_type == "processing" %} order-processing{% endif %}{% if order.attention %} attention{% endif %}">
                         <div class="order-title">
                           <a href="{{ order.detail_url }}">{{ order.title }}</a>
                         </div>

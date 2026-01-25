@@ -5,6 +5,14 @@
   .task-col-header { display:flex; justify-content:space-between; align-items:center; padding:10px 12px; border-bottom:1px dashed var(--stroke); font-weight:600; }
   .task-col-body { display:grid; gap:8px; padding:10px; align-content:start; align-items:start; }
   .task-card { padding:10px; border:1px solid var(--stroke); border-radius:12px; background:var(--card, rgba(255,255,255,0.02)); }
+  .task-card.order-receiving {
+    border-color: rgba(34,197,94,0.35);
+    background: linear-gradient(135deg, rgba(34,197,94,0.12), rgba(236,253,245,0.75));
+  }
+  .task-card.order-processing {
+    border-color: rgba(59,130,246,0.32);
+    background: linear-gradient(135deg, rgba(59,130,246,0.12), rgba(239,246,255,0.8));
+  }
   .task-card.attention {
     border-color: #f59e0b;
     background: linear-gradient(135deg, rgba(245,158,11,0.18), rgba(255,248,230,0.9));
@@ -79,7 +87,7 @@
         <div class="task-col-body">
           {% if column.tasks %}
             {% for task in column.tasks %}
-              <div class="task-card{% if task_panel_attention_employee_id and task.assigned_to_id == task_panel_attention_employee_id %}{% if task_panel_role == "manager" and task.status == "done" %}{% elif task.route and "/orders/receiving/" in task.route and "/act/print/" not in task.route %}{% else %} attention{% endif %}{% endif %}">
+              <div class="task-card{% if task.route and "/orders/receiving/" in task.route %} order-receiving{% elif task.route and "/orders/processing/" in task.route %} order-processing{% endif %}{% if task_panel_attention_employee_id and task.assigned_to_id == task_panel_attention_employee_id %}{% if task_panel_role == "manager" and task.status == "done" %}{% elif task.route and "/orders/receiving/" in task.route and "/act/print/" not in task.route %}{% else %} attention{% endif %}{% endif %}">
                 <div class="task-title">
                   {% if task.route and "/orders/receiving/" in task.route %}
                     {% if "/act/print/" in task.route %}
@@ -87,40 +95,78 @@
                     {% else %}
                       <a href="{{ task.route }}">{{ task.display_title }}</a>
                     {% endif %}
+                  {% elif task.route and "/orders/processing/" in task.route %}
+                    <a href="{{ task.route }}">{{ task.display_title }}</a>
                   {% else %}
                     <a href="{% url 'todo:detail' task.id %}">{{ task.display_title }}</a>
                   {% endif %}
                 </div>
-                <div class="task-meta">
-                  {% if task_panel_role == "manager" and task.assigned_to and task.assigned_to.role == "storekeeper" and task.observer and task.observer.role == task_panel_role %}
-                    Передана на склад: текущий ответственный {{ task.assigned_to.full_name|short_name }} · Срок:
-                    {% if task.due_date %}
-                      {{ task.due_date|date:'d.m.y H:i' }}
-                    {% else %}
-                      -
-                    {% endif %}
-                  {% elif task_panel_role == "manager" and task.assigned_to and task.assigned_to.role == "storekeeper" and task.created_by and task.created_by.username == task_panel_role %}
-                    Передана на склад: текущий ответственный {{ task.assigned_to.full_name|short_name }} · Срок:
-                    {% if task.due_date %}
-                      {{ task.due_date|date:'d.m.y H:i' }}
-                    {% else %}
-                      -
-                    {% endif %}
+                {% if task_panel_role == "storekeeper" and task.route %}
+                  {% if "/orders/receiving/" in task.route or "/orders/processing/" in task.route %}
                   {% else %}
-                    Исполнитель:
-                    {% if task.assigned_to %}
-                      {{ task.assigned_to.full_name }}
-                    {% else %}
-                      не назначен
-                    {% endif %}
-                    · Срок:
-                    {% if task.due_date %}
-                      {{ task.due_date|date:'d.m.y H:i' }}
-                    {% else %}
-                      -
-                    {% endif %}
+                    <div class="task-meta">
+                      {% if task_panel_role == "manager" and task.assigned_to and task.assigned_to.role == "storekeeper" and task.observer and task.observer.role == task_panel_role %}
+                        Передана на склад: текущий ответственный {{ task.assigned_to.full_name|short_name }} · Срок:
+                        {% if task.due_date %}
+                          {{ task.due_date|date:'d.m.y H:i' }}
+                        {% else %}
+                          -
+                        {% endif %}
+                      {% elif task_panel_role == "manager" and task.assigned_to and task.assigned_to.role == "storekeeper" and task.created_by and task.created_by.username == task_panel_role %}
+                        Передана на склад: текущий ответственный {{ task.assigned_to.full_name|short_name }} · Срок:
+                        {% if task.due_date %}
+                          {{ task.due_date|date:'d.m.y H:i' }}
+                        {% else %}
+                          -
+                        {% endif %}
+                      {% else %}
+                        Исполнитель:
+                        {% if task.assigned_to %}
+                          {{ task.assigned_to.full_name }}
+                        {% else %}
+                          не назначен
+                        {% endif %}
+                        · Срок:
+                        {% if task.due_date %}
+                          {{ task.due_date|date:'d.m.y H:i' }}
+                        {% else %}
+                          -
+                        {% endif %}
+                      {% endif %}
+                    </div>
                   {% endif %}
-                </div>
+                {% else %}
+                  <div class="task-meta">
+                    {% if task_panel_role == "manager" and task.assigned_to and task.assigned_to.role == "storekeeper" and task.observer and task.observer.role == task_panel_role %}
+                      Передана на склад: текущий ответственный {{ task.assigned_to.full_name|short_name }} · Срок:
+                      {% if task.due_date %}
+                        {{ task.due_date|date:'d.m.y H:i' }}
+                      {% else %}
+                        -
+                      {% endif %}
+                    {% elif task_panel_role == "manager" and task.assigned_to and task.assigned_to.role == "storekeeper" and task.created_by and task.created_by.username == task_panel_role %}
+                      Передана на склад: текущий ответственный {{ task.assigned_to.full_name|short_name }} · Срок:
+                      {% if task.due_date %}
+                        {{ task.due_date|date:'d.m.y H:i' }}
+                      {% else %}
+                        -
+                      {% endif %}
+                    {% else %}
+                      Исполнитель:
+                      {% if task.assigned_to %}
+                        {{ task.assigned_to.full_name }}
+                      {% else %}
+                        не назначен
+                      {% endif %}
+                      · Срок:
+                      {% if task.due_date %}
+                        {{ task.due_date|date:'d.m.y H:i' }}
+                      {% else %}
+                        -
+                      {% endif %}
+                    {% endif %}
+                  </div>
+                {% endif %}
                 {% if task.order_status_label %}
                   {% with status_lower=task.order_status_label|lower %}
                     {% if "в ожидании" in status_lower %}
@@ -151,7 +197,7 @@
                     <span class="task-meta-value">{{ task.order_client_label }}</span>
                   </div>
                 {% endif %}
-                {% if not task.route or "/orders/receiving/" not in task.route %}
+                {% if not task.route or "/orders/receiving/" not in task.route and "/orders/processing/" not in task.route %}
                   <div class="task-tags">
                     <span class="task-tag {{ task.priority }}">{{ task.get_priority_display }}</span>
                     {% if task.created_by %}

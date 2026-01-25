@@ -55,11 +55,14 @@ INSTALLED_APPS = [
     "employees",
     "head_manager",
     "processing_head",
+    "reachtruck",
     "todo",
     "market_sync",
     "teammanager",
     "sklad",
     "stockmap",
+    "labels",
+    "marking",
 ]
 
 MIDDLEWARE = [
@@ -168,5 +171,6 @@ JOURNAL_REMOTE_URL = os.environ.get("JOURNAL_REMOTE_URL", "").strip()
 JOURNAL_REMOTE_CACHE_SECONDS = int(
     os.environ.get("JOURNAL_REMOTE_CACHE_SECONDS", "300")
 )
+PRINT_AGENT_TOKEN = os.environ.get("PRINT_AGENT_TOKEN", "").strip()
 
 

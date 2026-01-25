@@ -19,6 +19,7 @@ ALL_ROLES_KEY = "__all__"
 STATUS_ORDER = ["backlog", "in_progress", "blocked", "done"]
 STATUS_LABELS = dict(Task.STATUS_CHOICES)
 _RECEIVING_ROUTE_RE = re.compile(r"/orders/receiving/([^/]+)/")
+_PROCESSING_ROUTE_RE = re.compile(r"/orders/processing/([^/]+)/")
 _IP_PREFIX_RE = re.compile(r"\bиндивидуальный предприниматель\b", re.IGNORECASE)
 
 
@@ -83,6 +84,15 @@ def _extract_receiving_order_id(route: str | None) -> str | None:
     return match.group(1)
 
 
+def _extract_processing_order_id(route: str | None) -> str | None:
+    if not route:
+        return None
+    match = _PROCESSING_ROUTE_RE.search(route)
+    if not match:
+        return None
+    return match.group(1)
+
+
 def _is_receiving_sign_task(route: str | None) -> bool:
     return bool(route and "/orders/receiving/" in route and "/act/print" in route)
 
@@ -119,6 +129,15 @@ def _status_label_from_entry(entry) -> str:
     return payload.get("status_label") or payload.get("status") or "-"
 
 
+def _processing_status_label_from_entry(entry) -> str:
+    payload = entry.payload or {}
+    status_label = (payload.get("status_label") or "").strip()
+    if status_label:
+        return status_label
+    status_value = (payload.get("status") or payload.get("submit_action") or "").strip()
+    return status_value or "-"
+
+
 @register.inclusion_tag("todo/_task_panel.html", takes_context=True)
 def task_panel(context, role=None, limit=6, show_meta=True, include_created_by=True):
     role_key = _resolve_role(context, role)
@@ -127,26 +146,80 @@ def task_panel(context, role=None, limit=6, show_meta=True, include_created_by=T
         "created_by",
         "observer",
     )
+    role_filter = None
     if role_key and role_key != ALL_ROLES_KEY:
         role_filter = Q(assigned_to__role=role_key) | Q(observer__role=role_key)
         if include_created_by:
             role_filter |= Q(created_by__username=role_key)
+    if role_filter is not None:
         tasks_qs = tasks_qs.filter(role_filter)
     limit_value = _normalize_limit(limit)
     today = timezone.localdate()
 
     tasks = list(tasks_qs)
     receiving_by_order = {}
+    processing_by_order = {}
     other_tasks = []
+    def _prefer_open(existing_task, candidate_task):
+        if not existing_task:
+            return candidate_task
+        if existing_task.status == "done" and candidate_task.status != "done":
+            return candidate_task
+        if existing_task.status != "done" and candidate_task.status == "done":
+            return existing_task
+        if candidate_task.updated_at > existing_task.updated_at:
+            return candidate_task
+        return existing_task
+
     for task in tasks:
         order_id = _extract_receiving_order_id(task.route)
-        if not order_id or _is_receiving_sign_task(task.route):
-            other_tasks.append(task)
+        if order_id and not _is_receiving_sign_task(task.route):
+            receiving_by_order[order_id] = _prefer_open(
+                receiving_by_order.get(order_id),
+                task,
+            )
             continue
-        existing = receiving_by_order.get(order_id)
-        if not existing or task.updated_at > existing.updated_at:
-            receiving_by_order[order_id] = task
-    combined_tasks = other_tasks + list(receiving_by_order.values())
+        processing_id = _extract_processing_order_id(task.route)
+        if processing_id:
+            processing_by_order[processing_id] = _prefer_open(
+                processing_by_order.get(processing_id),
+                task,
+            )
+            continue
+        other_tasks.append(task)
+    combined_tasks = (
+        other_tasks + list(receiving_by_order.values()) + list(processing_by_order.values())
+    )
+
+    processing_order_ids = {}
+    for task in combined_tasks:
+        order_id = _extract_processing_order_id(task.route)
+        if order_id:
+            processing_order_ids[order_id] = True
+    if processing_order_ids:
+        entries = (
+            OrderAuditEntry.objects.filter(
+                order_type="processing",
+                order_id__in=list(processing_order_ids),
+            )
+            .order_by("order_id", "-created_at")
+        )
+        status_by_order = {}
+        for entry in entries:
+            if entry.order_id in status_by_order:
+                continue
+            if not _is_status_entry(entry):
+                continue
+            status_by_order[entry.order_id] = _processing_status_label_from_entry(entry)
+        for task in combined_tasks:
+            order_id = _extract_processing_order_id(task.route)
+            if not order_id:
+                continue
+            status_label = (status_by_order.get(order_id) or "").lower()
+            if "взята в работу" in status_label and task.status == "done":
+                task.status = "in_progress"
+            if "взята в работу" in status_label:
+                task.route = f"/orders/processing/{order_id}/work/"
 
     done_tasks = [task for task in combined_tasks if task.status == "done"]
     open_tasks = [task for task in combined_tasks if task.status != "done"]
@@ -189,39 +262,78 @@ def task_panel(context, role=None, limit=6, show_meta=True, include_created_by=T
             }
         )
     tasks = [task for column in columns for task in column["tasks"]]
-    order_ids = {}
+    receiving_order_ids = {}
+    processing_order_ids = {}
     for task in tasks:
         order_id = _extract_receiving_order_id(task.route)
         if order_id:
-            order_ids[order_id] = True
-    status_by_order = {}
-    client_by_order = {}
-    if order_ids:
+            receiving_order_ids[order_id] = True
+        order_id = _extract_processing_order_id(task.route)
+        if order_id:
+            processing_order_ids[order_id] = True
+    receiving_status_by_order = {}
+    receiving_client_by_order = {}
+    if receiving_order_ids:
         entries = (
-            OrderAuditEntry.objects.filter(order_type="receiving", order_id__in=list(order_ids))
+            OrderAuditEntry.objects.filter(
+                order_type="receiving",
+                order_id__in=list(receiving_order_ids),
+            )
             .select_related("agency")
             .order_by("order_id", "-created_at")
         )
         for entry in entries:
-            if entry.order_id not in client_by_order:
+            if entry.order_id not in receiving_client_by_order:
                 if entry.agency:
                     name = entry.agency.agn_name or entry.agency.fio_agn or str(entry.agency)
-                    client_by_order[entry.order_id] = _shorten_ip_name(name)
+                    receiving_client_by_order[entry.order_id] = _shorten_ip_name(name)
                 else:
-                    client_by_order[entry.order_id] = "-"
-            if entry.order_id in status_by_order:
+                    receiving_client_by_order[entry.order_id] = "-"
+            if entry.order_id in receiving_status_by_order:
                 continue
             if not _is_status_entry(entry):
                 continue
-            status_by_order[entry.order_id] = _status_label_from_entry(entry)
-    for order_id in order_ids:
-        label = status_by_order.get(order_id)
+            receiving_status_by_order[entry.order_id] = _status_label_from_entry(entry)
+    for order_id in receiving_order_ids:
+        label = receiving_status_by_order.get(order_id)
         if not label or label == "-":
-            status_by_order[order_id] = "В ожидании поставки товара"
+            receiving_status_by_order[order_id] = "В ожидании поставки товара"
+    processing_status_by_order = {}
+    processing_client_by_order = {}
+    if processing_order_ids:
+        entries = (
+            OrderAuditEntry.objects.filter(
+                order_type="processing",
+                order_id__in=list(processing_order_ids),
+            )
+            .select_related("agency")
+            .order_by("order_id", "-created_at")
+        )
+        for entry in entries:
+            if entry.order_id not in processing_client_by_order:
+                if entry.agency:
+                    name = entry.agency.agn_name or entry.agency.fio_agn or str(entry.agency)
+                    processing_client_by_order[entry.order_id] = _shorten_ip_name(name)
+                else:
+                    processing_client_by_order[entry.order_id] = "-"
+            if entry.order_id in processing_status_by_order:
+                continue
+            if not _is_status_entry(entry):
+                continue
+            processing_status_by_order[entry.order_id] = _processing_status_label_from_entry(entry)
     for task in tasks:
         order_id = _extract_receiving_order_id(task.route)
-        task.order_status_label = status_by_order.get(order_id) if order_id else None
-        task.order_client_label = client_by_order.get(order_id) if order_id else None
+        if order_id:
+            task.order_status_label = receiving_status_by_order.get(order_id)
+            task.order_client_label = receiving_client_by_order.get(order_id)
+            continue
+        order_id = _extract_processing_order_id(task.route)
+        if order_id:
+            task.order_status_label = processing_status_by_order.get(order_id)
+            task.order_client_label = processing_client_by_order.get(order_id)
+            continue
+        task.order_status_label = None
+        task.order_client_label = None
     role_label = None
     if role_key == ALL_ROLES_KEY:
         role_label = "Все роли"

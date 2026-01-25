@@ -498,6 +498,9 @@
 
   <div class="context-menu" id="box-context-menu" aria-hidden="true">
     <button type="button" data-action="view">Просмотр короба</button>
+    <button type="button" data-action="copy">Копировать N раз</button>
+    <button type="button" data-action="print-box">Печать QR</button>
+    <button type="button" data-action="print-pallet">Печать QR всех коробов палеты</button>
     <button type="button" data-action="edit">Редактирование короба</button>
     <button type="button" data-action="delete" class="danger">Удаление короба</button>
   </div>
@@ -514,6 +517,27 @@
         <button type="button" class="btn" id="box-view-close">Закрыть</button>
       </div>
       <div class="box-modal-list" id="box-view-body"></div>
+      </div>
+    </div>
+
+    <div class="box-modal" id="box-copy-modal" aria-hidden="true">
+      <div class="box-modal-card">
+        <div class="box-modal-header">
+          <div class="box-modal-title">Копировать короб <span id="box-copy-code">-</span></div>
+          <button type="button" class="btn" id="box-copy-close">Закрыть</button>
+        </div>
+        <form id="box-copy-form">
+          <div class="location-grid">
+            <label class="location-field">
+              Количество копий
+              <input type="number" id="box-copy-count" name="box_copy_count" min="1" step="1" value="1">
+            </label>
+          </div>
+          <div class="location-actions">
+            <button type="button" class="btn" id="box-copy-cancel">Отмена</button>
+            <button type="submit" class="btn primary">Добавить</button>
+          </div>
+        </form>
       </div>
     </div>
 
@@ -609,6 +633,12 @@
         const boxViewCode = document.getElementById('box-view-code');
         const boxViewBody = document.getElementById('box-view-body');
         const boxViewClose = document.getElementById('box-view-close');
+        const boxCopyModal = document.getElementById('box-copy-modal');
+        const boxCopyCode = document.getElementById('box-copy-code');
+        const boxCopyForm = document.getElementById('box-copy-form');
+        const boxCopyCount = document.getElementById('box-copy-count');
+        const boxCopyClose = document.getElementById('box-copy-close');
+        const boxCopyCancel = document.getElementById('box-copy-cancel');
         const palletLocationModal = document.getElementById('pallet-location-modal');
         const palletLocationForm = document.getElementById('pallet-location-form');
         const palletLocationCode = document.getElementById('pallet-location-code');
@@ -2133,6 +2163,87 @@
         }
       };
 
+      const loadQrBatchInPreview = (previewWindow, payloads) => {
+        if (!previewWindow || !previewWindow.document) {
+          return;
+        }
+        const doc = previewWindow.document;
+        const list = Array.isArray(payloads) ? payloads : [];
+        const setPlaceholder = (placeholder, ready) => {
+          if (!placeholder) {
+            return;
+          }
+          placeholder.textContent = ready ? '' : 'QR не загружен';
+          placeholder.style.display = ready ? 'none' : 'grid';
+        };
+        const render = () => {
+          if (!previewWindow.QRCode) {
+            list.forEach((_, index) => {
+              const placeholder = doc.getElementById(`qr-placeholder-${index}`);
+              setPlaceholder(placeholder, false);
+            });
+            return;
+          }
+          list.forEach((payload, index) => {
+            const qrBox = doc.getElementById(`qr-box-${index}`);
+            const placeholder = doc.getElementById(`qr-placeholder-${index}`);
+            const text = String(payload || '').trim();
+            if (!qrBox || !text) {
+              setPlaceholder(placeholder, false);
+              return;
+            }
+            qrBox.innerHTML = '';
+            new previewWindow.QRCode(qrBox, {
+              text,
+              width: 240,
+              height: 240,
+              correctLevel: previewWindow.QRCode.CorrectLevel.M,
+            });
+            setPlaceholder(placeholder, true);
+          });
+          setTimeout(() => {
+            previewWindow.focus();
+            previewWindow.print();
+          }, 80);
+        };
+        const loadScript = () => {
+          if (previewWindow.QRCode) {
+            render();
+            return;
+          }
+          const existing = doc.getElementById('qr-lib-loader');
+          if (existing) {
+            existing.addEventListener('load', render, { once: true });
+            return;
+          }
+          const script = doc.createElement('script');
+          script.id = 'qr-lib-loader';
+          script.src = window.location.origin + '/static/vendor/qrcode.min.js';
+          script.onload = () => render();
+          script.onerror = () => {
+            list.forEach((_, index) => {
+              const placeholder = doc.getElementById(`qr-placeholder-${index}`);
+              setPlaceholder(placeholder, false);
+            });
+          };
+          const target = doc.head || doc.body;
+          if (target) {
+            target.appendChild(script);
+          }
+        };
+        const start = () => {
+          if (!list.length) {
+            return;
+          }
+          loadScript();
+        };
+        if (doc.readyState === 'loading') {
+          doc.addEventListener('DOMContentLoaded', start, { once: true });
+        } else {
+          start();
+        }
+      };
+
       const findBoxPalletInfo = (boxCode) => {
         for (let palletIndex = 0; palletIndex < state.pallets.length; palletIndex += 1) {
           const pallet = state.pallets[palletIndex];
@@ -2153,6 +2264,7 @@
       let contextMenuBoxCode = '';
       let contextMenuPalletCode = '';
       let locationModalPalletCode = '';
+      let copyModalBoxCode = '';
       const closeContextMenu = () => {
         if (!contextMenu) {
           return;
@@ -2204,13 +2316,29 @@
         }
         contextMenuBoxCode = boxCode;
         const box = getBox(boxCode);
+        const info = findBoxPalletInfo(boxCode);
+        const pallet = info.palletCode ? getPallet(info.palletCode) : null;
+        const canCopy = !flowLocked && box && box.sealed && pallet && !pallet.sealed;
         const editBtn = contextMenu.querySelector('[data-action="edit"]');
         const deleteBtn = contextMenu.querySelector('[data-action="delete"]');
+        const copyBtn = contextMenu.querySelector('[data-action="copy"]');
+        const printBoxBtn = contextMenu.querySelector('[data-action="print-box"]');
+        const printPalletBtn = contextMenu.querySelector('[data-action="print-pallet"]');
         if (editBtn) {
           editBtn.disabled = flowLocked || !box;
         }
         if (deleteBtn) {
           deleteBtn.disabled = flowLocked || !box;
+        }
+        if (copyBtn) {
+          copyBtn.disabled = !canCopy;
+        }
+        if (printBoxBtn) {
+          printBoxBtn.disabled = !box || !box.code;
+        }
+        if (printPalletBtn) {
+          const hasPalletBoxes = pallet && Array.isArray(pallet.boxes) && pallet.boxes.length;
+          printPalletBtn.disabled = !hasPalletBoxes;
         }
         const menuWidth = contextMenu.offsetWidth || 220;
         const menuHeight = contextMenu.offsetHeight || 120;
@@ -2354,6 +2482,38 @@
         locationModalPalletCode = '';
       };
 
+      const closeBoxCopyModal = () => {
+        if (!boxCopyModal) {
+          return;
+        }
+        boxCopyModal.classList.remove('is-open');
+        boxCopyModal.setAttribute('aria-hidden', 'true');
+        copyModalBoxCode = '';
+      };
+
+      const openBoxCopyModal = (boxCode) => {
+        if (!boxCopyModal || !boxCode) {
+          return;
+        }
+        const box = getBox(boxCode);
+        if (!box) {
+          return;
+        }
+        copyModalBoxCode = boxCode;
+        if (boxCopyCode) {
+          boxCopyCode.textContent = boxCode;
+        }
+        if (boxCopyCount) {
+          boxCopyCount.value = '1';
+          setTimeout(() => {
+            boxCopyCount.focus();
+            boxCopyCount.select();
+          }, 0);
+        }
+        boxCopyModal.classList.add('is-open');
+        boxCopyModal.setAttribute('aria-hidden', 'false');
+      };
+
       const openPalletLocationModal = (palletCode) => {
         if (!palletLocationModal || !palletCode) {
           return;
@@ -2452,6 +2612,68 @@
         }
         markDraftDirty();
         renderAll();
+      };
+
+      const copyBoxToPallet = (boxCode, copies) => {
+        if (flowLocked) {
+          alert('Приемка закрыта.');
+          return false;
+        }
+        const box = getBox(boxCode);
+        if (!box) {
+          alert('Короб не найден.');
+          return false;
+        }
+        if (!box.sealed) {
+          alert('Сначала закройте короб.');
+          return false;
+        }
+        const info = findBoxPalletInfo(boxCode);
+        const pallet = info.palletCode ? getPallet(info.palletCode) : null;
+        if (!pallet) {
+          alert('Короб не привязан к палете.');
+          return false;
+        }
+        if (pallet.sealed) {
+          alert('Палета закрыта. Откройте палету, чтобы добавить короба.');
+          return false;
+        }
+        const items = Array.isArray(box.items) ? box.items : [];
+        if (!items.length) {
+          alert('В коробе нет товаров.');
+          return false;
+        }
+        const newCodes = [];
+        for (let idx = 0; idx < copies; idx += 1) {
+          const newBox = createBox();
+          newBox.items = items.map((item) => ({ ...item }));
+          newBox.sealed = true;
+          newCodes.push(newBox.code);
+        }
+        const order = Array.isArray(pallet.boxes) ? [...pallet.boxes] : [];
+        if (!order.includes(box.code)) {
+          order.push(box.code);
+        }
+        const sourceIndex = order.indexOf(box.code);
+        if (sourceIndex >= 0) {
+          order.splice(sourceIndex + 1, 0, ...newCodes);
+        } else {
+          order.push(...newCodes);
+        }
+        const closedCodes = [];
+        const openCodes = [];
+        order.forEach((code) => {
+          const entry = getBox(code);
+          if (entry && !entry.sealed) {
+            openCodes.push(code);
+          } else {
+            closedCodes.push(code);
+          }
+        });
+        pallet.boxes = [...closedCodes, ...openCodes];
+        markDraftDirty();
+        renderAll();
+        return true;
       };
 
       const deleteBoxFromContext = (boxCode) => {
@@ -2596,12 +2818,14 @@
         }
       };
 
-      const openBoxPrintPreview = (previewWindow, onReady) => {
-        const box = getBox(state.activeBox);
+      const openBoxPrintPreviewForCode = (boxCode, previewWindow, onReady) => {
+        const box = getBox(boxCode);
         if (!box || !box.code) {
           if (previewWindow && previewWindow.document) {
+            const isActiveBox = boxCode && boxCode === state.activeBox;
+            const message = isActiveBox ? 'Нет открытого короба.' : 'Короб не найден.';
             previewWindow.document.open();
-            previewWindow.document.write(`<!doctype html><html lang="ru"><head><meta charset="utf-8"><title>Этикетка короба</title></head><body style="font-family: Arial, sans-serif; padding: 16px;">Нет открытого короба.</body></html>`);
+            previewWindow.document.write(`<!doctype html><html lang="ru"><head><meta charset="utf-8"><title>Этикетка короба</title></head><body style="font-family: Arial, sans-serif; padding: 16px;">${message}</body></html>`);
             previewWindow.document.close();
           }
           return;
@@ -2709,6 +2933,128 @@
         if (typeof onReady === 'function') {
           onReady({ doc, qrPayload });
         }
+      };
+
+      const openBoxPrintPreview = (previewWindow, onReady) => {
+        openBoxPrintPreviewForCode(state.activeBox, previewWindow, onReady);
+      };
+
+      const openPalletBoxesPrintPreview = (palletCode, previewWindow) => {
+        const pallet = getPallet(palletCode);
+        const doc = previewWindow || window.open('', '_blank', 'width=520,height=620');
+        if (!doc) {
+          return;
+        }
+        const boxes = pallet && Array.isArray(pallet.boxes)
+          ? pallet.boxes.map((code) => getBox(code)).filter((box) => box && box.code)
+          : [];
+        if (!pallet || !boxes.length) {
+          doc.document.open();
+          doc.document.write(`<!doctype html><html lang="ru"><head><meta charset="utf-8"><title>Этикетки коробов</title></head><body style="font-family: Arial, sans-serif; padding: 16px;">Короба не найдены.</body></html>`);
+          doc.document.close();
+          return;
+        }
+        const clientLabel = String("{{ client_label|escapejs }}").trim();
+        const labels = boxes.map((box, index) => {
+          const boxNumber = String(index + 1);
+          return `
+  <div class="label">
+    <div class="code-label">Короб</div>
+    <div class="code">${escapeHtml(box.code)}</div>
+    <div class="qr">
+      <div class="qr-placeholder" id="qr-placeholder-${index}">QR...</div>
+      <div class="qr-box" id="qr-box-${index}"></div>
+    </div>
+    <div class="client">${escapeHtml(clientLabel)}</div>
+    <div class="box-number">${escapeHtml(boxNumber)}</div>
+  </div>`;
+        }).join('');
+        const html = `
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <title>Этикетки коробов</title>
+  <style>
+    @page { size: 58mm 60mm; margin: 0; }
+    html, body { width: 58mm; margin: 0; padding: 0; }
+    body { font-family: Arial, sans-serif; color: #111; }
+    .label {
+      width: 58mm;
+      height: 60mm;
+      box-sizing: border-box;
+      padding: 4mm 4mm 4mm 8mm;
+      position: relative;
+      page-break-after: always;
+    }
+    .label:last-child { page-break-after: auto; }
+    .code-label { font-size: 10pt; text-transform: uppercase; letter-spacing: 0.6px; }
+    .code {
+      margin-top: 1.5mm;
+      font-size: 12pt;
+      font-weight: 700;
+      word-break: normal;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .qr {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: 30mm;
+      height: 30mm;
+      transform: translate(-50%, -40%);
+      z-index: 2;
+    }
+    .qr-box {
+      position: absolute;
+      inset: 0;
+    }
+    .qr img,
+    .qr canvas,
+    .qr svg {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+    .qr-placeholder {
+      position: absolute;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      font-size: 9pt;
+      color: #6b7280;
+      border: 1px dashed rgba(17, 17, 17, 0.2);
+      border-radius: 6px;
+    }
+    .client {
+      position: absolute;
+      left: 3mm;
+      bottom: 3mm;
+      transform: rotate(-90deg);
+      transform-origin: left bottom;
+      font-size: 10pt;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+    .box-number {
+      position: absolute;
+      right: 3mm;
+      bottom: 3mm;
+      font-size: 12pt;
+      font-weight: 700;
+    }
+  </style>
+</head>
+<body>
+${labels}
+</body>
+</html>`;
+        doc.document.open();
+        doc.document.write(html);
+        doc.document.close();
+        loadQrBatchInPreview(doc, boxes.map((box) => box.code));
       };
 
       const handleBarcode = (rawValue) => {
@@ -3011,8 +3357,31 @@
           const action = button.dataset.action;
           if (action === 'view') {
             openBoxView(contextMenuBoxCode);
+          } else if (action === 'copy') {
+            openBoxCopyModal(contextMenuBoxCode);
           } else if (action === 'edit') {
             editBoxFromContext(contextMenuBoxCode);
+          } else if (action === 'print-box') {
+            const previewWindow = window.open('', '_blank', 'width=520,height=620');
+            if (!previewWindow) {
+              alert('Разрешите всплывающие окна для печати.');
+              return;
+            }
+            openBoxPrintPreviewForCode(contextMenuBoxCode, previewWindow, ({ doc, qrPayload }) => {
+              loadQrInPreview(doc, qrPayload);
+            });
+          } else if (action === 'print-pallet') {
+            const info = findBoxPalletInfo(contextMenuBoxCode);
+            if (!info.palletCode) {
+              alert('Короб не привязан к палете.');
+              return;
+            }
+            const previewWindow = window.open('', '_blank', 'width=520,height=620');
+            if (!previewWindow) {
+              alert('Разрешите всплывающие окна для печати.');
+              return;
+            }
+            openPalletBoxesPrintPreview(info.palletCode, previewWindow);
           } else if (action === 'delete') {
             deleteBoxFromContext(contextMenuBoxCode);
           }
@@ -3056,6 +3425,7 @@
             closeContextMenu();
             closePalletContextMenu();
             closeBoxView();
+            closeBoxCopyModal();
             closePalletLocationModal();
           }
         });
@@ -3068,6 +3438,36 @@
       }
         if (boxViewClose) {
           boxViewClose.addEventListener('click', closeBoxView);
+        }
+        if (boxCopyModal) {
+          boxCopyModal.addEventListener('click', (event) => {
+            if (event.target === boxCopyModal) {
+              closeBoxCopyModal();
+            }
+          });
+        }
+        if (boxCopyClose) {
+          boxCopyClose.addEventListener('click', closeBoxCopyModal);
+        }
+        if (boxCopyCancel) {
+          boxCopyCancel.addEventListener('click', closeBoxCopyModal);
+        }
+        if (boxCopyForm) {
+          boxCopyForm.addEventListener('submit', (event) => {
+            event.preventDefault();
+            if (!copyModalBoxCode) {
+              return;
+            }
+            const rawValue = String(boxCopyCount?.value || '').replace(/[^\d]/g, '');
+            const copies = Number.parseInt(rawValue, 10);
+            if (!Number.isFinite(copies) || copies <= 0) {
+              alert('Введите количество копий.');
+              return;
+            }
+            if (copyBoxToPallet(copyModalBoxCode, copies)) {
+              closeBoxCopyModal();
+            }
+          });
         }
         if (palletLocationModal) {
           palletLocationModal.addEventListener('click', (event) => {

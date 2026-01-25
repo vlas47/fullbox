@@ -136,6 +136,13 @@
                     <button class="tab primary" type="submit">Утвердить заявку</button>
                   </form>
                 {% endif %}
+                {% if can_take_processing %}
+                  <form method="post">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="take_processing">
+                    <button class="tab primary" type="submit">Принять в работу</button>
+                  </form>
+                {% endif %}
                 {% if can_edit_processing %}
                   <a class="tab" href="{{ processing_edit_url }}">Редактировать заявку</a>
                 {% endif %}

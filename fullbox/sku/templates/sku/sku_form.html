@@ -280,9 +280,9 @@
       #label-preview .printer-row { display:none; }
       #label-preview .label-mode { display:none; }
       #label-preview .label-size-badge { display:none; }
-      #label-preview .label-stage { border:none; padding:0; min-height:auto; }
-      #label-preview .label-preview { zoom: 1; }
+      #label-preview .label-stage { border:none; padding:0; min-height:auto; --label-scale: 1 !important; }
     }
+    {% include "labels/_label_styles.css" %}
     @media (max-width: 900px) {
       .label-stage { --label-scale: 2.4; min-height:260px; }
     }
@@ -408,7 +408,7 @@
         <div>
           <div class="muted">FULLBOX · {% include "partials/current_user.html" %}</div>
           <strong>Превью этикетки</strong>
-          <div class="muted" style="margin-top:4px;">Размер этикетки: 35x20 мм</div>
+          <div class="muted" style="margin-top:4px;">Размер этикетки: 58x40 мм</div>
         </div>
         <button class="btn" id="label-preview-close" type="button">Закрыть</button>
       </div>
@@ -427,58 +427,10 @@
         <button class="btn primary" type="button" data-label-mode="cz">Этикетка товара с ЧЗ</button>
         <button class="btn" type="button" data-label-mode="no-cz">Этикетка товара без ЧЗ</button>
       </div>
-      <div class="label-stage">
-        <div class="label-size-badge">35x20 мм</div>
+      <div class="label-stage" style="--label-width: 58mm; --label-height: 40mm;">
+        <div class="label-size-badge">58x40 мм</div>
         <div class="label-preview">
-          <div class="label-eac">
-            <img alt="EAC" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAe8AAAGrCAYAAADpQB+3AAAACXBIWXMAAAsTAAALEwEAmpwYAAAJR0lEQVR4nO3cMYjW5wHH8f+ZN9ce6NEMUpBSlHId20WypM7NoKAoCOniJKiXteAWHJpJEJJOgSDlhnIOtZt0bGkzCwEL0mJb0JYWSXqR9JT6di2ZYngvj9/3Ph/47z/ePy9f3ueBd2U+n0/wMrh58+b6jRs3fjd6B3zRe++995MTJ058PHrHoly6dOnnH3300Y9G7+Creffdd6/Mpmma3n///W+PHsOL2dzc/MfoDYv2+PHj9bt37/5g9A74oidPnhwavWGRHjx48D3fta6dnZ312TRN09tvv/330WN4MZubmyujNwAwxoH79++vjx4BAHx5B0YPAABejHgDQIx4A0CMeANAjHgDQIx4A0CMeANAjHgDQIx4A0CMeANAjHgDQIx4A0CMeANAjHgDQIx4A0CMeANAjHgDQIx4A0CMeANAjHgDQIx4A0CMeANAjHgDQIx4A0CMeANAjHgDQIx4A0CMeANAjHgDQIx4A0CMeANAjHgDQIx4A0CMeANAjHgDQIx4A0DMbPQA2E9WVlb+eujQoU9G71iU58+fH/jss8/Wp2n67ugtsJ+IN3yNDh48+Mmnn376w9E7FmllZeUvozfAfuPYHABixBsAYsQbAGLEGwBixBsAYsQbAGLEGwBixBsAYsQbAGLEGwBixBsAYpb6v82vXLny5oULF34zegcALNJSx/vIkSN/On78+Hz0DgC+XhsbG/dPnTp1e/SOvXDs2LE/LnW8Adif3njjjd9fv379p6N37BV33gAsnfl8uQ9dxRsAYsQbAGLEGwBixBsAYsQbAGLEGwBixBsAYsQbAGLEGwBixBsAYsQbAGLEGwBixBsAYsQbAGLEGwBixBsAYsQbAGLEGwBixBsAYsQbAGLEGwBixBsAYsQbAGLEGwBixBsAYsQbAGLEGwBixBsAYsQbAGLEGwBixBsAYsQbAGLEGwBixBsAYsQbAGLEGwBixBsAYsQbAGLEGwBixBsAYsQbAGLEGwBixBsAYsQbAGLEGwBixBsAYsQbAGLEGwBixBsAYsQbAGLEGwBixBsAYsQbAGLEGwBixBsAYsQbAGLEGwBixBsAYsQbAGLEGwBixBsAYsQbAGLEGwBixBsAYsQbAGLEGwBixBsAYsQbAGLEGwBixBsAYsQbAGLEGwBixBsAYsQbAGLEGwBixBsAYsQbAGLEGwBixBsAYsQbAGLEGwBixBsAYsQbAGLEGwBixBsAYsQbAGLEGwBixBsAYsQbAGLEGwBixBsAYsQbAGLEGwBixBsAYsQbAGLEGwBixBsAYsQbAGLEGwBixBsAYsQbAGLEGwBixBsAYsQbAGLEGwBixBsAYsQbAGLEGwBixBsAYsQbAGLEGwBixBsAYsQbAGLEGwBixBsAYsQbAGLEGwBixBsAYsQbAGLEGwBixBsAYsQbAGLEGwBixBsAYsQbAGJmowfAfvL06dNvfvDBB6dH71iUnZ2d9dEbYD9a6ng/e/bsG6M3wP/b3d39/sWLF381egfQttTH5u+8887HKysr82V8Rn+2AIyz1PEGgGUk3gAQI94AECPeABAj3gAQI94AECPeABAj3gAQI94AECPeABAj3gAQI94AECPeABAj3gAQI94AECPeABAj3gAQI94AECPeABAj3gAQI94AECPeABAj3gAQI94AECPeABAj3gAQI94AECPeABAj3gAQI94AECPeABAj3gAQI94AECPeABAj3gAQI94AEDMbPWAvzWaz56+++uru6B0AsEhLHe9r165tXL169c+jdwDAIi11vOfzuWsBXipra2ufb29vvzl6x6Ls7Ox866233vr16B2w3yx1vOFlM5vNdk+ePPnb0TsW5dGjR6MnwL7klykAxIg3AMSINwDEiDcAxIg3AMSINwDEiDcAxIg3AMSINwDEiDcAxIg3AMSINwDEiDcAxIg3AMSINwDEiDcAxIg3AMSINwDEiDcAxIg3AMSINwDEiDcAxIg3AMSINwDEiDcAxIg3AMSINwDEiDcAxIg3AMSINwDEiDcAxIg3AMSINwDEiDcAxIg3AMSINwDEiDcAxIg3AMSINwDEiDcAxIg3AMSINwDEiDcAxIg3AMSINwDEiDcAxIg3AMSINwDEiDcAxIg3AMSINwDEiDcAxIg3AMSINwDEiDcAxIg3AMSINwDEiDcAxIg3AMSINwDEiDcAxIg3AMSINwDEiDcAxIg3AMSINwDEiDcAxIg3AMSINwDEiDcAxIg3AMSINwDEiDcAxIg3AMSINwDEiDcAxIg3AMSINwDEiDcAxIg3AMSINwDEiDcAxIg3AMSINwDEiDcAxIg3AMSINwDEiDcAxIg3AMSINwDEiDcAxIg3AMSINwDEiDcAxIg3AMSINwDEiDcAxIg3AMSINwDEiDcAxIg3AMSINwDEiDcAxIg3AMSINwDEiDcAxIg3AMSINwDEiDcAxIg3AMSINwDEiDcAxIg3AMSINwDEiDcAxIg3AMSINwDEiDcAxIg3AMSINwDEiDcAxIg3AMSINwDEiDcAxIg3AMSINwDEiDcAxIg3AMSINwDEiDcAxIg3AMSINwBL55VXXvnv6A17aTZ6AAAs2p07d358/vz5X47esRcuX778s6WO9717907cvn37b6N37IXTp0/vjt4A8LJ6+PDhd7a3t8+P3rEXzp49+4uljvfW1taHW1tbH47esRfm8/nK6A0AjOHOGwBixBsAYsQbAGLEGwBixBsAYsQbAGLEGwBixBsAYsQbAGLEGwBixBsAYsQbAGLEGwBixBsAYsQbAGLEGwBixBsAYsQbAGLEGwBixBsAYsQbAGLEGwBixBsAYsQbAGLEGwBixBsAYsQbAGLEGwBixBsAYsQbAGLEGwBixBsAYsQbAGLEGwBixBsAYsQbAGLEGwBixBsAYsQbAGLEGwBixBsAYsQbAGLEGwBixBsAYsQbAGLEGwBixBsAYsQbAGLEGwBiDmxsbPx79AgA4MubTdM03bp1a230EADgy5lN0zSdO3fuP6OHwNGjR/955syZ26N37KXV1dXd0RsWaXV1dVr2dzZN0/Taa6/9a/SGRXr99df/sLa29vnoHXw1hw8ffvg/bRLZloHRKXsAAAAASUVORK5CYII=">
-          </div>
-          <div class="label-barcode-cell">
-            <div class="label-barcode-rotate">
-              <svg class="label-barcode" data-barcode-svg aria-hidden="true"></svg>
-              <div class="label-barcode-value" data-barcode-value>—</div>
-            </div>
-          </div>
-          <div class="label-info-cell">
-            <div class="label-info">
-              <div class="label-info-top">
-                <div class="label-info-line label-info-emph" data-info="article"></div>
-                <div class="label-info-line label-info-emph" data-info="name"></div>
-                <div class="label-info-line label-info-emph" data-info="size"></div>
-                <div class="label-info-line label-info-emph" data-info="brand"></div>
-                <div class="label-info-line" data-info="subject"></div>
-                <div class="label-info-line" data-info="color"></div>
-                <div class="label-info-line" data-info="composition"></div>
-              </div>
-              <div class="label-info-bottom">
-                <div class="label-info-line" data-info="supplier"></div>
-              </div>
-            </div>
-          </div>
-          <div class="label-qr-cell">
-            <div class="label-qr" data-qr-box aria-hidden="true"></div>
-          </div>
-          <div class="label-no-cz-grid" aria-hidden="true">
-            <div class="label-no-cz-row label-no-cz-text">
-              <div class="label-no-cz-line label-no-cz-article" data-no-cz="article"></div>
-              <div class="label-no-cz-line label-no-cz-name" data-no-cz="name"></div>
-            </div>
-            <div class="label-no-cz-row label-no-cz-text">
-              <div class="label-no-cz-line" data-no-cz="color"></div>
-              <div class="label-no-cz-line" data-no-cz="composition"></div>
-              <div class="label-no-cz-line" data-no-cz="supplier"></div>
-            </div>
-            <div class="label-no-cz-row label-no-cz-row-split">
-              <div class="label-no-cz-split label-no-cz-article" data-no-cz="country"></div>
-              <div class="label-no-cz-split label-no-cz-article" data-no-cz="size"></div>
-            </div>
-            <div class="label-no-cz-row label-no-cz-barcode">
-              <div class="label-no-cz-barcode-wrap">
-                <svg class="label-no-cz-barcode-svg" data-barcode-no-cz aria-hidden="true"></svg>
-                <div class="label-no-cz-barcode-value" data-barcode-value>-</div>
-              </div>
-            </div>
-          </div>
+          {% include "labels/_label_item.html" %}
         </div>
       </div>
       <div class="modal-actions">
@@ -486,6 +438,7 @@
       </div>
     </div>
   </div>
+{{ label_settings|json_script:"label-settings-data" }}
 <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
 </body>
@@ -512,6 +465,26 @@
     const printerInput = document.getElementById('label-printer');
     const labelModeButtons = document.querySelectorAll('[data-label-mode]');
     const labelPreview = preview ? preview.querySelector('.label-preview') : null;
+    const labelSettingsEl = document.getElementById('label-settings-data');
+    let labelSettingsData = {};
+    let labelFontSizes = null;
+    let labelEnabled = null;
+    const getLabelSettingsForMode = (mode) => {
+      const key = mode === 'cz' ? 'item_cz' : 'item';
+      return (labelSettingsData && labelSettingsData[key]) || {};
+    };
+    const applyLabelSettingsForMode = (mode) => {
+      const settings = getLabelSettingsForMode(mode);
+      labelFontSizes = settings && settings.fonts ? settings.fonts : null;
+      labelEnabled = settings && settings.enabled ? settings.enabled : null;
+    };
+    if (labelSettingsEl) {
+      try {
+        labelSettingsData = JSON.parse(labelSettingsEl.textContent || '{}') || {};
+      } catch (err) {
+        labelSettingsData = {};
+      }
+    }
     const params = new URLSearchParams(window.location.search);
     const printMode = params.get('print') === '1';
     const nextParam = params.get('next') || '';
@@ -579,7 +552,17 @@
       }
     };
 
-    const limitWords = (text, maxWords = 5) => {
+    const setRowVisible = (selector, hasValue) => {
+      const row = preview.querySelector(selector);
+      if (!row) {
+        return;
+      }
+      row.style.display = hasValue ? '' : 'none';
+    };
+
+    const isEnabled = (field) => !labelEnabled || labelEnabled[field] !== false;
+
+    const limitText = (text, maxLength = 30) => {
       if (!text) {
         return '';
       }
@@ -587,11 +570,10 @@
       if (!trimmed) {
         return '';
       }
-      const words = trimmed.split(/\s+/);
-      if (words.length <= maxWords) {
+      if (trimmed.length <= maxLength) {
         return trimmed;
       }
-      return words.slice(0, maxWords).join(' ');
+      return trimmed.slice(0, maxLength);
     };
 
     const renderBarcode = (value) => {
@@ -661,24 +643,57 @@
       }
     };
 
+    const applyFontVar = (root, name, size) => {
+      if (!root) {
+        return;
+      }
+      if (Number.isFinite(size)) {
+        root.style.setProperty(name, `${size}mm`);
+      } else {
+        root.style.removeProperty(name);
+      }
+    };
+
+    const applyFontSizes = (root, sizes) => {
+      if (!sizes) {
+        return;
+      }
+      applyFontVar(root, '--font-barcode', sizes.barcode);
+      applyFontVar(root, '--font-article', sizes.article);
+      applyFontVar(root, '--font-name', sizes.name);
+      applyFontVar(root, '--font-size', sizes.size);
+      applyFontVar(root, '--font-brand', sizes.brand);
+      applyFontVar(root, '--font-subject', sizes.subject);
+      applyFontVar(root, '--font-color', sizes.color);
+      applyFontVar(root, '--font-composition', sizes.composition);
+      applyFontVar(root, '--font-supplier', sizes.supplier);
+      applyFontVar(root, '--font-country', sizes.country);
+    };
+
     const updatePreview = () => {
-      const skuCode = getValue('id_sku_code');
+      const skuCodeRaw = getValue('id_sku_code');
+      const skuCode = isEnabled('article') ? limitText(skuCodeRaw) : '';
       setField('sku_code', skuCode);
-      setField('size', getValue('id_size'));
+      setField('size', isEnabled('size') ? limitText(getValue('id_size')) : '');
       const nameRaw = pickValue(['id_name_print', 'id_name']);
-      const nameValue = limitWords(nameRaw);
-      const nameNoCz = nameRaw ? String(nameRaw).trim() : '';
-      const sizeValue = limitWords(getValue('id_size'));
-      const madeInValue = limitWords(getValue('id_made_in'));
+      const nameValue = isEnabled('name') ? limitText(nameRaw) : '';
+      const nameNoCz = isEnabled('name') ? limitText(nameRaw) : '';
+      const sizeValue = isEnabled('size') ? limitText(getValue('id_size')) : '';
+      const madeInValue = isEnabled('country') ? limitText(getValue('id_made_in')) : '';
       const rawBrandValue = getValue('id_brand');
       const brandValue = rawBrandValue.toLowerCase() === 'nobrand' ? '' : rawBrandValue;
-      const subjectValue = limitWords(pickValue(['id_tovar_category', 'id_vid_tovar', 'id_type_tovar']));
-      const colorText = limitWords(getValue('id_color') || pickValue(['id_color_ref']));
-      const compositionValue = limitWords(getValue('id_composition'));
-      const supplierValue = limitWords(getValue('id_agency'));
+      const brandPrint = isEnabled('brand') ? limitText(brandValue) : '';
+      const subjectValue = isEnabled('subject')
+        ? limitText(pickValue(['id_tovar_category', 'id_vid_tovar', 'id_type_tovar']))
+        : '';
+      const colorText = isEnabled('color')
+        ? limitText(getValue('id_color') || pickValue(['id_color_ref']))
+        : '';
+      const compositionValue = isEnabled('composition') ? limitText(getValue('id_composition')) : '';
+      const supplierValue = isEnabled('supplier') ? limitText(getValue('id_agency')) : '';
       setInfoLine('name', nameValue);
       setInfoLine('size', sizeValue, 'р-р: ');
-      setInfoLine('brand', limitWords(brandValue));
+      setInfoLine('brand', brandPrint);
       setInfoLine('subject', subjectValue);
       setInfoLine('color', colorText);
       setInfoLine('composition', compositionValue, 'Состав: ');
@@ -686,22 +701,35 @@
       setInfoLine('article', skuCode, 'Артикул: ');
       setNoCzLine('article', skuCode ? `Артикул: ${skuCode}` : '');
       setNoCzLine('name', nameNoCz);
+      setNoCzLine('brand', brandPrint, 'Бренд: ');
       setNoCzLine('color', colorText, 'Цвет: ');
       setNoCzLine('composition', compositionValue, 'Состав: ');
       setNoCzLine('supplier', supplierValue, 'Поставщик: ');
       setNoCzLine('country', madeInValue, 'Страна: ');
       setNoCzLine('size', sizeValue, 'Р-р: ');
-      const barcodeValue = pickValue(['field-code', 'id_code']);
+      const hasBrandColor = Boolean(brandPrint || colorText);
+      setRowVisible('[data-info-row="brand-color"]', hasBrandColor);
+      setRowVisible('[data-no-cz-row="brand-color"]', hasBrandColor);
+      const barcodeValue = isEnabled('barcode') ? pickValue(['field-code', 'id_code']) : '';
       setField('barcode', barcodeValue);
       const barcodeDigits = (barcodeValue || '').replace(/\D/g, '');
       preview.querySelectorAll('[data-barcode-value]').forEach((el) => {
-        el.textContent = barcodeDigits || barcodeValue || '-';
+        if (barcodeDigits || barcodeValue) {
+          el.textContent = barcodeDigits || barcodeValue;
+          el.style.display = '';
+        } else {
+          el.textContent = '';
+          el.style.display = 'none';
+        }
       });
-      const barcodeExtra = getValue('id_source_reference') || skuCode;
+      const barcodeExtra = getValue('id_source_reference') || skuCodeRaw;
       setField('barcode_extra', barcodeExtra);
       renderBarcode(barcodeValue);
-      const qrValue = [barcodeValue, barcodeExtra].filter(Boolean).join(' ');
+      const qrValue = barcodeValue ? [barcodeValue, barcodeExtra].filter(Boolean).join(' ') : '';
       renderQr(qrValue);
+      if (labelPreview && labelFontSizes) {
+        applyFontSizes(labelPreview, labelFontSizes);
+      }
     };
 
     if (openBtn && preview) {
@@ -712,16 +740,19 @@
       });
     }
     const setLabelMode = (mode) => {
-      if (!labelPreview) {
-        return;
-      }
       const normalized = mode === 'no-cz' ? 'no-cz' : 'cz';
+      applyLabelSettingsForMode(normalized);
+      if (!labelPreview) {
+        return normalized;
+      }
       labelPreview.classList.toggle('no-cz', normalized === 'no-cz');
       labelModeButtons.forEach((btn) => {
         const active = btn.dataset.labelMode === normalized;
         btn.classList.toggle('primary', active);
       });
       localStorage.setItem('label_mode', normalized);
+      updatePreview();
+      return normalized;
     };
     if (labelModeButtons.length) {
       const storedMode = localStorage.getItem('label_mode');
@@ -794,3 +825,5 @@
   })();
 </script>
 </html>
+
+
