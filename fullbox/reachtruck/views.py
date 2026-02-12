@@ -1,15 +1,18 @@
 import copy
 import re
 
-from django.http import HttpResponseForbidden
+from django.http import HttpResponseForbidden, JsonResponse
 from django.shortcuts import redirect
 from django.utils import timezone
 from django.views.generic import TemplateView
+from django.views.decorators.http import require_GET
+from django.contrib.auth.decorators import login_required
 
 from audit.models import OrderAuditEntry, log_order_action, log_stock_move
 from employees.access import RoleRequiredMixin, get_employee_for_user, get_request_role, resolve_cabinet_url
+from sku.models import SKUBarcode
 
-ALLOWED_ZONES = {"PR", "OTG", "MR", "OS"}
+ALLOWED_ZONES = {"PR", "OTG", "MR", "OS", "OBR"}
 ALLOWED_ROLES = (
     "reachtruck_driver",
     "manager",
@@ -44,6 +47,10 @@ def _normalize_zone_code(raw: str) -> str:
         r"зона приемки|поле приемки", text, re.IGNORECASE
     ):
         return "PR"
+    if re.search(r"^obr$", text, re.IGNORECASE) or re.search(
+        r"зона обработк|обработк", text, re.IGNORECASE
+    ):
+        return "OBR"
     if re.search(r"^otg?$", text, re.IGNORECASE) or re.search(
         r"зона отгрузки|отгрузк", text, re.IGNORECASE
     ):
@@ -112,6 +119,8 @@ def _location_label(location: dict | None) -> str:
     cell = _parse_int_value(location.get("cell"))
     if zone == "PR":
         return "PR · Зона приемки"
+    if zone == "OBR":
+        return "OBR · Зона обработки"
     if zone == "OTG":
         return "OTG · Зона отгрузки"
     if zone == "MR":
@@ -126,7 +135,9 @@ def _location_label(location: dict | None) -> str:
 
 
 def _latest_closed_placement_entries():
-    entries = OrderAuditEntry.objects.filter(order_type="receiving").order_by("-created_at")
+    entries = OrderAuditEntry.objects.filter(
+        order_type__in=("receiving", "processing")
+    ).order_by("-created_at")
     latest_by_order = {}
     blocked_orders = set()
     for entry in entries:
@@ -210,6 +221,165 @@ def _latest_move_entry(order_id: str):
         .order_by("-created_at")
         .first()
     )
+
+
+def _latest_moves_by_pallet() -> dict[str, dict]:
+    entries = OrderAuditEntry.objects.filter(order_type="stock_move").order_by("-created_at")
+    latest = {}
+    for entry in entries:
+        payload = entry.payload or {}
+        pallet_code = str(payload.get("pallet_code") or "").strip()
+        if not pallet_code or pallet_code in latest:
+            continue
+        status = (payload.get("status") or payload.get("submit_action") or "").strip().lower()
+        status_label = (payload.get("status_label") or "").strip()
+        to_location = payload.get("to_location") or {}
+        latest[pallet_code] = {
+            "status": status,
+            "status_label": status_label,
+            "to_label": _location_label(to_location),
+            "to_zone": _normalize_zone_code(to_location.get("zone") or ""),
+            "order_id": entry.order_id,
+        }
+    return latest
+
+
+def _item_matches(item, barcode_values: set[str], sku_values: set[str]) -> bool:
+    if not isinstance(item, dict):
+        return False
+    barcode = str(item.get("barcode") or "").strip()
+    if barcode and barcode in barcode_values:
+        return True
+    sku = str(item.get("sku") or item.get("sku_code") or "").strip()
+    return bool(sku and sku in sku_values)
+
+
+def _item_qty(item) -> int:
+    if not isinstance(item, dict):
+        return 0
+    for key in ("qty", "actual_qty", "count"):
+        try:
+            value = int(item.get(key) or 0)
+        except (TypeError, ValueError):
+            value = 0
+        if value:
+            return value
+    return 0
+
+
+@login_required
+@require_GET
+def lookup_pallet_location(request):
+    role = get_request_role(request)
+    if role not in ALLOWED_ROLES:
+        return HttpResponseForbidden("Доступ запрещен")
+    code = (request.GET.get("code") or "").strip()
+    if not code:
+        return JsonResponse({"ok": False, "error": "Укажите код паллеты."}, status=400)
+    found = _find_pallet_by_code(code)
+    if not found:
+        return JsonResponse({"ok": False, "error": "Паллета не найдена."}, status=404)
+    entry, _, _, location = found
+    return JsonResponse(
+        {
+            "ok": True,
+            "label": _location_label(location),
+            "location": location,
+            "receiving_order_id": entry.order_id,
+        }
+    )
+
+
+@login_required
+@require_GET
+def lookup_item_pallets(request):
+    role = get_request_role(request)
+    if role not in ALLOWED_ROLES:
+        return HttpResponseForbidden("Доступ запрещен")
+    barcodes = request.GET.getlist("barcode")
+    barcode = (request.GET.get("barcode") or "").strip()
+    if barcode and barcode not in barcodes:
+        barcodes.append(barcode)
+    expanded = []
+    for value in barcodes:
+        for part in str(value or "").split(","):
+            part = part.strip()
+            if part:
+                expanded.append(part)
+    barcodes = expanded
+    sku = (request.GET.get("sku") or "").strip()
+    if not barcodes and not sku:
+        return JsonResponse({"ok": False, "error": "Укажите ШК или артикул."}, status=400)
+    barcode_values = {value for value in barcodes if value}
+    sku_values = {sku} if sku else set()
+    if barcode_values:
+        sku_values.update(
+            SKUBarcode.objects.filter(value__in=barcode_values)
+            .values_list("sku__sku_code", flat=True)
+        )
+        sku_values.discard(None)
+
+    include_moves = request.GET.get("include_moves") == "1"
+    moves_by_pallet = _latest_moves_by_pallet() if include_moves else {}
+    matches = {}
+    entries = OrderAuditEntry.objects.filter(order_type="receiving").order_by("-created_at")
+    for entry in entries:
+        payload = entry.payload or {}
+        if payload.get("act") != "placement":
+            continue
+        state = (payload.get("act_state") or "closed").lower()
+        if state != "closed":
+            continue
+        boxes = payload.get("act_boxes") or []
+        pallets = payload.get("act_pallets") or []
+        box_items: dict[str, list] = {}
+        for box in boxes:
+            if not isinstance(box, dict):
+                continue
+            code = str(box.get("code") or "").strip()
+            if not code:
+                continue
+            box_items[code] = box.get("items") or []
+        for pallet in pallets:
+            if not isinstance(pallet, dict):
+                continue
+            pallet_code = str(pallet.get("code") or "").strip()
+            if not pallet_code:
+                continue
+            qty = 0
+            hit = False
+            for item in pallet.get("items") or []:
+                if _item_matches(item, barcode_values, sku_values):
+                    hit = True
+                    qty += _item_qty(item)
+            for box_code in pallet.get("boxes") or []:
+                items = box_items.get(str(box_code).strip()) or []
+                for item in items:
+                    if _item_matches(item, barcode_values, sku_values):
+                        hit = True
+                        qty += _item_qty(item)
+            if hit:
+                prev = matches.get(pallet_code)
+                payload = {
+                    "pallet": pallet_code,
+                    "location": _location_label(pallet.get("location")),
+                    "receiving_order_id": entry.order_id,
+                    "qty": qty,
+                }
+                if include_moves and pallet_code in moves_by_pallet:
+                    move_payload = moves_by_pallet[pallet_code]
+                    payload.update(
+                        {
+                            "move_status": move_payload.get("status") or "",
+                            "move_status_label": move_payload.get("status_label") or "",
+                            "move_to_label": move_payload.get("to_label") or "",
+                            "move_to_zone": move_payload.get("to_zone") or "",
+                            "move_order_id": move_payload.get("order_id") or "",
+                        }
+                    )
+                if not prev or (payload["qty"] or 0) > (prev.get("qty") or 0):
+                    matches[pallet_code] = payload
+    return JsonResponse({"ok": True, "pallets": list(matches.values())})
 
 
 def _collect_moves(employee_id: int | None, driver_view: bool) -> tuple[list[dict], list[dict]]:
@@ -466,29 +636,59 @@ class ReachtruckDashboardView(RoleRequiredMixin, TemplateView):
             placement_entry, _, _, _ = found
             placement_payload = copy.deepcopy(placement_entry.payload or {})
             pallets = placement_payload.get("act_pallets") or []
+            boxes = placement_payload.get("act_boxes") or []
             to_location = payload.get("to_location") or {}
-            updated = False
-            for pallet in pallets:
-                if not isinstance(pallet, dict):
-                    continue
-                if (pallet.get("code") or "").strip() == pallet_code:
-                    pallet["location"] = _build_location(
-                        to_location.get("zone"),
-                        _parse_int_value(to_location.get("row")),
-                        _parse_int_value(to_location.get("section")),
-                        _parse_int_value(to_location.get("tier")),
-                        _parse_int_value(to_location.get("cell")),
-                    )
-                    updated = True
-                    break
-            if not updated:
-                return self._render_error("Не удалось обновить локацию паллеты.")
+            to_zone = _normalize_zone_code(to_location.get("zone") or "")
+            if to_zone == "OBR":
+                updated = False
+                removed_boxes = set()
+                updated_pallets = []
+                for pallet in pallets:
+                    if not isinstance(pallet, dict):
+                        continue
+                    if (pallet.get("code") or "").strip() == pallet_code:
+                        updated = True
+                        for box_code in pallet.get("boxes") or []:
+                            code = str(box_code or "").strip()
+                            if code:
+                                removed_boxes.add(code)
+                        continue
+                    updated_pallets.append(pallet)
+                if removed_boxes:
+                    boxes = [
+                        box
+                        for box in boxes
+                        if str((box or {}).get("code") or "").strip() not in removed_boxes
+                    ]
+                if not updated:
+                    return self._render_error("Не удалось удалить паллету из размещения.")
+                placement_payload["act_pallets"] = updated_pallets
+                placement_payload["act_boxes"] = boxes
+                placement_payload["act_items_removed"] = True
+            else:
+                updated = False
+                for pallet in pallets:
+                    if not isinstance(pallet, dict):
+                        continue
+                    if (pallet.get("code") or "").strip() == pallet_code:
+                        pallet["location"] = _build_location(
+                            to_location.get("zone"),
+                            _parse_int_value(to_location.get("row")),
+                            _parse_int_value(to_location.get("section")),
+                            _parse_int_value(to_location.get("tier")),
+                            _parse_int_value(to_location.get("cell")),
+                        )
+                        updated = True
+                        break
+                if not updated:
+                    return self._render_error("Не удалось обновить локацию паллеты.")
+                placement_payload["act_pallets"] = pallets
             placement_payload["act"] = "placement"
             placement_payload["act_state"] = "closed"
             log_order_action(
                 "status",
                 order_id=placement_entry.order_id,
-                order_type="receiving",
+                order_type=placement_entry.order_type,
                 user=request.user if request.user.is_authenticated else None,
                 agency=placement_entry.agency,
                 description=f"Перемещение паллеты {pallet_code}",

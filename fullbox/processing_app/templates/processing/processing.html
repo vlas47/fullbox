@@ -376,6 +376,13 @@
       font-size: 11px;
       color: var(--muted);
     }
+    .cz-status {
+      font-size: 11px;
+      color: var(--accent);
+    }
+    .cz-status.error {
+      color: var(--danger);
+    }
     table { width: 100%; border-collapse: collapse; min-width: 900px; }
     th, td { padding: 8px; border-bottom: 1px solid var(--stroke); vertical-align: top; }
     th {
@@ -676,7 +683,7 @@
       </aside>
 
             <main class="content processing-content">
-        <form class="processing-form" id="processing-form" method="post" enctype="multipart/form-data">
+        <form class="processing-form" id="processing-form" method="post" enctype="multipart/form-data" data-marking-check-url="{% url 'processing_app:processing-marking-availability' %}" data-marking-import-url="{% url 'processing_app:processing-marking-import' %}">
           {% csrf_token %}
           <input type="hidden" name="agency_id" value="{{ agency.id|default:'' }}">
           <input type="hidden" name="email" value="{{ agency.email|default:'' }}">
@@ -761,6 +768,17 @@
                               <option value="2" {% if draft_payload.marking_5840_each_qty|stringformat:"s" == "2" %}selected{% endif %}>2</option>
                             </select>
                             <input type="hidden" name="marking_5840_each_needed" value="{{ draft_payload.marking_5840_each_needed|default:'' }}" data-needed-for="marking_5840_each_qty">
+                            <div class="param-extra" data-owner="marking_5840_each_qty" data-show-when="any">
+                              <div class="cz-status" data-marking-cz-status>Выберите товар для проверки ЧЗ.</div>
+                              <div class="param-inline" data-marking-cz-upload hidden>
+                                <span class="param-note">Загрузить ЧЗ (.xlsx)</span>
+                                <input type="file" name="marking_cz_file" accept=".xlsx" data-marking-cz-file>
+                                {% if draft_payload.marking_cz_file %}
+                                  <span class="param-note">Файл: {{ draft_payload.marking_cz_file }}</span>
+                                {% endif %}
+                              </div>
+                              <div class="param-note">Формат: 1 столбец — штрихкод, 2 столбец — код ЧЗ.</div>
+                            </div>
                           </div>
                         </td>
                       </tr>
@@ -1061,8 +1079,14 @@
           const qtyMax = row.maxQty ?? row.qty;
           const qtyInput = addCell('qty', row.qty ?? '', 'number', { max: qtyMax });
           if (qtyInput) {
-            qtyInput.addEventListener('input', () => clampQty(qtyInput));
-            qtyInput.addEventListener('change', () => clampQty(qtyInput));
+            qtyInput.addEventListener('input', () => {
+              clampQty(qtyInput);
+              window.processingMarkingScheduleCheck?.();
+            });
+            qtyInput.addEventListener('change', () => {
+              clampQty(qtyInput);
+              window.processingMarkingScheduleCheck?.();
+            });
           }
           tbody.appendChild(tr);
         });
@@ -1128,6 +1152,7 @@
         if (deleteBtn) {
           deleteBtn.addEventListener('click', () => {
             card.remove();
+            window.processingMarkingScheduleCheck?.();
           });
         }
 
@@ -1240,6 +1265,7 @@
         } else {
           createCard(cardPayload, { prepend: true });
         }
+        window.processingMarkingScheduleCheck?.();
         activeCardId = null;
       };
 
@@ -1327,6 +1353,252 @@
         }
       }
       window.processingCollectCards = collectCards;
+    })();
+  </script>
+  <script>
+    (() => {
+      const form = document.getElementById('processing-form');
+      if (!form) {
+        return;
+      }
+      const select = form.querySelector('select[name="marking_5840_each_qty"]');
+      const statusEl = form.querySelector('[data-marking-cz-status]');
+      const uploadRow = form.querySelector('[data-marking-cz-upload]');
+      const fileInput = form.querySelector('[data-marking-cz-file]');
+      const checkUrl = form.dataset.markingCheckUrl || '';
+      const importUrl = form.dataset.markingImportUrl || '';
+      if (!select || !statusEl || !uploadRow || !checkUrl) {
+        return;
+      }
+
+      let lastResult = null;
+      let checkTimer = null;
+      let checking = false;
+      let importing = false;
+      let lastImportSummary = '';
+
+      const parseQty = (value) => {
+        const raw = String(value || '').trim();
+        const parsed = parseInt(raw, 10);
+        return Number.isFinite(parsed) ? parsed : 0;
+      };
+
+      const collectItems = () => {
+        const items = [];
+        const cards = window.processingCollectCards ? window.processingCollectCards() : [];
+        cards.forEach((card) => {
+          (card.rows || []).forEach((row) => {
+            const qty = parseQty(row.qty);
+            if (!qty) {
+              return;
+            }
+            items.push({
+              barcode: (row.barcode || '').trim(),
+              qty,
+            });
+          });
+        });
+        return items;
+      };
+
+      const getCsrfToken = () => {
+        const match = document.cookie.match(/csrftoken=([^;]+)/);
+        if (match) {
+          return decodeURIComponent(match[1]);
+        }
+        const hidden = document.querySelector('#processing-form input[name="csrfmiddlewaretoken"]');
+        return hidden ? hidden.value : '';
+      };
+
+      const setStatus = (text, isError) => {
+        statusEl.textContent = text;
+        statusEl.classList.toggle('error', Boolean(isError));
+      };
+
+      const toggleUpload = (missing, missingBarcodes) => {
+        const needsUpload = (missing || 0) > 0 || (missingBarcodes || 0) > 0;
+        uploadRow.hidden = !needsUpload;
+        if (fileInput) {
+          fileInput.disabled = !needsUpload;
+        }
+      };
+
+      const buildImportSummary = (data) => {
+        if (!data) {
+          return '';
+        }
+        const parts = [];
+        const added = Number(data.added || 0);
+        parts.push(`импортировано: ${added}`);
+        if (data.duplicates) {
+          parts.push(`дубликаты: ${data.duplicates}`);
+        }
+        if (data.unknown_barcodes) {
+          parts.push(`неизвестные ШК: ${data.unknown_barcodes}`);
+        }
+        if (data.mismatched_barcodes) {
+          parts.push(`чужие ШК: ${data.mismatched_barcodes}`);
+        }
+        if (data.invalid_rows) {
+          parts.push(`ошибочные строки: ${data.invalid_rows}`);
+        }
+        return parts.length ? ` (${parts.join(', ')})` : '';
+      };
+
+      const runCheck = async () => {
+        if (!select.value) {
+          lastResult = null;
+          setStatus('Выберите товар для проверки ЧЗ.', false);
+          toggleUpload(0, 0);
+          return;
+        }
+        const items = collectItems();
+        if (!items.length) {
+          lastResult = { required: 0, available: 0, missing: 0, missing_barcodes: 0 };
+          setStatus('Добавьте товары для проверки ЧЗ.', true);
+          toggleUpload(0, 0);
+          return;
+        }
+        checking = true;
+        setStatus('Проверяем наличие ЧЗ...', false);
+        toggleUpload(0, 0);
+        const orderId = form.querySelector('input[name="edit_order_id"]')?.value
+          || form.querySelector('input[name="draft_order_id"]')?.value
+          || '';
+        const agencyId = form.querySelector('input[name="agency_id"]')?.value || '';
+        try {
+          const resp = await fetch(checkUrl, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-CSRFToken': getCsrfToken(),
+            },
+            body: JSON.stringify({ items, order_id: orderId, agency_id: agencyId }),
+          });
+          const data = await resp.json();
+          if (!resp.ok || !data.ok) {
+            throw new Error(data.error || 'Ошибка проверки');
+          }
+          lastResult = data;
+          const required = data.required || 0;
+          const available = data.available || 0;
+          const free = data.free || 0;
+          const missing = data.missing || 0;
+          const missingBarcodes = data.missing_barcodes || 0;
+          let message = `ЧЗ в базе: ${free} свободных.`;
+          let isError = false;
+          if (missingBarcodes > 0) {
+            message = `Не хватает ШК для ${missingBarcodes} шт. Заполните штрихкод.`;
+            isError = true;
+          } else if (missing > 0) {
+            message = `ЧЗ в базе: ${free} свободных. Не хватает ${missing}. Загрузите файл.`;
+            isError = true;
+          }
+          if (lastImportSummary) {
+            message = `${message}${lastImportSummary}`;
+            lastImportSummary = '';
+          }
+          setStatus(message, isError);
+          toggleUpload(missing, missingBarcodes);
+        } catch (err) {
+          lastResult = null;
+          setStatus('Не удалось проверить ЧЗ. Попробуйте позже.', true);
+          toggleUpload(0, 0);
+        } finally {
+          checking = false;
+        }
+      };
+
+      const importCodes = async () => {
+        if (!importUrl || !fileInput?.files?.length) {
+          return;
+        }
+        if (importing) {
+          return;
+        }
+        const cards = window.processingCollectCards ? window.processingCollectCards() : [];
+        const orderId = form.querySelector('input[name="edit_order_id"]')?.value
+          || form.querySelector('input[name="draft_order_id"]')?.value
+          || '';
+        const agencyId = form.querySelector('input[name="agency_id"]')?.value || '';
+        const formData = new FormData();
+        formData.set('marking_cz_file', fileInput.files[0]);
+        formData.set('cards_json', JSON.stringify(cards));
+        if (orderId) {
+          formData.set('order_id', orderId);
+        }
+        if (agencyId) {
+          formData.set('agency_id', agencyId);
+        }
+        importing = true;
+        setStatus('Импортируем ЧЗ...', false);
+        try {
+          const resp = await fetch(importUrl, {
+            method: 'POST',
+            headers: {
+              'X-CSRFToken': getCsrfToken(),
+            },
+            body: formData,
+          });
+          const data = await resp.json().catch(() => ({}));
+          if (!resp.ok || !data.ok) {
+            throw new Error(data.error || 'Ошибка импорта ЧЗ.');
+          }
+          lastImportSummary = buildImportSummary(data);
+          await runCheck();
+        } catch (err) {
+          setStatus(err.message || 'Не удалось импортировать ЧЗ.', true);
+        } finally {
+          importing = false;
+        }
+      };
+
+      const scheduleCheck = () => {
+        if (checkTimer) {
+          clearTimeout(checkTimer);
+        }
+        checkTimer = setTimeout(runCheck, 300);
+      };
+
+      window.processingMarkingScheduleCheck = scheduleCheck;
+
+      select.addEventListener('change', () => scheduleCheck());
+      if (fileInput) {
+        fileInput.addEventListener('change', () => {
+          if (!fileInput.files?.length) {
+            return;
+          }
+          importCodes();
+        });
+      }
+
+      form.addEventListener('submit', (event) => {
+        const action = event.submitter?.value || '';
+        if (action === 'draft') {
+          return;
+        }
+        if (!select.value) {
+          return;
+        }
+        if (checking) {
+          event.preventDefault();
+          alert('Проверка ЧЗ выполняется. Подождите.');
+          return;
+        }
+        if (!lastResult) {
+          event.preventDefault();
+          alert('Не удалось проверить ЧЗ. Попробуйте еще раз.');
+          return;
+        }
+        const missing = lastResult.missing || 0;
+        const missingBarcodes = lastResult.missing_barcodes || 0;
+        if ((missing > 0 || missingBarcodes > 0) && !fileInput?.files?.length) {
+          event.preventDefault();
+          alert('Недостаточно ЧЗ. Загрузите файл ЧЗ перед отправкой.');
+        }
+      });
+
+      scheduleCheck();
     })();
   </script>
   <script>

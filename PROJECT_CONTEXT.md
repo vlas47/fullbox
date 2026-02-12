@@ -56,6 +56,20 @@
 - If no: test in incognito or disable extensions; share pending requests if any.
 
 ## AI Action Log
+- 2026-02-02 20:44: deployed updated agent app (events poll) and processing flow polling; applied agent event migration (faked on server due to preexisting table).
+- 2026-02-02 20:22: wired processing flow to poll agent scan events; added printer commands integration in processing print queue actions.
+- 2026-02-02 20:22: expanded Windows agent to handle print jobs (existing print queue), printer control commands, and include printer list in ping meta.
+- 2026-02-02 19:46: deployed agent app to server, applied migrations, restarted service.
+- 2026-02-02 19:28: scaffolded Fullbox Windows agent (.NET 8 service + tray app + shared config) and build script under `fullbox_agent/`.
+- 2026-02-02 18:58: added new `agent` Django app with DeviceAgent/AgentCommand models and token-protected API endpoints (ping, commands, ack) plus settings/urls wiring.
+- 2026-02-02 17:08: added COM reconnect button using Web Serial getPorts/requestPort fallback to avoid physical unplug/replug.
+- 2026-02-02 16:56: added RAW COM log panel with clear button to processing flow Web Serial block.
+- 2026-02-02 16:41: added Web Serial (COM) connector on processing flow page to feed scans directly into placement flow and mini scanner test.
+- 2026-02-02 16:23: added mini scanner test panel on processing flow page (last code/length/source/detected/time + clear).
+- 2026-02-02 16:11: expanded labels settings access to processing_head and manager (along with storekeeper).
+- 2026-02-02 16:04: allowed storekeeper role to access labels settings page for scanner setup.
+- 2026-02-02 15:56: added "Настройка сканера" action link on processing flow sidebar pointing to labels settings.
+- 2026-02-02 15:48: added CHZ-only placement mode in processing flow (UI notice + scanner copy/manual blocks), plus `/orders/processing/<id>/flow/scan/` endpoint to validate/lock MarkingCode and record box placement.
 - 2026-01-18 10:50: added labels app with settings page (printers/scanners/label previews), centralized label markup/styles, updated SKU + processing card label previews to 58x40, and linked from head manager; updated LABEL_PRINT.md.
 - 2026-01-18 10:55: deployed labels/print updates to server and restarted fullbox service.
 - 2026-01-15 18:32: moved processing direction distribution into a dedicated full-width screen and connected it back to the main form via session storage.
@@ -184,6 +198,12 @@
 - 2026-01-07 20:44: switched placement location to single "Место хранения" (default "Поле приемки"), updated placement UI/validation and inventory journal location display.
 - 2026-01-05 07:02: uploaded updated `journal.md` to server.
 - 2026-01-05 07:06: added 2026-01-04 summary to `journal.md` and uploaded to server.
+- 2026-02-10 13:35: reviewed repo overview (README/description/AGENT), scanned PROJECT_CONTEXT notes, and listed core directories/apps.
+- 2026-02-10 13:41: reviewed processing-related code paths (processing_app flows, orders receiving/placement flow, marking/labels/agent links, templates for processing work/flow).
+- 2026-02-10 13:49: fixed processing worker task routing to keep flow link when status is "Взята в работу" (todo_panel).
+- 2026-02-10 13:55: deployed updated todo_panel.py to server, restarted fullbox service, and ran a basic HTTP status check on /processing-worker/ (403 without auth).
+- 2026-02-10 14:06: fixed payload selection to ignore packer-only updates, deployed orders/views.py, restarted service, and verified processing order #7 items now resolve in flow.
+- 2026-02-10 14:15: fixed processing_flow_marking_scan to use latest meaningful payload (ignore packer-only update), deployed processing_app/views.py, restarted service.
 - 2026-01-05 07:11: reordered packing request form to start with item description and deadline, moved materials/comment sections; deployed and restarted `fullbox`.
 - 2026-01-05 07:18: reworked packing order detail layout to remove right column; moved info/comments under main content for packing; deployed and restarted `fullbox`.
 - 2026-01-05 07:25: restored right column for packing detail; info/comments stay in two blocks on the right; deployed and restarted `fullbox`.
@@ -637,6 +657,25 @@
 - 2026-01-25 09:59: исправил отображение текста в колонках короба (корректный размер и обрезка до 2 строк без пропажи).
 - 2026-01-25 10:03: переработал разметку колонок короба, чтобы текст отображался и обрезался до 2 строк при правом выравнивании.
 - 2026-01-25 10:10: пересобрал позиционирование повернутого текста в колонках короба (прижим к правой линии, перенос до 2 строк, обрезка).
+- 2026-01-25 11:03: упростил позиционирование повернутого текста в колонках короба (убрал translate), чтобы текст отображался.
+- 2026-01-25 11:06: снял обрезку текста в колонках короба и разрешил переполнение.
+- 2026-01-25 11:10: перевел текст колонок короба в vertical-rl с поворотом 180°, ограничением до 2 колонок и обрезкой.
+- 2026-01-25 13:15: вернул поворот текста на 90° с фиксированным блоком и clamp до 2 строк, чтобы текст был видим внутри колонок короба.
+- 2026-01-25 13:19: очистил макет короба и оставил только 1-й столбец (Основание) и 2-й столбец (Клиент) без доп. элементов.
+- 2026-01-25 13:24: повернул текст в двух столбцах короба на 90°.
+- 2026-01-25 13:27: вернул сетку 10x10 для короба и перевел текст столбцов в vertical-rl на всю высоту колонки.
+- 2026-01-25 13:28: выровнял текст в столбцах короба по вертикальному центру.
+- 2026-01-25 13:31: поменял text-orientation на sideways для поворота всех символов (включая №) в столбцах короба.
+- 2026-01-25 13:41: добавил заголовок "Короб - ШК для короба" в верхнюю строку с 3-й клетки для этикетки короба.
+- 2026-01-25 13:44: связал заголовок короба с полем ШК (текст "Короб - {ШК}") и размером шрифта ШК.
+- 2026-01-25 13:47: выровнял заголовок короба по центру верхней зоны.
+- 2026-01-25 14:50: добавил зону QR и номер короба в правом нижнем углу, включил показ QR для короба.
+- 2026-01-25 14:52: убрал префикс "№" у номера короба, теперь выводится только цифра.
+- 2026-01-25 15:03: развернул этикетку паллеты (swap width/height) и добавил сетку 10x10, скрываемую при печати.
+- 2026-01-25 15:09: перенес блок "Принтеры" рядом с таблицей настроек этикетки.
+- 2026-01-25 15:11: очистил макет паллеты, оставил только сетку 10x10.
+- 2026-01-25 15:14: развернул блок паллеты (stage/print) через swap ширины/высоты для корректного отображения.
+- 2026-01-25 15:46: убрал двойной swap размеров паллеты, чтобы сетка не выходила за блок.
 - 2026-01-25 09:18: обновил `journal.md` записями за 2026-01-24 и 2026-01-25.
 - 2026-01-25 09:20: дополнил `journal.md` подробным списком изменений за 2026-01-25.
 - 2026-01-25 09:20: добавил в `journal.md` пункт про подписи размеров для этикетки "Короб · 58x60".
@@ -644,3 +683,180 @@
 - 2026-01-25 10:07: дополнил `journal.md` пунктами по изменениям этикетки короба (сетка, поля, колонки, выравнивание).
 - 2026-01-25 10:10: закоммитил изменения по этикетке короба и журналу (commit a991bca) и отправил в GitHub.
 - 2026-01-25 10:10: задеплоил обновления на сервер через scp (шаблоны/утилиты labels, `journal.md`, `PROJECT_CONTEXT.md`), перезапустил `fullbox`.
+- 2026-01-25 11:04: начал исследование синхронизации маркетплейсов (market-sync).
+- 2026-01-25 11:06: изучил `market_sync` (dashboard/настройки/эндпоинты WB/Ozon), проверил страницу `/market-sync/?client=2951` через curl.
+- 2026-01-25 11:18: добавил отчеты по синхронизации маркетплейсов (модель, endpoint отчета, вывод на страницах market-sync).
+- 2026-01-25 11:20: задеплоил обновления market-sync (модели/вью/шаблоны), применил миграции (market_sync, marking, processing_app, sklad) и перезапустил `fullbox`.
+- 2026-01-25 13:17: исправил 500 на `/market-sync/` — применил миграцию `market_sync` в prod с `.env` (Postgres), перезапустил `fullbox`, проверил 200.
+- 2026-01-25 13:24: добавил на dashboard market-sync синхронизацию и отчет для Ozon (отдельная карточка + запуск), обновил JS на запуск всех настроенных маркетплейсов.
+- 2026-01-25 13:26: задеплоил обновления market-sync dashboard (WB+Ozon) на сервер, перезапустил `fullbox`, проверил 200.
+- 2026-01-25 19:27: проверил HTML страницы market-sync (клиент 2951) на сервере, подтвердил наличие карточки Ozon.
+- 2026-01-26 01:01: проверил наличие приложения `marking` (Честный знак) и его маршруты в коде.
+- 2026-01-26 01:02: проверил интеграцию `marking` в processing_app (API/шаблоны/роуты).
+- 2026-01-25 17:23: уменьшил карточку паллеты 75x120 на 30% (scale 1.4).
+- 2026-01-25 17:30: сделал макет паллеты как у короба (таблица/расположение, QR, заголовок).
+- 2026-01-25 17:39: для паллеты копирование настроек из короба при первом открытии и QR по ШК.
+- 2026-01-25 17:52: сделал QR квадратным через авторазмер и центрирование, добавил fallback копирования полей короба для паллеты.
+- 2026-01-25 18:02: уменьшил и зафиксировал квадратный QR (85% от меньшей стороны зоны).
+- 2026-01-25 19:12: добавил проверку наличия ЧЗ для маркировки 58/40 (шт/чз) в заявке на обработку, файл импорта ЧЗ и API проверки.
+- 2026-01-25 19:26: исправил импорт ЧЗ: первая строка всегда заголовок, импорт работает и в черновике.
+- 2026-01-25 19:35: изменил импорт ЧЗ для сохранения всех кодов в базе, даже вне текущей заявки.
+- 2026-01-26 20:41: исследовал проект (структура репозитория, список приложений), просмотрел `README.md`, `description.md`, `PROJECT_CONTEXT.md`, `fullbox/fullbox/settings.py`, `fullbox/fullbox/urls.py`.
+- 2026-01-26 20:41: обновил `journal.md` записью за 2026-01-26.
+- 2026-01-26 20:42: задеплоил `journal.md` и `PROJECT_CONTEXT.md` на сервер через scp и перезапустил сервис `fullbox`.
+- 2026-01-26 20:48: исследовал кабинет руководителя обработки: `processing_head` (views/urls, шаблон), `todo_panel`, доступы/маршруты в `processing_app`, `orders`, `reachtruck`, `employees`.
+- 2026-01-26 20:48: обновил `journal.md` записью за 2026-01-26 (кабинет руководителя обработки).
+- 2026-01-26 20:49: задеплоил `journal.md` и `PROJECT_CONTEXT.md` на сервер через scp и перезапустил сервис `fullbox`.
+- 2026-01-26 20:51: проверил страницу обработки заказа №6 в режиме работы на проде — без авторизации возвращает "Доступ запрещен".
+- 2026-01-26 20:51: обновил `journal.md` записью за 2026-01-26 (проверка прод-страницы обработки).
+- 2026-01-26 20:52: задеплоил `journal.md` и `PROJECT_CONTEXT.md` на сервер через scp и перезапустил сервис `fullbox`.
+- 2026-01-26 20:53: проверил наличие шаблона `processing_work.html` на сервере (`/opt/fullbox/fullbox/processing_app/templates/processing/processing_work.html`).
+- 2026-01-26 20:53: обновил `journal.md` записью за 2026-01-26 (проверка шаблона на сервере).
+- 2026-01-26 20:54: задеплоил `journal.md` и `PROJECT_CONTEXT.md` на сервер через scp и перезапустил сервис `fullbox`.
+- 2026-01-26 21:19: удалил блок "Коды ЧЗ" со страницы обработки товара (`processing_work.html`), включая стили и JS.
+- 2026-01-26 21:19: обновил `journal.md` записью за 2026-01-26 (удаление блока ЧЗ).
+- 2026-01-26 21:20: задеплоил `processing_work.html`, `journal.md`, `PROJECT_CONTEXT.md` на сервер, синхронизировал `PROJECT_CONTEXT.md` и перезапустил сервис `fullbox`.
+- 2026-01-27 06:49: перезалил `processing_work.html` в правильный путь `/opt/fullbox/fullbox/processing_app/templates/processing/processing_work.html`, перезапустил `fullbox`, проверил удаление блока "Коды ЧЗ".
+- 2026-01-27 06:49: обновил `journal.md` записью за 2026-01-27 (исправление деплоя `processing_work.html`).
+- 2026-01-27 06:50: задеплоил `journal.md` и `PROJECT_CONTEXT.md` на сервер и перезапустил сервис `fullbox`.
+- 2026-01-27 07:03: добавил кнопку "Переместить в зону обработки" на карточках обработки, модал с предзаполнением кода паллеты и отправкой задания ричтраку через `/reachtruck/` без ухода со страницы (`processing_work.html`).
+- 2026-01-27 07:03: обновил `journal.md` записью за 2026-01-27 (кнопка перемещения в обработку).
+- 2026-01-27 07:04: задеплоил `processing_work.html`, `journal.md`, `PROJECT_CONTEXT.md` на сервер и перезапустил сервис `fullbox`.
+- 2026-01-27 07:05: синхронизировал `PROJECT_CONTEXT.md` на сервере и перезапустил `fullbox`.
+- 2026-01-27 07:15: расширил модал перемещения в обработку — таблица паллет (паллета/текущее место/назначение), поддержка нескольких заданий, добавлен lookup эндпоинт `/reachtruck/lookup/` для отображения текущего места (`processing_work.html`, `reachtruck/views.py`, `reachtruck/urls.py`).
+- 2026-01-27 07:15: обновил `journal.md` записью за 2026-01-27 (расширение модала перемещения).
+- 2026-01-27 07:16: задеплоил `processing_work.html`, `reachtruck/views.py`, `reachtruck/urls.py`, `journal.md`, `PROJECT_CONTEXT.md` на сервер и перезапустил `fullbox`.
+- 2026-01-27 07:17: синхронизировал `journal.md` и `PROJECT_CONTEXT.md` на сервере и перезапустил `fullbox`.
+- 2026-01-27 07:43: проверил карту склада (`stockmap.html`, `stockmap_row.html`): используются зоны PR/OTG/MR/OS, отдельной зоны обработки нет.
+- 2026-01-27 07:43: обновил `journal.md` записью за 2026-01-27 (карта склада/зоны).
+- 2026-01-27 07:44: задеплоил `journal.md` и `PROJECT_CONTEXT.md` на сервер и перезапустил `fullbox`.
+- 2026-01-27 09:13: добавил зону обработки OBR (20 паллет) в карту склада и учёт занятости, расширил нормализацию/ярлыки зон (reachtruck/stockmap/placement act), добавил OBR в селект размещения и ричтрака, изменил назначение перемещений из обработки на OBR.
+- 2026-01-27 09:13: обновил `journal.md` записью за 2026-01-27 (добавление зоны OBR).
+- 2026-01-27 09:14: задеплоил изменения по зоне OBR (`processing_work.html`, `reachtruck` app, `stockmap/views.py`, `orders/placement_act.html`, `journal.md`, `PROJECT_CONTEXT.md`) и перезапустил `fullbox`.
+- 2026-01-27 09:23: в прод БД найдено размещение товара по ШК 4660406800169 на палете `КЗИ-2601-361835-op` (PR · Зона приемки), заявка приемки №12, количество 1000.
+- 2026-01-27 09:23: обновил `journal.md` записью за 2026-01-27 (поиск паллет по ШК).
+- 2026-01-27 09:23: задеплоил `journal.md` и `PROJECT_CONTEXT.md` на сервер и перезапустил `fullbox`.
+- 2026-01-27 09:27: добавил поиск паллет по товару в модалке перемещения (эндпоинт `/reachtruck/lookup-item/`), теперь в таблице подставляются найденные паллеты и места вместо ШК товара (`processing_work.html`, `reachtruck/views.py`, `reachtruck/urls.py`).
+- 2026-01-27 09:27: обновил `journal.md` записью за 2026-01-27 (поиск паллет в модалке).
+- 2026-01-27 09:28: задеплоил `processing_work.html`, `reachtruck` обновления, `journal.md`, `PROJECT_CONTEXT.md` на сервер и перезапустил `fullbox`.
+- 2026-01-27 09:31: обновил поиск паллет в модалке — отправляются все ШК товара, а результат дедуплицируется по паллетам (`processing_work.html`, `reachtruck/views.py`).
+- 2026-01-27 09:31: обновил `journal.md` записью за 2026-01-27 (поиск по всем ШК).
+- 2026-01-27 09:35: убрал автозаполнение поля паллеты ШК товара в модалке перемещения; при отсутствии паллет добавляется пустая строка с подсказкой (`processing_work.html`).
+- 2026-01-27 09:40: в поиске паллет по товару добавил совместное использование ШК и артикула (передаётся `sku` даже при наличии ШК), чтобы подтягивались все паллеты (`processing_work.html`).
+- 2026-01-27 10:42: на карточке обработки скрываю кнопку перемещения при наличии заданий на OBR и показываю статусы перемещения; добавил выдачу статусов по паллете в `/reachtruck/lookup-item/` (`processing_work.html`, `reachtruck/views.py`).
+- 2026-01-27 11:14: при доставке в OBR удаляю паллету и короба из размещения, расширил инвентаризацию на акты размещения из обработки; добавил акт размещения после обработки для заявок processing и требование закрытого акта перед завершением (`reachtruck/views.py`, `processing_app/views.py`, `orders/views.py`, `orders/placement_act.html`, `processing_app/urls.py`).
+- 2026-01-27 11:24: добавил кнопку перехода в акт размещения обработки в блоке параметров на странице обработки (`processing_work.html`).
+- 2026-01-27 12:10: добавил фиксацию завершения обработки по каждой карте товара (processed_at/processed_by, список processed_cards) и кнопку "Обработка завершена" в карте (`processing_app/views.py`, `processing_card.html`).
+- 2026-01-27 12:10: ограничил размещение после обработки только обработанными картами и отмечаю placed_cards/placed_at при закрытии акта (`orders/views.py`).
+- 2026-01-27 12:10: включил режим ЧЗ-размещения: при маркировке 58/40 (шт/чз) размещение доступно только через сканирование ЧЗ с привязкой к коробу, ручной ввод отключён (`orders/placement_act.html`).
+- 2026-01-27 12:10: кнопка размещения обработанного товара на странице обработки активна только при наличии обработанных карт (`processing_work.html`).
+- 2026-01-27 13:30: добавил кнопки печати этикеток (обычные/ЧЗ) в карте обработки и модалку со списком размеров; открытие по `?label_print=1&label_mode=...` (`processing_app/views.py`, `processing_card.html`).
+- 2026-01-27 13:32: задеплоил изменения печати этикеток (`processing_app/views.py`, `processing_card.html`) вместе с `journal.md` и `PROJECT_CONTEXT.md`, перезапустил `fullbox`.
+- 2026-02-01 07:59: просмотрел `README.md`, `description.md`, список приложений в `fullbox/` для изучения проекта; изменений в коде не вносил, деплой не требовался.
+- 2026-02-01 08:01: попытался открыть страницу логина https://kondelyabr.ru/login/ через web.run для проверки пользователей; доступ не получен (страница не открылась), список пользователей без авторизации недоступен.
+- 2026-02-01 08:02: просмотрел скриншот C:\Users\user\YandexDisk\Скриншоты\2026-02-01_08-02-07.png, перечислил отображаемые тестовые логины сотрудников и клиентов со страницы входа.
+- 2026-02-01 08:01: проверил пароли для тестовых логинов через локальную БД (django auth); у eachtruck_ilya пароль '1' совпал, у eachtruck_driver — нет, остальные логины не найдены в локальной базе (вероятно другая БД).
+- 2026-02-01 08:02: проверил на сервере (prod БД) пароли '1' для тестовых логинов через Django; подтвердил результаты (True у всех, кроме eachtruck_driver).
+- 2026-02-01 08:03: на сервере установил пароль '5' для тестовых логинов (accountant/director/head/manager/picker/reachtruck_driver/reachtruck_ilya/storekeeper/client2638/client2763/client2951).
+- 2026-02-01 08:04: проверил на сервере пароль '5' для всех тестовых логинов — у всех True.
+- 2026-02-01 08:25: в processing_work.html добавил фильтрацию строк параметров обработки — скрываются пустые/нулевые значения и значения вроде 'Отсутствует', чтобы в кабинете разработчика показывались только используемые параметры.
+- 2026-02-01 08:26: задеплоил ullbox/processing_app/templates/processing/processing_work.html на сервер и перезапустил сервис ullbox.
+- 2026-02-01 08:33: добавил кнопку «Распечатать этикетки» в строках маркировки на карточке обработки (processing_card.html), задеплоил на сервер и перезапустил ullbox.
+- 2026-02-01 09:26: увеличил модалку печати этикеток в карточке обработки и добавил превью этикетки прямо в меню (processing_card.html), задеплоил и перезапустил ullbox.
+- 2026-02-01 10:22: синхронизировал параметры/превью печати этикеток в карточке обработки с приложением этикеток: добавил размеры из LABEL_SIZES, масштаб превью, сохранение принтера, печать в масштабе 2.12; обновил меню печати и превью (processing_card.html, processing_app/views.py).
+- 2026-02-01 10:22: задеплоил processing_card.html и processing_app/views.py на сервер и перезапустил fullbox.
+- 2026-02-01 11:00: добавил новую страницу печати этикеток для обработки на базе шаблона labels (processing_label_print.html), автозаполнение таблицы данными текущего товара и строками ШК; добавил ProcessingLabelPrintView, маршрут /orders/processing/<order>/card/<card>/labels/, обновил ссылки печати на новый шаблон (processing_app/views.py, processing_app/urls.py).
+- 2026-02-01 11:00: задеплоил processing_app/views.py, processing_app/urls.py и processing_label_print.html на сервер и перезапустил fullbox.
+- 2026-02-01 11:13: на странице печати этикеток для обработки убрал перезапись текстовых полей из сохранённых шаблонов — теперь таблица остаётся заполненной данными текущего товара (processing_label_print.html).
+- 2026-02-01 11:13: задеплоил processing_label_print.html на сервер и перезапустил fullbox.
+- 2026-02-01 11:25: добавил вывод/использование кодов ЧЗ на странице печати обработки: подтягиваю список кодов по заказу/ШК, для превью беру первый, при печати в режиме ЧЗ отправляю по одному коду на каждую единицу (processing_app/views.py, processing_label_print.html).
+- 2026-02-01 11:25: задеплоил processing_app/views.py и processing_label_print.html на сервер и перезапустил fullbox.
+- 2026-02-01 11:48: исправил передачу списка ЧЗ в data-атрибут (заменил escapejs на escape), чтобы JSON корректно парсился на странице печати обработки (processing_label_print.html).
+- 2026-02-01 11:48: задеплоил processing_label_print.html на сервер и перезапустил fullbox.
+- 2026-02-01 12:03: добавил скачиваемый пакет синхронизации принтеров (zip с sync_printers.ps1 + sync_printers.cmd), эндпоинт /orders/processing/print-agent/sync-printers/, обновил кнопки синхронизации в настройках этикеток и печати (processing_app/views.py, processing_app/urls.py, labels/settings.html, processing_card.html, processing_label_print.html).
+- 2026-02-01 12:03: задеплоил изменения синхронизации принтеров на сервер и перезапустил fullbox.
+- 2026-02-01 12:08: исправил синтаксическую ошибку в processing_app/views.py (cmd_content для пакета синхронизации) и задеплоил фикс, перезапустил fullbox.
+- 2026-02-01 12:10: задеплоил sync_printers.ps1 в /opt/fullbox/ для скачиваемого пакета синхронизации принтеров.
+- 2026-02-01 12:15: добавил нормализацию названий для этикеток/таблицы — заменяю 'общество с ограниченной ответственностью' на 'ООО' при формировании label_base и карточки (processing_app/views.py), задеплоил и перезапустил fullbox.
+- 2026-02-01 12:19: переименовал запускаемый cmd в пакете синхронизации на run_printer_sync.cmd и обновил подсказку (processing_app/views.py, labels/settings.html), задеплоил и перезапустил fullbox.
+- 2026-02-01 12:21: в пакете синхронизации переименовал скрипт на printer_sync.ps1, добавил README и уточнил подсказку (processing_app/views.py, labels/settings.html), задеплоил и перезапустил fullbox.
+- 2026-02-01 12:27: переделал run_printer_sync.cmd на запуск через EncodedCommand (без выполнения ps1-файла), чтобы обходить политику подписи; обновил генерацию пакета и задеплоил, перезапустил fullbox.
+- 2026-02-01 13:40: добавил генерацию единого PDF при выборе PDF-принтера на странице печати этикеток (один файл с страницами размера этикетки); подключил jsPDF и обновил processing_label_print.html.
+- 2026-02-01 13:54: добавил на странице печати этикеток поле количества и прогресс (напечатано/из/осталось), учёл лимит печати и обновил логику печати/PDF, задеплоил processing_label_print.html и перезапустил fullbox.
+- 2026-02-02 07:26: просмотрел README.md, PROJECT_CONTEXT.md, description.md, fullbox/fullbox/settings.py и fullbox/fullbox/urls.py для изучения структуры проекта; изменений в коде не вносил, деплой не требовался.
+- 2026-02-02 07:34: изучил кабинет обработки: processing_app urls/views и шаблоны (processing.html, processing_work.html, processing_card.html, processing_label_print.html), а также processing_head dashboard и маппинг кабинета в employees/access.py; изменений в коде не вносил, деплой не требовался.
+- 2026-02-02 07:37: добавил в journal.md запись за 2026-02-01 (обработка/этикетки/печать/синхронизация принтеров), загрузил journal.md на сервер через scp; изменений в коде не вносил, перезапуск не требовался.
+- 2026-02-02 07:41: изучил кабинет разработчика (developer.html), карточку товара SKU и печать этикеток (sku_form.html, sku/views.py), а также печать этикеток в карте обработки (processing_card.html, processing_app/views.py); изменений в коде не вносил, деплой не требовался.
+- 2026-02-02 07:50: разобрал причину зависания печати этикеток: просмотрел labels/settings.html, processing_app/views.py (очередь печати и агент), print_agent.ps1, labels/utils.py (статус агента); изменений в коде не вносил.
+- 2026-02-02 07:54: по просьбе пользователя очистил очередь печати этикеток на проде (удалены 1980 pending в ProcessingPrintJob) через manage.py shell; изменений в коде не вносил.
+- 2026-02-02 08:08: добавил управление очередью печати (pause/resume/clear) и учёт паузы, вывел счётчики очереди в labels/settings, добавил кнопки управления и скачивания агента; обновил labels/utils.py, labels/views.py, processing_app/views.py, processing_app/urls.py и labels/settings.html.
+- 2026-02-02 08:13: проверил на сервере: в labels/settings.html присутствуют строки очереди (data-print-queue-pending), в processing_app/views.py и urls.py есть обработчики pause; деплой подтверждён.
+- 2026-02-02 08:19: связал страницу печати этикеток обработки (processing_label_print.html) с управлением очередью: добавил строки счётчиков очереди и кнопки pause/clear/скачать агента, обновил JS; задеплоил шаблон и перезапустил fullbox.
+- 2026-02-02 08:20: разрешил управление очередью печати (pause/clear) для ролей storekeeper и processing_head в processing_app/views.py; задеплоил и перезапустил fullbox.
+- 2026-02-02 08:28: добавил сброс статуса "в печати" в очередь (print-jobs/reset) и кнопки "Сбросить печать" в labels/settings и processing_label_print; обновил processing_app/views.py, processing_app/urls.py, labels/settings.html, processing_label_print.html.
+- 2026-02-02 08:36: для страницы печати обработки включил обновление прогресса "Напечатано" и для режима ЧЗ (processing_label_print.html), задеплоил и перезапустил fullbox.
+- 2026-02-02 08:47: добавил сброс напечатанных кодов ЧЗ для обработки: эндпоинт /marking/processing/<order>/print/reset/ и кнопку «Сбросить ЧЗ» на странице печати, обновил JS (marking/urls.py, processing_label_print.html).
+- 2026-02-02 08:48: задеплоил marking/urls.py и processing_label_print.html (сброс ЧЗ), обновил PROJECT_CONTEXT.md на сервере и перезапустил fullbox.
+- 2026-02-02 08:50: исправил Internal Server Error: задеплоил marking/views.py (не хватало processing_marking_reset_printed) и перезапустил fullbox.
+- 2026-02-02 12:59: в карте обработки добавил вывод количества напечатанных этикеток в блоке параметров обработки (Маркировка 58/40 / 58/40 ЧЗ) и синхронизацию счётчика с localStorage; при печати из карты увеличиваю счётчик (processing_card.html).
+- 2026-02-02 12:59: задеплоил processing_card.html (счётчик напечатанных этикеток в параметрах обработки) и перезапустил fullbox.
+- 2026-02-02 13:06: в карте обработки скрываю «Распределение по направлениям», если для товара нет распределения; также не показываю блоки направлений с нулевыми количествами (processing_app/views.py, processing_card.html).
+- 2026-02-02 13:06: задеплоил processing_app/views.py и processing_card.html (скрытие распределения по направлениям без данных) и перезапустил fullbox.
+- 2026-02-02 13:15: отключил завершение обработки из карточки товара, добавил автосохранение результатов при переходе «К обработке» (return_to в save_results, JS submit), обновил processing_card.html и processing_app/views.py.
+- 2026-02-02 13:15: задеплоил processing_app/views.py и processing_card.html (автосохранение результатов при «К обработке», убрано завершение из карточки) и перезапустил fullbox.
+- 2026-02-02 13:23: включил кнопку «Разместить обработанный товар» в обработке, если есть сохранённые результаты с processed > shipped (processing_app/views.py).
+- 2026-02-02 13:23: задеплоил processing_app/views.py (условие доступности кнопки размещения) и перезапустил fullbox.
+- 2026-02-02 14:13: починил переход «К обработке» из карты: добавил action return_to_processing, автосохранение результатов (если есть права) и отметку карты как обработанной для включения размещения; обновил processing_card.html и processing_app/views.py.
+- 2026-02-02 14:13: задеплоил processing_app/views.py и processing_card.html (return_to_processing + отметка обработанной карты) и перезапустил fullbox.
+- 2026-02-02 14:33: сделал отдельный шаблон размещения для обработки: processing_placement_act.html (копия placement_act с пометками «обработка») и подключил его через новый ProcessingPlacementActView в processing_app/views.py и urls.py.
+- 2026-02-02 14:33: задеплоил processing_placement_act.html, processing_app/views.py и processing_app/urls.py, перезапустил fullbox.
+- 2026-02-02 14:41: усилил отличия шаблона размещения обработки (заголовки/кнопки «Размещение после обработки») в processing_placement_act.html.
+- 2026-02-02 14:41: задеплоил обновлённый processing_placement_act.html (видимый заголовок «Размещение после обработки») и перезапустил fullbox.
+- 2026-02-02 15:20: добавил размещение после обработки потоком: новый маршрут /orders/processing/<id>/flow/ и box-action, шаблон processing_flow.html, серверная логика закрытия и черновика; обновил переход в processing_work.html.
+- 2026-02-07 11:05: изучил структуру репозитория, README/description, AGENT.md, DEPLOY.md, LABEL_PRINT.md, fullbox_agent README, настройки/urls Django; note.txt содержит чувствительные данные (без публикации).
+- 2026-02-07 11:28: added diagnostics output for running Tray/Service processes in Fullbox.Agent.Tray DiagnosticsForm (PID list).
+- 2026-02-07 11:34: добавил строку процессов (Tray/Service) вверху окна диагностики (DiagnosticsForm.cs); сборка build.ps1 не запустилась из-за отсутствия dotnet.
+- 2026-02-07 11:43: собрал fullbox_agent через DOTNET_ROOT/PATH (build.ps1); новые бинарники в fullbox_agent/out и bundle; есть предупреждение CS8602 в PrintJobRunner.cs.
+- 2026-02-07 12:01: добавил отображение версии в окне установщика (title/header) и пересобрал fullbox_agent.
+- 2026-02-07 12:16: поднял версии Fullbox.Agent Service/Tray/Setup до 1.0.9 и пересобрал инсталлятор и бинарники.
+- 2026-02-07 12:22: создал копии инсталлятора с версией в имени: Fullbox.Agent.Setup-1.0.9.exe (out/setup и dist).
+- 2026-02-07 12:41: добавил окно/лог сканов в диагностику, записываю last_scan_value; поднял версии агента до 1.0.10, пересобрал и создал инсталлятор Fullbox.Agent.Setup-1.0.10.exe.
+- 2026-02-07 13:10: изучил кабинет руководителя обработки (processing_head) и потоковую страницу обработки (processing_flow: views/urls/template, сканер/агент/Web Serial блок, права).
+- 2026-02-07 13:26: уточнил путь данных сканера в обработке: agent events flow (agent/views.py, processing_flow.html JS polling).
+- 2026-02-07 13:52: в processing_flow снял зависимость списка агентов/COM-портов от наличия placement_entry (агенты грузятся всегда).
+- 2026-02-07 14:12: добавил индикатор агента в processing_flow (UI+JS), обновил AGENT_VERSION до 1.0.10, обновил static/agents инсталлятор и bundle; задеплоил на сервер и перезапустил fullbox.
+- 2026-02-07 14:32: починил прием agent event_type (добавил eventType/type) и задеплоил agent/views.py, перезапустил fullbox.
+- 2026-02-07 14:45: выяснил 403 на /orders/processing/<id>/flow/scan/; расширил доступ для обработки ЧЗ (processing_head/head_manager/director/admin/manager), вернул JSON-ошибку, задеплоил и перезапустил fullbox.
+- 2026-02-08 09:43: уменьшил блок сканера в processing_flow (оставил только базовые поля), задеплоил шаблон и перезапустил fullbox.
+- 2026-02-08 17:24: убрал блок агента (селект/ID/статусы) из сканера в processing_flow, оставил только кнопку «Скачать агента», задеплоил и перезапустил fullbox.
+- 2026-02-08 17:30: убрал блок Web Serial (COM) из сканера в processing_flow, вернул статус/индикатор агента, задеплоил и перезапустил fullbox.
+- 2026-02-08 18:03: добавил серверный контекст/лок агента (AgentContext), привязку событий к контексту, polling по context_id и claim/keepalive в processing_flow; подготовлены миграции и изменения в agent/views.py/urls.py/models.py.
+- 2026-02-08 18:05: задеплоил agent context (модели/вьюхи/шаблон), применил миграцию agent.0003 и перезапустил fullbox.
+- 2026-02-08 18:08: добавил кнопку «Перехватить сканер» (force claim контекста агента) в processing_flow, обновил логику контекста и задеплоил.
+- 2026-02-08 18:20: повторно применил миграцию agent.0003 с загрузкой .env (PostgreSQL), перезапустил fullbox — исправление 500 на /agent/contexts/claim/.
+- 2026-02-09 09:53: добавил в claim контекста статус онлайн агента и обновление статуса сканера на фронте без перезагрузки, задеплоил и перезапустил fullbox.
+- 2026-02-09 10:54: синхронизировал состояние сканера с агентом (com_health из ping), обновил фронт статуса/индикатора и задеплоил.
+- 2026-02-09 11:02: добавил polling /agent/status/ для live-статуса сканера без перезагрузки, обновил фронт отображения.
+- 2026-02-10 14:35: вернул выбор агента в processing_flow (селект/ID/инфо), добавил авто-выбор единственного/онлайн агента и уточнил подсказку про ID.
+- 2026-02-10 14:38: задеплоил processing_flow.html (выбор агента/auto-pick) на сервер и перезапустил сервис fullbox.
+- 2026-02-10 14:52: разделил статусы в processing_flow: добавил строку 'Контекст', перенес busy/ошибка туда, переименовал статус сканирования; задеплоил и перезапустил fullbox.
+- 2026-02-10 19:05: добавил общий просмотр коробов между пользователями в processing_flow (shared state + polling), owner-поля у коробов/палет, запрет редактировать чужие; добавил endpoint /flow/shared/, обновил views.py/urls.py/processing_flow.html; задеплоил и перезапустил fullbox.
+- 2026-02-10 19:16: убрал из processing_flow блок выбора/ID агента и строки статуса сканера (последний код/время/скан), оставил кнопки; добавил scanner-agents-data для авто-выбора; задеплоил и перезапустил fullbox.
+- 2026-02-10 19:22: вернул в processing_flow строки: статус агента, контекст (кем занят), индикатор и последний скан; задеплоил и перезапустил fullbox.
+- 2026-02-10 19:32: ограничил завершение размещения только для processing_head (серверная проверка и UI: disabled/alert), задеплоил views.py и processing_flow.html, перезапустил fullbox.
+- 2026-02-10 19:37: исправил проверку роли завершения размещения: разрешаю processing_head, даже если у пользователя несколько записей ролей; обновил can_finish_flow; задеплоил views.py и перезапустил fullbox.
+- 2026-02-10 19:48: исправил серверную проверку завершения размещения в ProcessingFlowView.post (processing_head), задеплоил views.py и перезапустил fullbox.
+- 2026-02-11 10:20: добавил drag-and-drop для перемещения коробов между палетами (только свои/открытые), визуальный курсор grab/grabbing и подсветку drop-зоны (processing_flow.html); задеплоил и перезапустил fullbox.
+- 2026-02-11 10:45: разрешил drag-and-drop между любыми открытыми палетами (в т.ч. чужими) с автокопированием палет в локальную сессию и сортировкой merged-состояния по updated_at, чтобы последние правки отображались всем (processing_flow.html, processing_app/views.py); задеплоил и перезапустил fullbox.
+- 2026-02-11 11:20: увеличил значки коробов в палетах, добавил номер короба с инициалами упаковщика в левом верхнем углу и количество единиц внизу, и этот же номер вывожу на этикетке короба (processing_flow.html); задеплоил и перезапустил fullbox.
+- 2026-02-11 11:35: поправил drag-and-drop между чужими палетами: при переносе подтягиваю чужие короба в локальную сессию, чтобы они не исчезали после сохранения (processing_flow.html); задеплоил и перезапустил fullbox.
+- 2026-02-11 12:00: синхронизировал локальные палеты/короба с общим состоянием при polling (shared state теперь обновляет локальную сессию после короткого окна локальных правок), чтобы содержимое палет было одинаковым у всех (processing_flow.html); задеплоил и перезапустил fullbox.
+- 2026-02-11 12:25: в синхронизации shared state отдаю приоритет локальным палетам/коробам (если код совпал), чтобы закрытие палеты не перезаписывалось чужими данными при polling (processing_flow.html); задеплоил и перезапустил fullbox.
+- 2026-02-11 12:45: добавил выбор активной палеты кликом по карточке (подсветка активной), чтобы кнопка «Закрыть палету» закрывала выбранную палету (processing_flow.html); задеплоил и перезапустил fullbox.
+- 2026-02-11 13:10: улучшил карточку палеты: добавил инициалы кто открыл/закрыл, зелёную подсветку активной палеты; при закрытии сохраняю closed_by_* и сохраняю их через нормализацию (processing_flow.html, processing_app/views.py); задеплоил и перезапустил fullbox.
+- 2026-02-11 13:30: ограничил одну открытую палету на пользователя (автозакрытие остальных при выборе/синхронизации/создании), закрытие пустой палеты теперь сохраняет ее в закрытых; добавил выбор активной палеты кликом и зелёную подсветку (processing_flow.html); задеплоил и перезапустил fullbox.
+- 2026-02-11 13:45: исправил инициализацию palet sync: сделал enforceSingleOpenPalletForUser hoisted, чтобы скрипт не падал до отрисовки (processing_flow.html); задеплоил и перезапустил fullbox.
+- 2026-02-11 13:55: исправил isOwnedByCurrentUser на function declaration, чтобы скрипт не падал при раннем вызове enforceSingleOpenPalletForUser (processing_flow.html); задеплоил и перезапустил fullbox.
+- 2026-02-11 14:05: исправил closePalletByCode на function declaration (hoisting), чтобы enforceSingleOpenPalletForUser не падал при раннем вызове и палеты не исчезали (processing_flow.html); задеплоил и перезапустил fullbox.
+- 2026-02-11 14:15: исправил getBoxItemsCount на function declaration, чтобы enforceSingleOpenPalletForUser не падал при раннем вызове (processing_flow.html); задеплоил и перезапустил fullbox.
+- 2026-02-11 14:30: убрал ранний вызов enforceSingleOpenPalletForUser до инициализации функций, чтобы скрипт не падал при множестве открытых палет (processing_flow.html); задеплоил и перезапустил fullbox.

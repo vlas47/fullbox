@@ -141,11 +141,20 @@ def _processing_status_label_from_entry(entry) -> str:
 @register.inclusion_tag("todo/_task_panel.html", takes_context=True)
 def task_panel(context, role=None, limit=6, show_meta=True, include_created_by=True):
     role_key = _resolve_role(context, role)
+    request = context.get("request")
+    current_employee = None
+    if request and request.user and request.user.is_authenticated:
+        current_employee = get_employee_for_user(request.user)
     tasks_qs = Task.objects.select_related(
         "assigned_to",
         "created_by",
         "observer",
     )
+    if role_key == "processing_worker":
+        if current_employee:
+            tasks_qs = tasks_qs.filter(assigned_to=current_employee)
+        else:
+            tasks_qs = tasks_qs.none()
     role_filter = None
     if role_key and role_key != ALL_ROLES_KEY:
         role_filter = Q(assigned_to__role=role_key) | Q(observer__role=role_key)
@@ -160,6 +169,10 @@ def task_panel(context, role=None, limit=6, show_meta=True, include_created_by=T
     receiving_by_order = {}
     processing_by_order = {}
     other_tasks = []
+
+    def _is_processing_flow_task(task):
+        return bool(task.route and "/orders/processing/" in task.route and "/flow/" in task.route)
+
     def _prefer_open(existing_task, candidate_task):
         if not existing_task:
             return candidate_task
@@ -171,25 +184,37 @@ def task_panel(context, role=None, limit=6, show_meta=True, include_created_by=T
             return candidate_task
         return existing_task
 
-    for task in tasks:
-        order_id = _extract_receiving_order_id(task.route)
-        if order_id and not _is_receiving_sign_task(task.route):
-            receiving_by_order[order_id] = _prefer_open(
-                receiving_by_order.get(order_id),
-                task,
-            )
-            continue
-        processing_id = _extract_processing_order_id(task.route)
-        if processing_id:
-            processing_by_order[processing_id] = _prefer_open(
-                processing_by_order.get(processing_id),
-                task,
-            )
-            continue
-        other_tasks.append(task)
-    combined_tasks = (
-        other_tasks + list(receiving_by_order.values()) + list(processing_by_order.values())
-    )
+    def _prefer_processing_task(existing_task, candidate_task):
+        if not existing_task:
+            return candidate_task
+        existing_flow = _is_processing_flow_task(existing_task)
+        candidate_flow = _is_processing_flow_task(candidate_task)
+        if existing_flow != candidate_flow:
+            return existing_task if not existing_flow else candidate_task
+        return _prefer_open(existing_task, candidate_task)
+
+    if role_key == "processing_worker":
+        combined_tasks = list(tasks)
+    else:
+        for task in tasks:
+            order_id = _extract_receiving_order_id(task.route)
+            if order_id and not _is_receiving_sign_task(task.route):
+                receiving_by_order[order_id] = _prefer_open(
+                    receiving_by_order.get(order_id),
+                    task,
+                )
+                continue
+            processing_id = _extract_processing_order_id(task.route)
+            if processing_id:
+                processing_by_order[processing_id] = _prefer_processing_task(
+                    processing_by_order.get(processing_id),
+                    task,
+                )
+                continue
+            other_tasks.append(task)
+        combined_tasks = (
+            other_tasks + list(receiving_by_order.values()) + list(processing_by_order.values())
+        )
 
     processing_order_ids = {}
     for task in combined_tasks:
@@ -219,7 +244,10 @@ def task_panel(context, role=None, limit=6, show_meta=True, include_created_by=T
             if "взята в работу" in status_label and task.status == "done":
                 task.status = "in_progress"
             if "взята в работу" in status_label:
-                task.route = f"/orders/processing/{order_id}/work/"
+                if role_key == "processing_worker":
+                    task.route = f"/orders/processing/{order_id}/flow/"
+                else:
+                    task.route = f"/orders/processing/{order_id}/work/"
 
     done_tasks = [task for task in combined_tasks if task.status == "done"]
     open_tasks = [task for task in combined_tasks if task.status != "done"]
@@ -238,21 +266,11 @@ def task_panel(context, role=None, limit=6, show_meta=True, include_created_by=T
     totals = {status: len(status_map[status]) for status in status_map}
     columns = []
     for status in STATUS_ORDER:
-        if status == "done":
-            status_tasks = sorted(
-                status_map[status],
-                key=lambda task: (task.updated_at, task.created_at),
-                reverse=True,
-            )[:limit_value]
-        else:
-            max_dt = datetime.max.replace(tzinfo=timezone.get_current_timezone())
-            status_tasks = sorted(
-                status_map[status],
-                key=lambda task: (
-                    task.due_date or max_dt,
-                    -task.created_at.timestamp(),
-                ),
-            )[:limit_value]
+        status_tasks = sorted(
+            status_map[status],
+            key=lambda task: (task.updated_at, task.created_at),
+            reverse=True,
+        )[:limit_value]
         columns.append(
             {
                 "status": status,
@@ -300,6 +318,14 @@ def task_panel(context, role=None, limit=6, show_meta=True, include_created_by=T
             receiving_status_by_order[order_id] = "В ожидании поставки товара"
     processing_status_by_order = {}
     processing_client_by_order = {}
+    processing_packers_by_order = {}
+    processing_head_employee = None
+    if role_key == "processing_head":
+        processing_head_employee = (
+            Employee.objects.filter(role="processing_head", is_active=True)
+            .order_by("full_name")
+            .first()
+        )
     if processing_order_ids:
         entries = (
             OrderAuditEntry.objects.filter(
@@ -321,19 +347,55 @@ def task_panel(context, role=None, limit=6, show_meta=True, include_created_by=T
             if not _is_status_entry(entry):
                 continue
             processing_status_by_order[entry.order_id] = _processing_status_label_from_entry(entry)
+        processing_routes = [
+            f"/orders/processing/{order_id}/flow/" for order_id in processing_order_ids
+        ]
+        packer_tasks = (
+            Task.objects.filter(
+                route__in=processing_routes,
+                assigned_to__role="processing_worker",
+            )
+            .exclude(status="done")
+            .select_related("assigned_to")
+        )
+        for pack_task in packer_tasks:
+            pack_order_id = _extract_processing_order_id(pack_task.route)
+            if not pack_order_id or not pack_task.assigned_to:
+                continue
+            label = pack_task.assigned_to.full_name or str(pack_task.assigned_to)
+            labels = processing_packers_by_order.setdefault(pack_order_id, [])
+            if label not in labels:
+                labels.append(label)
     for task in tasks:
         order_id = _extract_receiving_order_id(task.route)
         if order_id:
             task.order_status_label = receiving_status_by_order.get(order_id)
             task.order_client_label = receiving_client_by_order.get(order_id)
+            task.executor_label = task.assigned_to.full_name if task.assigned_to else None
+            if role_key == "processing_worker":
+                task.worker_title = task.title
             continue
         order_id = _extract_processing_order_id(task.route)
         if order_id:
             task.order_status_label = processing_status_by_order.get(order_id)
             task.order_client_label = processing_client_by_order.get(order_id)
+            packers = processing_packers_by_order.get(order_id) or []
+            task.processing_packers_label = ", ".join(packers) if packers else None
+            if role_key == "processing_head" and processing_head_employee:
+                if task.assigned_to and task.assigned_to.role == "processing_head":
+                    task.executor_label = task.assigned_to.full_name
+                else:
+                    task.executor_label = processing_head_employee.full_name
+            else:
+                task.executor_label = task.assigned_to.full_name if task.assigned_to else None
+            if role_key == "processing_worker":
+                task.worker_title = f"Задача на раскоробовку товара по заявке №{order_id}"
             continue
         task.order_status_label = None
         task.order_client_label = None
+        task.executor_label = task.assigned_to.full_name if task.assigned_to else None
+        if role_key == "processing_worker":
+            task.worker_title = task.title
     role_label = None
     if role_key == ALL_ROLES_KEY:
         role_label = "Все роли"

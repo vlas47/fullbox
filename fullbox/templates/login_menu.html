@@ -64,6 +64,10 @@
             <a class="btn" href="/dev-login/head_manager/?next=/head-manager/">{{ user.label }}</a>
           {% elif user.username == "processing_head" %}
             <a class="btn" href="/dev-login/processing_head/?next=/processing-head/">{{ user.label }}</a>
+          {% elif user.username == "processing_worker" %}
+            <a class="btn" href="/dev-login/processing_worker/?next=/processing-worker/">{{ user.label }}</a>
+          {% elif user.username == "processing_worker2" %}
+            <a class="btn" href="/dev-login/processing_worker2/?next=/processing-worker/">{{ user.label }}</a>
           {% elif user.username == "manager" %}
             <a class="btn" href="/dev-login/manager/?next=/team-manager/">{{ user.label }}</a>
           {% elif user.username == "storekeeper" %}

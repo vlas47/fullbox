@@ -226,6 +226,25 @@
       color: var(--ink);
       font-size: 14px;
     }
+    .field select {
+      width: 100%;
+      padding: 10px 12px;
+      border-radius: 10px;
+      border: 1px solid var(--stroke);
+      background: var(--surface-2);
+      color: var(--ink);
+      font-size: 14px;
+    }
+    .field .check-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .field .check-row input {
+      width: 16px;
+      height: 16px;
+      margin: 0;
+    }
     .label-grid {
       display: flex;
       flex-wrap: wrap;
@@ -233,6 +252,13 @@
       align-items: flex-start;
       min-height: 0;
       padding: 6px;
+    }
+    .label-table-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      align-items: flex-start;
+      margin-bottom: 12px;
     }
     .labels-panel {
       padding: 12px;
@@ -498,6 +524,43 @@
       font-size: 12px;
       color: #4b3b18;
     }
+    .scanner-grid {
+      display: grid;
+      gap: 18px;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .scanner-agent {
+      display: grid;
+      gap: 8px;
+    }
+    .scanner-agent-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+    .scanner-agent-title {
+      font-weight: 700;
+    }
+    .scanner-agent-meta {
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .scanner-badge {
+      padding: 6px 10px;
+      border-radius: 999px;
+      border: 1px solid var(--stroke);
+      font-size: 12px;
+      font-weight: 600;
+    }
+    .scanner-badge.online {
+      background: rgba(14,107,91,0.12);
+      color: var(--accent-strong);
+    }
+    .scanner-badge.offline {
+      background: rgba(212,84,60,0.12);
+      color: var(--danger);
+    }
     .reveal {
       animation: rise 0.7s ease both;
       animation-delay: calc(var(--i, 0) * 70ms);
@@ -524,6 +587,7 @@
       }
       .content { height: auto; }
       .grid.cols-2 { grid-template-columns: 1fr; }
+      .scanner-grid { grid-template-columns: 1fr; }
     }
     @media (max-width: 900px) {
       .label-stage { min-height: 260px; }
@@ -627,6 +691,7 @@
                 </div>
               </div>
             </div>
+            <div class="label-table-row">
             <table class="label-table" data-label-table>
               <thead>
                 <tr>
@@ -717,14 +782,13 @@
                 </tr>
               </tbody>
             </table>
-            <form id="label-settings-csrf" style="display:none">
-              {% csrf_token %}
-            </form>
-            <div class="label-grid">
-              <div class="label-printers-card">
+            <div class="label-printers-card">
               <div class="label-printers-title">Принтеры</div>
               <div class="printer-meta" data-print-status>Статус печати: {{ print_status_line }}</div>
               <div class="printer-meta" data-print-agent>Агент печати: {{ print_agent_line }}</div>
+              <div class="printer-meta" data-print-queue-pending>В очереди: {{ print_queue_pending }}</div>
+              <div class="printer-meta" data-print-queue-printing>В печати: {{ print_queue_printing }}</div>
+              <div class="printer-meta" data-print-queue-failed>Ошибки: {{ print_queue_failed }}</div>
               <div class="printer-meta" data-print-last-activity{% if not print_last_job_time %} style="display:none"{% endif %}>
                 Последняя активность: {{ print_last_job_time }}
               </div>
@@ -739,6 +803,14 @@
                   <button class="btn" type="button" data-sync-printers>Синхронизировать</button>
                   <button class="btn" type="button" data-tab-target="printers">Все настройки</button>
                 </div>
+                <div class="actions">
+                  <button class="btn" type="button" data-print-toggle data-print-paused="{% if print_paused %}1{% else %}0{% endif %}">
+                    {% if print_paused %}Возобновить печать{% else %}Остановить печать{% endif %}
+                  </button>
+                  <button class="btn" type="button" data-print-reset>Сбросить печать</button>
+                  <button class="btn" type="button" data-print-clear>Очистить очередь</button>
+                  <a class="btn" href="/orders/processing/print-agent/install/" target="_blank" rel="noopener">Скачать агента</a>
+                </div>
                 {% if available_printers_meta.updated_at %}
                   <div class="printer-meta">
                     Последняя синхронизация: {{ available_printers_meta.updated_at }}
@@ -748,6 +820,12 @@
                   <div class="printer-meta">Список принтеров пока не синхронизирован.</div>
                 {% endif %}
               </div>
+              
+            </div>
+            <form id="label-settings-csrf" style="display:none">
+              {% csrf_token %}
+            </form>
+            <div class="label-grid">
               {% for label in label_sizes %}
                 <div class="label-card" data-label-card="{{ label.key }}" data-label-width="{{ label.width_mm }}" data-label-height="{{ label.height_mm }}">
                   <div class="label-card-header">
@@ -761,7 +839,7 @@
                     <button class="label-print-btn" type="button" data-label-print>Печать</button>
                   </div>
                   <div class="label-sub">{{ label.description }}</div>
-                  <div class="label-stage" style="--label-width: {{ label.width_mm }}mm; --label-height: {{ label.height_mm }}mm;">
+                  <div class="label-stage" style="{% if label.key == "pallet" %}--label-width: {{ label.height_mm }}mm; --label-height: {{ label.width_mm }}mm; --label-scale: 1.4;{% else %}--label-width: {{ label.width_mm }}mm; --label-height: {{ label.height_mm }}mm;{% endif %}">
                     <div class="label-size-badge">{{ label.width_mm }}x{{ label.height_mm }} мм</div>
                     <div class="label-preview" data-label-root data-label-type="{{ label.key }}">
                       {% if label.key == "item" %}
@@ -783,18 +861,123 @@
           </section>
 
           <section class="card tab-panel reveal" data-tab="scanners" style="--i:3">
-            <h2>Сканеры</h2>
-            <div class="muted">Быстрые ссылки на инструкции и тестирование сканеров.</div>
-            <div class="actions">
-              <a class="btn" href="/scanner-settings/">Инструкция</a>
-              <a class="btn" href="/scanner-test/">Тест сканера</a>
-              <a class="btn" href="/scanner/ims-2290hd/">IMS-2290HD_K</a>
+            <div class="card-header">
+              <div>
+                <h2>Сканеры</h2>
+                <div class="muted">Настройка COM-сканеров и контроль подключения.</div>
+              </div>
+              <div class="actions">
+                <a class="btn" href="/scanner-settings/">Инструкция</a>
+                <a class="btn" href="/scanner-test/">Тест сканера</a>
+                <a class="btn" href="/scanner/ims-2290hd/">IMS-2290HD_K</a>
+                <a class="btn" href="/labels/scanners/agent/download/">Скачать Fullbox Agent</a>
+              </div>
+            </div>
+            <div class="scanner-grid">
+              <div class="card">
+                <div class="card-header">
+                  <div>
+                    <div class="panel-title">Параметры COM</div>
+                    <div class="panel-subtitle">Хранятся в labels и применяются к агентам.</div>
+                  </div>
+                  <div class="actions">
+                    <button class="btn primary" type="button" data-scanner-save>Сохранить</button>
+                    <button class="btn" type="button" data-scanner-apply-all>Применить активным</button>
+                    <button class="btn" type="button" data-scanner-reconnect-all>Переподключить</button>
+                  </div>
+                </div>
+                <div class="field-grid">
+                  <div class="field">
+                    <label for="scanner-port">COM-порт</label>
+                    <input id="scanner-port" list="scanner-ports" placeholder="COM3">
+                    <datalist id="scanner-ports">
+                      {% for port in scanner_ports %}
+                        <option value="{{ port }}"></option>
+                      {% endfor %}
+                    </datalist>
+                  </div>
+                  <div class="field">
+                    <label for="scanner-baud">Скорость (baud)</label>
+                    <input id="scanner-baud" type="number" inputmode="numeric" min="1" placeholder="9600">
+                  </div>
+                  <div class="field">
+                    <label for="scanner-eol">Окончание (delimiter)</label>
+                    <select id="scanner-eol">
+                      <option value="CrLf">CRLF</option>
+                      <option value="Cr">CR</option>
+                      <option value="Lf">LF</option>
+                      <option value="Tab">TAB</option>
+                      <option value="None">Без окончания</option>
+                    </select>
+                  </div>
+                  <div class="field">
+                    <label for="scanner-idle">Пауза для склейки (мс)</label>
+                    <input id="scanner-idle" type="number" inputmode="numeric" min="0" placeholder="200">
+                  </div>
+                  <div class="field">
+                    <label>Сканер активен</label>
+                    <div class="check-row">
+                      <input id="scanner-enabled" type="checkbox">
+                      <span class="muted">Включить чтение по COM</span>
+                    </div>
+                  </div>
+                </div>
+                <div class="printer-meta" data-scanner-updated>
+                  Последнее сохранение: {{ scanner_updated_at }}{% if scanner_updated_by %} · {{ scanner_updated_by }}{% endif %}
+                </div>
+                <div class="tip">
+                  Если QR/ЧЗ читается неверно, переключите сканер в COM-режим и проверьте delimiter.
+                </div>
+              </div>
+              <div class="card">
+                <div class="card-header">
+                  <div>
+                    <div class="panel-title">Агенты сканирования</div>
+                    <div class="panel-subtitle">Последние параметры и доступные COM-порты.</div>
+                  </div>
+                </div>
+                {% if scanner_agents %}
+                  <ul class="list">
+                    {% for agent in scanner_agents %}
+                      <li>
+                        <div class="scanner-agent" data-agent-id="{{ agent.agent_id }}">
+                          <div class="scanner-agent-head">
+                            <div class="scanner-agent-title">{{ agent.title }}</div>
+                            <span class="scanner-badge {% if agent.is_online %}online{% else %}offline{% endif %}">{{ agent.status }}</span>
+                          </div>
+                          <div class="scanner-agent-meta">
+                            ID: {{ agent.agent_id }}{% if agent.version %} · v{{ agent.version }}{% endif %}
+                          </div>
+                          <div class="scanner-agent-meta">
+                            COM: {{ agent.com.port|default:"—" }} @{{ agent.com.baud|default:"—" }} ({{ agent.com.eol|default:"—" }})
+                          </div>
+                          <div class="scanner-agent-meta">
+                            Порты: {% if agent.ports %}{{ agent.ports|join:", " }}{% else %}—{% endif %}
+                          </div>
+                          <div class="scanner-agent-meta">Последний пинг: {{ agent.last_seen }}</div>
+                          <div class="actions">
+                            <button class="btn" type="button" data-scanner-apply data-agent-id="{{ agent.agent_id }}">Применить</button>
+                            <button class="btn" type="button" data-scanner-reconnect data-agent-id="{{ agent.agent_id }}">Переподключить</button>
+                          </div>
+                        </div>
+                      </li>
+                    {% endfor %}
+                  </ul>
+                {% else %}
+                  <div class="muted">Агенты пока не подключались.</div>
+                {% endif %}
+              </div>
             </div>
           </section>
 
           <section class="card tab-panel reveal" data-tab="printers" style="--i:4">
             <h2>Принтеры</h2>
             <div class="muted">Синхронизация списка принтеров и управление агентом печати.</div>
+            <div class="printer-meta" data-print-status>Статус печати: {{ print_status_line }}</div>
+            <div class="printer-meta" data-print-agent>Агент печати: {{ print_agent_line }}</div>
+            <div class="printer-meta" data-print-queue-pending>В очереди: {{ print_queue_pending }}</div>
+            <div class="printer-meta" data-print-queue-printing>В печати: {{ print_queue_printing }}</div>
+            <div class="printer-meta" data-print-queue-failed>Ошибки: {{ print_queue_failed }}</div>
             <div class="printer-row">
               <label for="label-printer">Принтер этикеток</label>
               <input id="label-printer" data-label-printer list="label-printers" placeholder="Выберите или введите">
@@ -817,8 +1000,16 @@
               <a class="btn" href="/orders/processing/print-agent/script/" target="_blank" rel="noopener">Скрипт агента</a>
               <button class="btn" type="button" id="sync-printers-btn" data-sync-printers>Синхронизировать</button>
             </div>
+            <div class="actions">
+              <button class="btn" type="button" data-print-toggle data-print-paused="{% if print_paused %}1{% else %}0{% endif %}">
+                {% if print_paused %}Возобновить печать{% else %}Остановить печать{% endif %}
+              </button>
+              <button class="btn" type="button" data-print-reset>Сбросить печать</button>
+              <button class="btn" type="button" data-print-clear>Очистить очередь</button>
+              <a class="btn" href="/orders/processing/print-agent/download/" target="_blank" rel="noopener">Скачать агента</a>
+            </div>
             <div class="muted" style="font-size:12px;">
-              Команда синхронизации копируется в буфер, затем выполните ее в PowerShell из папки проекта.
+              Нажмите «Синхронизировать», скачайте архив, распакуйте и запустите run_printer_sync.cmd (ps1 не запускать) (можно из любой папки).
             </div>
             {% if available_printers %}
               <ul class="list">
@@ -879,8 +1070,10 @@
     </div>
   </div>
   {{ label_settings|json_script:"label-settings-data" }}
+  {{ scanner_settings|json_script:"scanner-settings-data" }}
   <script src="/static/vendor/jsbarcode.min.js"></script>
   <script src="/static/vendor/qrcode.min.js"></script>
+  <script src="/static/vendor/bwip-js-min.js"></script>
   <script src="/static/vendor/html2canvas.min.js"></script>
   <script>
     (() => {
@@ -1031,15 +1224,10 @@
 
       const syncButtons = Array.from(document.querySelectorAll('[data-sync-printers]'));
       if (syncButtons.length) {
-        const command = 'powershell -ExecutionPolicy Bypass -File sync_printers.ps1';
+        const syncUrl = '/orders/processing/print-agent/sync-printers/';
         syncButtons.forEach((btn) => {
-          btn.addEventListener('click', async () => {
-            try {
-              await navigator.clipboard.writeText(command);
-              alert('Команда синхронизации скопирована. Вставьте ее в PowerShell, запущенный в папке проекта.');
-            } catch (err) {
-              prompt('Скопируйте команду и выполните в PowerShell (в папке проекта):', command);
-            }
+          btn.addEventListener('click', () => {
+            window.open(syncUrl, '_blank', 'noopener');
           });
         });
       }
@@ -1092,19 +1280,28 @@
       const labelSizeButtons = Array.from(panel.querySelectorAll('[data-label-key]'));
       const refreshBtn = panel.querySelector('#label-refresh-btn');
       const saveBtn = panel.querySelector('#label-save-btn');
-      const statusLine = panel.querySelector('[data-print-status]');
-        const lastActivityLine = panel.querySelector('[data-print-last-activity]');
-        const lastErrorLine = panel.querySelector('[data-print-last-error]');
-        const printButtons = Array.from(panel.querySelectorAll('[data-label-print]'));
+      const statusLines = Array.from(document.querySelectorAll('[data-print-status]'));
+      const lastActivityLine = panel.querySelector('[data-print-last-activity]');
+      const lastErrorLine = panel.querySelector('[data-print-last-error]');
+      const printButtons = Array.from(panel.querySelectorAll('[data-label-print]'));
+      const queuePendingLines = Array.from(document.querySelectorAll('[data-print-queue-pending]'));
+      const queuePrintingLines = Array.from(document.querySelectorAll('[data-print-queue-printing]'));
+      const queueFailedLines = Array.from(document.querySelectorAll('[data-print-queue-failed]'));
 
         const toggleLabelOnlyRows = (key) => {
           const rows = Array.from(table.querySelectorAll('[data-field]'));
           const barcodeRow = table.querySelector('[data-field="barcode"]');
           const barcodeTitle = barcodeRow ? barcodeRow.querySelector('td') : null;
           if (barcodeTitle) {
-            barcodeTitle.textContent = key === 'box' ? 'ШК для короба' : 'ШК';
+            if (key === 'box') {
+              barcodeTitle.textContent = 'ШК для короба';
+            } else if (key === 'pallet') {
+              barcodeTitle.textContent = 'ШК для паллета';
+            } else {
+              barcodeTitle.textContent = 'ШК';
+            }
           }
-          if (key === 'box') {
+          if (key === 'box' || key === 'pallet') {
             const allowed = new Set(['barcode', 'box_client', 'box_basis', 'box_pallet_number']);
             rows.forEach((row) => {
               const field = row.dataset.field || '';
@@ -1157,6 +1354,11 @@
           enabled: row.querySelector('[data-label-enabled]'),
         };
       });
+
+      const escapeGsForInput = (value) => String(value || '').replace(/\u001d|\x1d/g, '_x001D_');
+      if (inputs.cz_code && inputs.cz_code.text) {
+        inputs.cz_code.text.value = escapeGsForInput(inputs.cz_code.text.value);
+      }
 
       const defaultText = {};
       const defaultFonts = {};
@@ -1229,9 +1431,6 @@
           if (enabled && enabled[field] === false) {
             value = '';
           }
-            if (field !== 'barcode' && field !== 'cz_code') {
-              value = limitText(value);
-            }
           data[field] = value;
         });
         return data;
@@ -1261,10 +1460,42 @@
         };
       };
 
+      const getSettingsEntry = (key) => (
+        (draftSettings && draftSettings[key])
+        || (labelSettings && labelSettings[key])
+        || null
+      );
+
+      const cloneSettingsEntry = (entry) => ({
+        text: Object.assign({}, entry.text || {}),
+        fonts: Object.assign({}, entry.fonts || {}),
+        enabled: Object.assign({}, entry.enabled || {}),
+      });
+
+      const hasBoxFields = (entry) => {
+        const text = entry && entry.text ? entry.text : {};
+        return ['barcode', 'box_client', 'box_basis', 'box_pallet_number'].some((field) => {
+          const value = text[field];
+          return value && String(value).trim();
+        });
+      };
+
+      const seedPalletFromBox = () => {
+        const boxEntry = getSettingsEntry('box');
+        if (!boxEntry) {
+          return;
+        }
+        draftSettings.pallet = cloneSettingsEntry(boxEntry);
+      };
+
       const getSettingsForKey = (key) => {
-        const entry = (draftSettings && draftSettings[key])
-          || (labelSettings && labelSettings[key])
-          || {};
+        if (key === 'pallet') {
+          const palletEntry = getSettingsEntry('pallet');
+          if (!palletEntry || !hasBoxFields(palletEntry)) {
+            seedPalletFromBox();
+          }
+        }
+        const entry = getSettingsEntry(key) || {};
         const text = Object.assign({}, defaultText, entry.text || {});
         const fonts = Object.assign({}, defaultFonts, entry.fonts || {});
         const enabled = Object.assign({}, defaultEnabled, entry.enabled || {});
@@ -1432,12 +1663,165 @@
         if (!enabled || !text || !window.QRCode) {
           return;
         }
+        const host = box.parentElement || box;
+        const rawSize = Math.min(host.clientWidth, host.clientHeight);
+        const size = Math.floor(rawSize * 0.85) || 64;
+        box.style.width = `${size}px`;
+        box.style.height = `${size}px`;
         new QRCode(box, {
           text,
-          width: 64,
-          height: 64,
+          width: size,
+          height: size,
           correctLevel: QRCode.CorrectLevel.M,
         });
+      };
+
+      const normalizeGs1Text = (value) => {
+        if (!value) {
+          return '';
+        }
+        const gs = String.fromCharCode(29);
+        const raw = String(value)
+          .trim()
+          .replace(/\\u001d|\\x1d|\\x001d|_x001d_/gi, gs);
+        if (!raw) {
+          return '';
+        }
+        if (raw.includes('(') && raw.includes(')')) {
+          return raw;
+        }
+        const czMatch = raw.match(/^01(\d{14})21(.+?)91(.+?)92(.+)$/);
+        if (czMatch) {
+          return `(01)${czMatch[1]}(21)${czMatch[2]}(91)${czMatch[3]}(92)${czMatch[4]}`;
+        }
+        const segments = raw.split(gs).filter(Boolean);
+        let output = '';
+        const consumeSegment = (segment) => {
+          let idx = 0;
+          while (idx < segment.length) {
+            const ai = segment.slice(idx, idx + 2);
+            if (ai === '01' && segment.length >= idx + 16) {
+              output += `(01)${segment.slice(idx + 2, idx + 16)}`;
+              idx += 16;
+              continue;
+            }
+            if (ai === '17' && segment.length >= idx + 8) {
+              output += `(17)${segment.slice(idx + 2, idx + 8)}`;
+              idx += 8;
+              continue;
+            }
+            if (ai === '10' || ai === '21' || ai === '91' || ai === '92') {
+              output += `(${ai})${segment.slice(idx + 2)}`;
+              idx = segment.length;
+              continue;
+            }
+            output += segment.slice(idx);
+            idx = segment.length;
+          }
+        };
+        if (segments.length) {
+          segments.forEach(consumeSegment);
+          return output || raw;
+        }
+        return raw;
+      };
+
+      const renderGs1Matrix = (root, value, enabled) => {
+        const box = root.querySelector('[data-qr-box]');
+        if (!box) {
+          return;
+        }
+        box.innerHTML = '';
+        const raw = value ? String(value).trim() : '';
+        const gs = String.fromCharCode(29);
+        const rawDecoded = raw.replace(/\\u001d|\\x1d|\\x001d|_x001d_/gi, gs);
+        const normalized = normalizeGs1Text(rawDecoded);
+        const candidates = [];
+        if (normalized) {
+          candidates.push({
+            bcid: 'gs1datamatrix',
+            text: normalized,
+            gs1parens: normalized.includes('(') && normalized.includes(')'),
+          });
+        }
+        if (rawDecoded) {
+          candidates.push({
+            bcid: 'gs1datamatrix',
+            text: rawDecoded,
+            parsefnc: true,
+          });
+          candidates.push({
+            bcid: 'datamatrix',
+            text: `^FNC1${rawDecoded}`,
+            parsefnc: true,
+          });
+        }
+        if (!enabled || !candidates.length || !window.bwipjs) {
+          return;
+        }
+        const host = box.parentElement || box;
+        const rawSize = Math.min(host.clientWidth, host.clientHeight);
+        const size = Math.floor(rawSize * 0.85) || 64;
+        box.style.width = `${size}px`;
+        box.style.height = `${size}px`;
+        const canvas = document.createElement('canvas');
+        canvas.style.width = '100%';
+        canvas.style.height = '100%';
+        box.appendChild(canvas);
+        let lastError = null;
+        for (const candidate of candidates) {
+          try {
+            bwipjs.toCanvas(canvas, {
+              bcid: candidate.bcid || 'gs1datamatrix',
+              text: candidate.text,
+              scale: 2,
+              padding: 0,
+              backgroundcolor: 'FFFFFF',
+              ...(candidate.gs1parens ? { gs1parens: true } : {}),
+              ...(candidate.parsefnc ? { parsefnc: true } : {}),
+            });
+            return;
+          } catch (err) {
+            lastError = err;
+          }
+        }
+        if (lastError) {
+          console.warn('GS1 DataMatrix render failed', lastError);
+        } else {
+          console.warn('GS1 DataMatrix render failed');
+        }
+      };
+
+      const shortenCzCode = (value) => {
+        if (!value) {
+          return '';
+        }
+        const gs = String.fromCharCode(29);
+        const raw = String(value)
+          .trim()
+          .replace(/\\u001d|\\x1d|\\x001d|_x001d_/gi, gs)
+          .replace(/\u001d|\x1d/gi, gs);
+        if (!raw) {
+          return '';
+        }
+        const gsIndex = raw.indexOf(gs);
+        if (gsIndex > 0) {
+          return raw.slice(0, gsIndex);
+        }
+        const prefixMatch = raw.match(/^01(\d{14})21(.+)$/);
+        if (prefixMatch) {
+          const suffix = prefixMatch[2];
+          const cut91 = suffix.indexOf('91');
+          const cut92 = suffix.indexOf('92');
+          const cuts = [cut91, cut92].filter((idx) => idx >= 0);
+          const stop = cuts.length ? Math.min(...cuts) : suffix.length;
+          return `01${prefixMatch[1]}21${suffix.slice(0, stop)}`;
+        }
+        const parenMatch = raw.match(/\(01\)(\d{14})\(21\)([^()]+)/);
+        if (parenMatch) {
+          return `01${parenMatch[1]}21${parenMatch[2]}`;
+        }
+        return raw;
       };
 
       const applyFontVar = (root, name, size) => {
@@ -1482,9 +1866,18 @@
           setInfoLine(root, 'composition', data.composition, isCzLabel ? null : 'Состав: ');
           setInfoLine(root, 'supplier', data.supplier, 'Поставщик: ');
           setInfoLine(root, 'article', data.article, isCzLabel ? 'Арт. ' : 'Артикул: ', safeSizes.article);
-          setInfoLine(root, 'cz_code', data.cz_code, null, safeSizes.cz_code);
+          const czDisplay = isCzLabel ? shortenCzCode(data.cz_code) : data.cz_code;
+          setInfoLine(root, 'cz_code', czDisplay, null, safeSizes.cz_code);
           setInfoLine(root, 'box_basis', data.box_basis, 'Основание: ');
           setInfoLine(root, 'box_client', data.box_client, 'Клиент: ');
+          setInfoLine(root, 'box_pallet_number', data.box_pallet_number, null);
+          const boxHeader = root.querySelector('[data-box-header]');
+          if (boxHeader) {
+            const barcode = data.barcode ? String(data.barcode).trim() : '';
+            const prefix = labelType === 'pallet' ? 'Паллет' : 'Короб';
+            boxHeader.textContent = barcode ? `${prefix} - ${barcode}` : `${prefix} -`;
+            boxHeader.style.display = '';
+          }
 
         setNoCzLine(root, 'article', data.article ? `Артикул: ${data.article}` : '', null);
         setNoCzLine(root, 'name', data.name, null);
@@ -1499,11 +1892,21 @@
         setRowVisible(root, '[data-no-cz-row="brand-color"]', hasBrandColor);
 
           renderBarcode(root, data.barcode);
-          const qrValue = (labelType === 'item_cz' && data.cz_code)
-            ? data.cz_code
-            : [data.barcode, data.article].filter(Boolean).join(' ');
-          renderQr(root, qrValue, mode === 'cz');
-        };
+          let qrValue = '';
+          if (labelType === 'item_cz' && data.cz_code) {
+            qrValue = data.cz_code;
+          } else if (labelType === 'box' || labelType === 'pallet') {
+            qrValue = data.barcode || '';
+          } else {
+            qrValue = [data.barcode, data.article].filter(Boolean).join(' ');
+          }
+            const qrEnabled = (labelType === 'box' || labelType === 'pallet') ? true : mode === 'cz';
+            if (labelType === 'item_cz') {
+              renderGs1Matrix(root, qrValue, qrEnabled);
+            } else {
+              renderQr(root, qrValue, qrEnabled);
+            }
+          };
 
       const updateActivePreview = () => {
         const key = getActiveKey();
@@ -1529,20 +1932,46 @@
       };
 
       const setStatusLine = (text) => {
-        if (statusLine) {
-          statusLine.textContent = `Статус печати: ${text}`;
+        statusLines.forEach((line) => {
+          if (line) {
+            line.textContent = `Статус печати: ${text}`;
+          }
+        });
+      };
+
+      const readQueueValue = (lines) => {
+        for (const line of lines) {
+          const text = line ? line.textContent || '' : '';
+          const match = text.match(/(\d+)/);
+          if (match) {
+            return Number(match[1]);
+          }
         }
+        return 0;
+      };
+
+      const setQueueLine = (lines, label, value) => {
+        lines.forEach((line) => {
+          if (line) {
+            line.textContent = `${label}: ${value}`;
+          }
+        });
+      };
+
+      const setQueueCounts = (pending, printing, failed) => {
+        setQueueLine(queuePendingLines, 'В очереди', pending);
+        setQueueLine(queuePrintingLines, 'В печати', printing);
+        setQueueLine(queueFailedLines, 'Ошибки', failed);
       };
 
       const bumpQueueStatus = () => {
-        if (!statusLine) {
-          return;
-        }
-        const current = statusLine.textContent || '';
+        const current = statusLines.length ? (statusLines[0].textContent || '') : '';
         const match = current.match(/В очереди:\s*(\d+)/);
-        const count = match ? Number(match[1]) : 0;
+        const count = match ? Number(match[1]) : readQueueValue(queuePendingLines);
         const suffix = current.includes('агент не активен') ? ' (агент не активен)' : '';
-        setStatusLine(`В очереди: ${Math.max(count + 1, 1)}${suffix}`);
+        const nextCount = Math.max(count + 1, 1);
+        setStatusLine(`В очереди: ${nextCount}${suffix}`);
+        setQueueCounts(nextCount, readQueueValue(queuePrintingLines), readQueueValue(queueFailedLines));
       };
 
       const setLastActivity = (text) => {
@@ -1585,8 +2014,11 @@
         if (!target || !dims) {
           return;
         }
-        target.style.setProperty('--label-width', `${dims.width}mm`);
-        target.style.setProperty('--label-height', `${dims.height}mm`);
+        const isPallet = target.dataset && target.dataset.labelType === 'pallet';
+        const width = isPallet ? dims.height : dims.width;
+        const height = isPallet ? dims.width : dims.height;
+        target.style.setProperty('--label-width', `${width}mm`);
+        target.style.setProperty('--label-height', `${height}mm`);
         target.style.setProperty('--label-scale', '1');
       };
 
@@ -1780,5 +2212,249 @@
       updateActivePreview();
     })();
   </script>
+  <script>
+    (() => {
+      const pauseButtons = Array.from(document.querySelectorAll('[data-print-toggle]'));
+      const clearButtons = Array.from(document.querySelectorAll('[data-print-clear]'));
+      const resetButtons = Array.from(document.querySelectorAll('[data-print-reset]'));
+      if (!pauseButtons.length && !clearButtons.length && !resetButtons.length) {
+        return;
+      }
+
+      const getCsrfToken = () => {
+        const match = document.cookie.match(/csrftoken=([^;]+)/);
+        if (match) {
+          return decodeURIComponent(match[1]);
+        }
+        const hidden = document.querySelector('#label-settings-csrf input[name="csrfmiddlewaretoken"]');
+        return hidden ? hidden.value : '';
+      };
+
+      const postJson = async (url, payload) => {
+        const resp = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCsrfToken(),
+          },
+          credentials: 'same-origin',
+          body: JSON.stringify(payload || {}),
+        });
+        if (!resp.ok) {
+          const message = await resp.text();
+          throw new Error(message || resp.status);
+        }
+        return resp.json();
+      };
+
+      const runAction = async (url, payload, confirmText) => {
+        if (confirmText && !confirm(confirmText)) {
+          return;
+        }
+        const printer = getSelectedPrinter();
+        const data = { ...(payload || {}) };
+        if (printer) {
+          data.printer = printer;
+        }
+        try {
+          await postJson(url, data);
+          window.location.reload();
+        } catch (err) {
+          alert(`Ошибка: ${err.message || err}`);
+        }
+      };
+
+      pauseButtons.forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const isPaused = btn.dataset.printPaused === '1';
+          const url = isPaused
+            ? '/orders/processing/print-jobs/resume/'
+            : '/orders/processing/print-jobs/pause/';
+          runAction(url, {}, isPaused ? 'Возобновить печать?' : 'Остановить печать?');
+        });
+      });
+
+      clearButtons.forEach((btn) => {
+        btn.addEventListener('click', () => {
+          runAction(
+            '/orders/processing/print-jobs/clear/',
+            { scope: 'pending' },
+            'Очистить очередь печати? Все ожидающие задания будут удалены.'
+          );
+        });
+      });
+
+      resetButtons.forEach((btn) => {
+        btn.addEventListener('click', () => {
+          runAction(
+            '/orders/processing/print-jobs/reset/',
+            { mode: 'pending' },
+            'Сбросить задания "в печати" обратно в очередь?'
+          );
+        });
+      });
+    })();
+  </script>
+  <script>
+    (() => {
+      const dataEl = document.getElementById('scanner-settings-data');
+      if (!dataEl) {
+        return;
+      }
+      let scannerSettings = {};
+      try {
+        scannerSettings = JSON.parse(dataEl.textContent || '{}');
+      } catch (err) {
+        scannerSettings = {};
+      }
+      const defaults = scannerSettings.default || {};
+      const portInput = document.getElementById('scanner-port');
+      const baudInput = document.getElementById('scanner-baud');
+      const eolSelect = document.getElementById('scanner-eol');
+      const idleInput = document.getElementById('scanner-idle');
+      const enabledInput = document.getElementById('scanner-enabled');
+      const saveBtn = document.querySelector('[data-scanner-save]');
+      const applyAllBtn = document.querySelector('[data-scanner-apply-all]');
+      const reconnectAllBtn = document.querySelector('[data-scanner-reconnect-all]');
+      const applyButtons = Array.from(document.querySelectorAll('[data-scanner-apply]'));
+      const reconnectButtons = Array.from(document.querySelectorAll('[data-scanner-reconnect]'));
+      const updatedLine = document.querySelector('[data-scanner-updated]');
+
+      if (portInput) {
+        portInput.value = defaults.port || '';
+      }
+      if (baudInput) {
+        baudInput.value = defaults.baud || '';
+      }
+      if (eolSelect) {
+        eolSelect.value = defaults.eol || 'CrLf';
+      }
+      if (idleInput) {
+        idleInput.value = defaults.idle_ms || '';
+      }
+      if (enabledInput) {
+        enabledInput.checked = defaults.enabled !== false;
+      }
+
+      const getCsrfToken = () => {
+        const match = document.cookie.match(/csrftoken=([^;]+)/);
+        if (match) {
+          return decodeURIComponent(match[1]);
+        }
+        const hidden = document.querySelector('#label-settings-csrf input[name="csrfmiddlewaretoken"]');
+        return hidden ? hidden.value : '';
+      };
+
+      const postJson = async (url, payload) => {
+        const resp = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCsrfToken(),
+          },
+          credentials: 'same-origin',
+          body: JSON.stringify(payload || {}),
+        });
+        if (!resp.ok) {
+          const message = await resp.text();
+          throw new Error(message || resp.status);
+        }
+        return resp.json();
+      };
+
+      const readSettings = () => {
+        const port = (portInput?.value || '').trim() || defaults.port || 'COM3';
+        const baudRaw = parseInt(baudInput?.value, 10);
+        const idleRaw = parseInt(idleInput?.value, 10);
+        return {
+          enabled: enabledInput ? enabledInput.checked : true,
+          port,
+          baud: Number.isFinite(baudRaw) && baudRaw > 0 ? baudRaw : (defaults.baud || 9600),
+          eol: eolSelect?.value || defaults.eol || 'CrLf',
+          idle_ms: Number.isFinite(idleRaw) && idleRaw >= 0 ? idleRaw : (defaults.idle_ms || 200),
+        };
+      };
+
+      const updateSavedLine = (settings) => {
+        if (!updatedLine || !settings) {
+          return;
+        }
+        const when = settings.updated_at ? new Date(settings.updated_at) : null;
+        const by = settings.updated_by ? ` · ${settings.updated_by}` : '';
+        const text = when && !Number.isNaN(when.getTime())
+          ? when.toLocaleString('ru-RU')
+          : (settings.updated_at || 'нет данных');
+        updatedLine.textContent = `Последнее сохранение: ${text}${by}`;
+      };
+
+      if (saveBtn) {
+        saveBtn.addEventListener('click', async () => {
+          try {
+            const response = await postJson('/labels/scanners/settings/', { settings: readSettings() });
+            if (response.settings) {
+              scannerSettings = response.settings;
+              updateSavedLine(response.settings);
+            }
+            alert('Настройки сканера сохранены.');
+          } catch (err) {
+            alert(`Ошибка сохранения: ${err.message || err}`);
+          }
+        });
+      }
+
+      const applySettings = async (payload, confirmText) => {
+        if (confirmText && !confirm(confirmText)) {
+          return;
+        }
+        try {
+          await postJson('/labels/scanners/apply/', payload);
+          alert('Команда отправлена агенту.');
+        } catch (err) {
+          alert(`Ошибка отправки: ${err.message || err}`);
+        }
+      };
+
+      if (applyAllBtn) {
+        applyAllBtn.addEventListener('click', () => {
+          applySettings(
+            { scope: 'online', settings: readSettings(), reconnect: true },
+            'Применить настройки ко всем активным агентам?'
+          );
+        });
+      }
+
+      if (reconnectAllBtn) {
+        reconnectAllBtn.addEventListener('click', () => {
+          applySettings(
+            { scope: 'online', reconnect_only: true },
+            'Переподключить сканеры на активных агентах?'
+          );
+        });
+      }
+
+      applyButtons.forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const agentId = btn.dataset.agentId || '';
+          applySettings(
+            { agent_id: agentId, settings: readSettings(), reconnect: true },
+            'Применить настройки к выбранному агенту?'
+          );
+        });
+      });
+
+      reconnectButtons.forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const agentId = btn.dataset.agentId || '';
+          applySettings(
+            { agent_id: agentId, reconnect_only: true },
+            'Переподключить сканер на выбранном агенте?'
+          );
+        });
+      });
+    })();
+  </script>
 </body>
 </html>
+
+
+

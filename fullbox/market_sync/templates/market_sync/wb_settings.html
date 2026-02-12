@@ -19,6 +19,7 @@
     .btn { padding:10px 14px; border-radius:10px; border:1px solid var(--stroke); background:rgba(255,255,255,0.02); color:var(--text); font-weight:600; }
     .btn:hover { border-color: var(--gold); box-shadow:0 10px 25px rgba(214,163,0,0.25); }
     .btn.primary { background: linear-gradient(120deg,var(--gold),var(--gold-soft)); color: var(--bg); border-color: transparent; }
+    .btn.disabled { opacity:0.5; cursor:not-allowed; pointer-events:none; }
     .card { background:var(--card); border:1px solid var(--stroke); border-radius:16px; padding:18px; box-shadow:0 18px 45px rgba(0,0,0,0.35); display:grid; gap:16px; }
     .pill { display:inline-flex; align-items:center; gap:6px; padding:6px 10px; border-radius:999px; border:1px solid var(--stroke); background:rgba(214,163,0,0.12); color:var(--gold); font-weight:600; }
     .field { display:grid; gap:6px; }
@@ -157,6 +158,21 @@
           <div class="sync-title">Ошибки</div>
           <div class="sync-errors" data-sync-errors>Нет ошибок</div>
         </div>
+        <div class="sync-block">
+          <div class="sync-title">Отчет</div>
+          <div class="sync-results" data-sync-report>
+            {% if last_report %}
+              <div>Последний: {{ last_report.finished_at|date:"d.m.Y H:i" }}</div>
+              <div>Статус: {% if last_report.status == "ok" %}Успешно{% else %}Ошибка{% endif %}</div>
+              <div>SKU: {{ last_report.processed }} (созд: {{ last_report.created }}, обновл: {{ last_report.updated }})</div>
+              <div>ШК: {{ last_report.barcodes_created }}</div>
+              <div>Ошибок: {{ last_report.errors|length }}</div>
+            {% else %}
+              <div>Отчетов нет</div>
+            {% endif %}
+          </div>
+          <a class="btn small{% if not last_report %} disabled{% endif %}" data-sync-report-link href="{% if last_report %}/market-sync/report/{{ last_report.id }}/{% else %}#{% endif %}" target="_blank">Скачать JSON</a>
+        </div>
       </div>
     </div>
   </div>
@@ -175,6 +191,8 @@
     const stepsEl = document.querySelector('[data-sync-steps]');
     const resultsEl = document.querySelector('[data-sync-results]');
     const errorsEl = document.querySelector('[data-sync-errors]');
+    const reportEl = document.querySelector('[data-sync-report]');
+    const reportLink = document.querySelector('[data-sync-report-link]');
     if (!syncBtn) return;
 
     function setStatus(text, state) {
@@ -195,6 +213,25 @@
 
     function setProgress(value) {
       progressEl.style.width = `${value}%`;
+    }
+
+    function setReport(data) {
+      if (!reportEl || !data) return;
+      if (data.report_id) {
+        const timeText = timeEl?.textContent || '—';
+        const statusLabel = data.ok ? 'Успешно' : 'Ошибка';
+        reportEl.innerHTML = `
+          <div>Последний: ${timeText}</div>
+          <div>Статус: ${statusLabel}</div>
+          <div>SKU: ${data.processed ?? 0} (созд: ${data.created ?? 0}, обновл: ${data.updated ?? 0})</div>
+          <div>ШК: ${data.barcodes_created ?? 0}</div>
+          <div>Ошибок: ${(data.errors || []).length}</div>
+        `;
+        if (reportLink && data.report_url) {
+          reportLink.href = data.report_url;
+          reportLink.classList.remove('disabled');
+        }
+      }
     }
 
     function getCookie(name) {
@@ -299,6 +336,7 @@
         }
         resultsEl.innerHTML = `<div>SKU обработано: ${data.processed ?? 0}</div><div>Обновлено: ${data.updated ?? 0}</div><div>Создано: ${data.created ?? 0}</div><div>Штрихкодов добавлено: ${data.barcodes_created ?? 0}</div>`;
         setSteps(['Проверка доступа', 'Запрос данных WB', 'Обновление SKU', 'Сводка результатов']);
+        setReport(data);
       } catch (err) {
         clearInterval(timer);
         setProgress(100);

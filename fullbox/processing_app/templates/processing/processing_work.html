@@ -419,6 +419,24 @@
     .processing-work #add-product-btn { display: none; }
     .processing-work .photo-box { cursor: default; }
     .processing-work .photo-box input { display: none; }
+    .reachtruck-location,
+    .reachtruck-destination {
+      font-weight: 600;
+    }
+    .reachtruck-destination {
+      color: var(--accent-strong);
+    }
+    .reachtruck-row-status {
+      margin-top: 4px;
+      font-size: 11px;
+      color: var(--muted);
+    }
+    .reachtruck-row-status.success {
+      color: var(--accent-strong);
+    }
+    .reachtruck-row-status.error {
+      color: #7f1d1d;
+    }
     @media (max-width: 1200px) {
       body { overflow: auto; }
       .layout { grid-template-columns: 1fr; }
@@ -429,10 +447,12 @@
     .processing-content {
       height: auto;
       overflow: visible;
+      align-content: start;
     }
     .processing-form {
       height: auto;
       display: grid;
+      align-content: start;
     }
     .processing-grid {
       display: grid;
@@ -442,6 +462,8 @@
       gap: 18px;
       min-height: 0;
       height: auto;
+      align-items: start;
+      align-content: start;
     }
     .processing-cards {
       column-count: 2;
@@ -470,6 +492,18 @@
     .processing-header-action {
       display: flex;
       align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+    .processing-move-status {
+      flex-basis: 100%;
+      text-align: right;
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--accent-strong);
+      display: grid;
+      gap: 4px;
     }
     .processing-header-fields input {
       padding: 6px 8px;
@@ -529,22 +563,13 @@
     .processing-block.processing-main .table-wrap {
       flex: 0 0 auto;
     }
-    .processing-marking {
-      grid-column: 1 / -1;
-    }
-    .marking-row {
-      transition: background 0.2s ease;
-    }
-    .marking-row.active td {
-      background: rgba(14,107,91,0.12);
-    }
-    .marking-row.active .marking-count {
-      font-weight: 700;
-      color: var(--accent-strong);
-    }
     .block-footer {
       margin-top: auto;
       padding-top: 12px;
+    }
+    .params-action {
+      display: flex;
+      justify-content: flex-end;
     }
     .photo-box {
       width: 1.4cm;
@@ -668,6 +693,27 @@
             <main class="content processing-content">
         {% if error %}
           <div class="alert error">{{ error }}</div>
+        {% endif %}
+        {% if assign_status == "ok" %}
+          <div class="alert success">Поручение на упаковку отправлено.</div>
+        {% endif %}
+        {% if assign_error %}
+          <div class="alert error">
+            {% if assign_error == "missing_worker" %}
+              Выберите обработчика для поручения.
+            {% elif assign_error == "invalid_worker" %}
+              Указанный обработчик не найден.
+            {% elif assign_error == "already_assigned" %}
+              Этому обработчику уже поручена упаковка по этой заявке.
+            {% else %}
+              Не удалось поручить упаковку.
+            {% endif %}
+          </div>
+        {% endif %}
+        {% if can_assign_packaging %}
+          <form id="assign-packaging-form" method="post" action="/orders/processing/{{ order_number }}/assign-packaging/">
+            {% csrf_token %}
+          </form>
         {% endif %}
         <form class="processing-form" id="processing-form" method="post" enctype="multipart/form-data">
           {% csrf_token %}
@@ -922,73 +968,46 @@
                     </tbody>
                   </table>
                 </div>
+                <div class="block-footer params-action">
+                  {% if order_number and can_place_processed %}
+                    <a class="btn primary" href="/orders/processing/{{ order_number }}/flow/">Разместить обработанный товар в короба и паллеты</a>
+                  {% else %}
+                    <button class="btn primary" type="button" disabled>Разместить обработанный товар в короба и паллеты</button>
+                  {% endif %}
+                </div>
+                {% if can_assign_packaging %}
+                  <div class="form-section" style="margin-top: 12px;">
+                    <div class="label-row">
+                      <div>
+                        <div style="font-weight: 700;">Поручить упаковку</div>
+                        <div class="hint">Назначьте обработчика на упаковку товара в короба.</div>
+                      </div>
+                    </div>
+                    <div class="input-row" style="margin-top: 8px;">
+                      <select id="packaging-assignee" name="assignee_id" class="param-select" required form="assign-packaging-form">
+                        <option value="">Выберите обработчика</option>
+                        {% for worker in processing_workers %}
+                          <option value="{{ worker.id }}">{{ worker.full_name }}</option>
+                        {% endfor %}
+                      </select>
+                      <button class="btn primary" type="button" data-assign-packaging>Поручить</button>
+                    </div>
+                    {% if packaging_tasks %}
+                      <div class="hint" style="margin-top: 8px;">Текущие поручения:</div>
+                      <div class="status-card" style="margin-top: 8px;">
+                        {% for task in packaging_tasks %}
+                          <div class="label-row">
+                            <span>{{ task.assigned_to.full_name }}</span>
+                            <span class="muted">{{ task.get_status_display }}</span>
+                          </div>
+                        {% endfor %}
+                      </div>
+                    {% endif %}
+                  </div>
+                {% endif %}
               </div>
             </section>
 
-            <section class="panel processing-block processing-marking" id="marking-section" data-order-id="{{ order_number|default:'' }}" data-base-url="{{ marking_api_base|default:'' }}">
-              <div class="block-header">
-                <h3 class="panel-title" style="font-size: 18px;">Коды ЧЗ</h3>
-                <div class="panel-subtitle">
-                  Активная позиция: <span id="marking-active-label">не выбрана</span>
-                </div>
-              </div>
-              <div class="block-body">
-                <div class="form-section">
-                  <div class="label-row">
-                    <span>Сканирование</span>
-                    <span class="hint">Всего учтено: <span id="marking-total-count">{{ marking_total_count|default:0 }}</span></span>
-                  </div>
-                  <div class="input-row">
-                    <input type="text" id="marking-code-input" placeholder="Сканируйте ЧЗ" autocomplete="off">
-                    <button type="button" class="row-action" id="marking-add-btn">Добавить</button>
-                  </div>
-                  <div class="hint">Код добавится к выбранной позиции.</div>
-                </div>
-                <div class="form-section">
-                  <div class="label-row">
-                    <span>Импорт Excel</span>
-                  </div>
-                  <div class="input-row">
-                    <input type="file" id="marking-import-file" accept=".xlsx">
-                    <button type="button" class="row-action" id="marking-import-btn">Импортировать</button>
-                  </div>
-                  <div class="hint">Файл .xlsx: колонка A — штрихкод, колонка B — ЧЗ.</div>
-                </div>
-                <div class="alert" id="marking-status" hidden></div>
-                <div class="table-wrap">
-                  <table class="params-table">
-                    <thead>
-                      <tr>
-                        <th>Артикул</th>
-                        <th>Размер</th>
-                        <th>Штрихкод</th>
-                        <th>Нужно</th>
-                        <th>Отсканировано</th>
-                        <th>Осталось</th>
-                        <th></th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {% for item in marking_items %}
-                        <tr class="marking-row" data-sku="{{ item.sku_code }}" data-size="{{ item.size|default:'' }}" data-barcode="{{ item.barcode|default:'' }}">
-                          <td>{{ item.sku_code }}</td>
-                          <td>{{ item.size|default:"-" }}</td>
-                          <td>{{ item.barcode|default:"-" }}</td>
-                          <td data-expected="{{ item.qty }}">{{ item.qty }}</td>
-                          <td class="marking-count">{{ item.scanned|default:0 }}</td>
-                          <td class="marking-remaining">{{ item.remaining|default:0 }}</td>
-                          <td><button type="button" class="row-action marking-activate">Сканировать</button></td>
-                        </tr>
-                      {% empty %}
-                        <tr>
-                          <td colspan="7">Нет позиций для учета ЧЗ.</td>
-                        </tr>
-                      {% endfor %}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </section>
           </div>
         </form>
         <template id="processing-card-template">
@@ -1005,6 +1024,8 @@
               </div>
       <div class="processing-header-action">
         <button type="button" class="row-action card-open">Открыть карту обработки</button>
+        <button type="button" class="row-action card-move">Переместить в зону обработки</button>
+        <div class="processing-move-status" data-move-status hidden></div>
       </div>
             </div>
             <div class="block-body">
@@ -1024,6 +1045,53 @@
             </div>
           </section>
         </template>
+        <div class="modal" id="reachtruck-modal">
+          <div class="modal-card">
+            <div class="modal-header">
+              <div>
+                <div class="modal-title">Перемещение в зону обработки</div>
+                <div class="panel-subtitle" id="reachtruck-card-label">Подтвердите создание заданий для паллет.</div>
+              </div>
+              <button type="button" class="btn ghost" data-reachtruck-close>Закрыть</button>
+            </div>
+            <div class="modal-body">
+              <form id="reachtruck-form" method="post" action="/reachtruck/">
+                {% csrf_token %}
+                <div class="table-wrap">
+                  <table class="params-table">
+                    <thead>
+                      <tr>
+                        <th style="width: 240px;">Паллета</th>
+                        <th>Текущее место</th>
+                        <th>Место назначения</th>
+                        <th style="width: 90px;"></th>
+                      </tr>
+                    </thead>
+                    <tbody id="reachtruck-rows"></tbody>
+                  </table>
+                </div>
+                <div class="hint">Назначение: OBR · Зона обработки. Для нескольких паллет добавьте строки.</div>
+                <div class="alert" id="reachtruck-status" hidden></div>
+                <div class="actions">
+                  <button type="button" class="row-action" id="reachtruck-add-row">Добавить палету</button>
+                  <button type="button" class="btn ghost" data-reachtruck-close>Отмена</button>
+                  <button type="submit" class="btn primary">Отправить задания</button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+        <template id="reachtruck-row-template">
+          <tr>
+            <td>
+              <input type="text" class="reachtruck-code" placeholder="Код паллеты">
+              <div class="reachtruck-row-status" data-status></div>
+            </td>
+            <td><span class="reachtruck-location">—</span></td>
+            <td><span class="reachtruck-destination">OBR · Зона обработки</span></td>
+            <td><button type="button" class="row-action reachtruck-remove">Удалить</button></td>
+          </tr>
+        </template>
       </main>
     </div>
   </div>
@@ -1037,12 +1105,23 @@
       const addBtn = document.getElementById('add-product-btn');
       const form = document.getElementById('processing-form');
       const orderId = document.body?.dataset?.orderId || '';
+      const moveModal = document.getElementById('reachtruck-modal');
+      const moveForm = document.getElementById('reachtruck-form');
+      const moveStatus = document.getElementById('reachtruck-status');
+      const moveLabel = document.getElementById('reachtruck-card-label');
+      const moveRows = document.getElementById('reachtruck-rows');
+      const moveRowTemplate = document.getElementById('reachtruck-row-template');
+      const moveAddRow = document.getElementById('reachtruck-add-row');
+      const moveCloseButtons = Array.from(document.querySelectorAll('[data-reachtruck-close]'));
+      const csrfToken = document.querySelector('input[name="csrfmiddlewaretoken"]')?.value || '';
       if (!cardsContainer || !template) {
         return;
       }
 
       let activeCardId = null;
       let cardCounter = 0;
+      let activeMoveCard = null;
+      const itemPalletCache = new Map();
 
       const createCardId = () => `card_${Date.now()}_${cardCounter++}`;
 
@@ -1058,6 +1137,398 @@
         preview.src = '';
         photoBox.classList.remove('has-image');
       };
+
+      const setMoveStatus = (message, type) => {
+        if (!moveStatus) {
+          return;
+        }
+        moveStatus.textContent = message;
+        moveStatus.classList.remove('success', 'error');
+        if (type) {
+          moveStatus.classList.add(type);
+        }
+        moveStatus.hidden = !message;
+      };
+
+      const setRowStatus = (row, message, type) => {
+        if (!row) {
+          return;
+        }
+        const status = row.querySelector('[data-status]');
+        if (!status) {
+          return;
+        }
+        status.textContent = message || '';
+        status.classList.remove('success', 'error');
+        if (type) {
+          status.classList.add(type);
+        }
+      };
+
+      const lookupPalletLocation = async (row) => {
+        if (!row) {
+          return;
+        }
+        const input = row.querySelector('.reachtruck-code');
+        const locationEl = row.querySelector('.reachtruck-location');
+        const code = (input?.value || '').trim();
+        if (!code) {
+          if (locationEl) {
+            locationEl.textContent = '—';
+          }
+          setRowStatus(row, 'Укажите код паллеты.', 'error');
+          return;
+        }
+        setRowStatus(row, 'Проверка места хранения...', '');
+        if (locationEl) {
+          locationEl.textContent = '...';
+        }
+        try {
+          const response = await fetch(`/reachtruck/lookup/?code=${encodeURIComponent(code)}`, {
+            credentials: 'same-origin',
+            headers: { 'X-CSRFToken': csrfToken },
+          });
+          const data = await response.json();
+          if (!response.ok || !data.ok) {
+            if (locationEl) {
+              locationEl.textContent = 'Не найдена';
+            }
+            setRowStatus(row, data.error || 'Паллета не найдена.', 'error');
+            return;
+          }
+          if (locationEl) {
+            locationEl.textContent = data.label || '—';
+          }
+          setRowStatus(row, 'Ок', 'success');
+        } catch (err) {
+          if (locationEl) {
+            locationEl.textContent = 'Ошибка';
+          }
+          setRowStatus(row, 'Не удалось проверить место.', 'error');
+        }
+      };
+
+      const createMoveRow = (code = '') => {
+        if (!moveRows || !moveRowTemplate) {
+          return null;
+        }
+        const fragment = moveRowTemplate.content.cloneNode(true);
+        const row = fragment.querySelector('tr');
+        if (!row) {
+          return null;
+        }
+        const input = row.querySelector('.reachtruck-code');
+        if (input) {
+          input.value = code || '';
+          input.addEventListener('blur', () => lookupPalletLocation(row));
+          input.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter') {
+              event.preventDefault();
+              lookupPalletLocation(row);
+            }
+          });
+        }
+        const removeBtn = row.querySelector('.reachtruck-remove');
+        if (removeBtn) {
+          removeBtn.addEventListener('click', () => row.remove());
+        }
+        moveRows.appendChild(row);
+        if (code) {
+          lookupPalletLocation(row);
+        }
+        return row;
+      };
+
+      const resolveItemBarcodes = (card) => {
+        if (!card) {
+          return [];
+        }
+        const seen = new Set();
+        card.querySelectorAll('[data-field="barcode"]').forEach((input) => {
+          const value = (input?.value || '').trim();
+          if (value && value !== '-') {
+            seen.add(value);
+          }
+        });
+        return Array.from(seen);
+      };
+
+      const buildItemLookupKey = (card) => {
+        if (!card) {
+          return '';
+        }
+        const barcodes = resolveItemBarcodes(card).sort();
+        const sku = (card?.dataset?.article || '').trim();
+        if (!barcodes.length && !sku) {
+          return '';
+        }
+        return `${sku}|${barcodes.join(',')}`;
+      };
+
+      const lookupItemPallets = async (card) => {
+        const barcodes = resolveItemBarcodes(card);
+        const sku = (card?.dataset?.article || '').trim();
+        const params = new URLSearchParams();
+        if (barcodes.length) {
+          barcodes.forEach((value) => params.append('barcode', value));
+        }
+        if (sku) {
+          params.set('sku', sku);
+        }
+        if (!barcodes.length && !sku) {
+          return [];
+        }
+        params.set('include_moves', '1');
+        const url = `/reachtruck/lookup-item/?${params.toString()}`;
+        try {
+          const response = await fetch(url, {
+            credentials: 'same-origin',
+            headers: { 'X-CSRFToken': csrfToken },
+          });
+          const data = await response.json();
+          if (!response.ok || !data.ok) {
+            return [];
+          }
+          return Array.isArray(data.pallets) ? data.pallets : [];
+        } catch (err) {
+          return [];
+        }
+      };
+
+      const fetchItemPallets = async (card, options = {}) => {
+        const key = buildItemLookupKey(card);
+        if (!key) {
+          return [];
+        }
+        const cacheKey = `${key}|moves`;
+        if (!options.force && itemPalletCache.has(cacheKey)) {
+          return itemPalletCache.get(cacheKey);
+        }
+        const promise = lookupItemPallets(card);
+        itemPalletCache.set(cacheKey, promise);
+        return promise;
+      };
+
+      const invalidateItemCache = (card) => {
+        const key = buildItemLookupKey(card);
+        if (!key) {
+          return;
+        }
+        itemPalletCache.delete(`${key}|moves`);
+      };
+
+      const renderMoveStatus = (statusEl, lines) => {
+        if (!statusEl) {
+          return;
+        }
+        statusEl.innerHTML = '';
+        lines.forEach((line) => {
+          const row = document.createElement('div');
+          row.textContent = line;
+          statusEl.appendChild(row);
+        });
+        statusEl.hidden = !lines.length;
+      };
+
+      const updateMoveStatus = async (card) => {
+        if (!card) {
+          return;
+        }
+        const statusEl = card.querySelector('[data-move-status]');
+        const moveBtn = card.querySelector('.card-move');
+        if (!statusEl || !moveBtn) {
+          return;
+        }
+        const key = buildItemLookupKey(card);
+        if (!key) {
+          renderMoveStatus(statusEl, []);
+          moveBtn.hidden = false;
+          return;
+        }
+        const pallets = await fetchItemPallets(card);
+        const relevant = pallets.filter((item) => {
+          const zone = (item?.move_to_zone || '').toString().toUpperCase();
+          return zone === 'OBR' && (item.move_status || item.move_label);
+        });
+        if (!relevant.length) {
+          renderMoveStatus(statusEl, []);
+          moveBtn.hidden = false;
+          return;
+        }
+        const counts = { created: 0, in_progress: 0, done: 0 };
+        const other = {};
+        relevant.forEach((item) => {
+          const raw = (item.move_status || '').toString().toLowerCase();
+          if (raw === 'created') {
+            counts.created += 1;
+            return;
+          }
+          if (raw === 'in_progress') {
+            counts.in_progress += 1;
+            return;
+          }
+          if (raw === 'done') {
+            counts.done += 1;
+            return;
+          }
+          const label = (item.move_status_label || item.move_label || raw || 'Статус').toString();
+          other[label] = (other[label] || 0) + 1;
+        });
+        const lines = [];
+        const pushLine = (label, count) => {
+          if (!count) {
+            return;
+          }
+          lines.push(`${label} · ${count} палл.`);
+        };
+        pushLine('Передана водителю', counts.created);
+        pushLine('Взята в работу', counts.in_progress);
+        pushLine('Доставлена в зону обработки', counts.done);
+        Object.entries(other).forEach(([label, count]) => {
+          lines.push(`${label} · ${count} палл.`);
+        });
+        if (!lines.length) {
+          lines.push('Задание на перемещение создано.');
+        }
+        renderMoveStatus(statusEl, lines);
+        moveBtn.hidden = true;
+      };
+
+      const openMoveModal = async (card) => {
+        if (!moveModal || !moveForm || !moveRows) {
+          return;
+        }
+        activeMoveCard = card || null;
+        const article = (card?.dataset?.article || '').trim();
+        const productName = (card?.querySelector('[data-field="product_name"]')?.value || '').trim();
+        if (moveLabel) {
+          const parts = [article, productName].filter(Boolean);
+          moveLabel.textContent = parts.length ? parts.join(' · ') : 'Подтвердите создание задания.';
+        }
+        if (moveRows) {
+          moveRows.innerHTML = '';
+          const pallets = await fetchItemPallets(card, { force: true });
+          if (pallets.length) {
+            pallets.forEach((item) => {
+              const row = createMoveRow(item.pallet || '');
+              if (!row) {
+                return;
+              }
+              const locationEl = row.querySelector('.reachtruck-location');
+              if (locationEl) {
+                locationEl.textContent = item.location || '—';
+              }
+              setRowStatus(row, 'Найдено по товару', 'success');
+            });
+          } else {
+            const row = createMoveRow('');
+            if (row) {
+              setRowStatus(row, 'Паллеты по товару не найдены. Укажите код паллеты вручную.', 'error');
+            }
+          }
+        }
+        setMoveStatus('', '');
+        moveModal.classList.add('active');
+      };
+
+      const closeMoveModal = () => {
+        if (!moveModal) {
+          return;
+        }
+        activeMoveCard = null;
+        moveModal.classList.remove('active');
+      };
+
+      if (moveModal) {
+        moveModal.addEventListener('click', (event) => {
+          if (event.target === moveModal) {
+            closeMoveModal();
+          }
+        });
+      }
+      moveCloseButtons.forEach((btn) => {
+        btn.addEventListener('click', closeMoveModal);
+      });
+      if (moveAddRow) {
+        moveAddRow.addEventListener('click', () => createMoveRow(''));
+      }
+
+      if (moveForm) {
+        moveForm.addEventListener('submit', async (event) => {
+          event.preventDefault();
+          const submitBtn = moveForm.querySelector('button[type="submit"]');
+          if (submitBtn) {
+            submitBtn.disabled = true;
+          }
+          setMoveStatus('', '');
+          const rows = moveRows ? Array.from(moveRows.querySelectorAll('tr')) : [];
+          const validRows = rows.filter((row) => {
+            const value = (row.querySelector('.reachtruck-code')?.value || '').trim();
+            return value;
+          });
+          if (!validRows.length) {
+            setMoveStatus('Добавьте хотя бы одну палету.', 'error');
+            if (submitBtn) {
+              submitBtn.disabled = false;
+            }
+            return;
+          }
+          let okCount = 0;
+          let failCount = 0;
+          for (const row of validRows) {
+            const code = (row.querySelector('.reachtruck-code')?.value || '').trim();
+            if (!code) {
+              setRowStatus(row, 'Укажите код паллеты.', 'error');
+              failCount += 1;
+              continue;
+            }
+            setRowStatus(row, 'Отправка...', '');
+            try {
+              const formData = new FormData();
+              formData.append('action', 'create_move');
+              formData.append('pallet_code', code);
+              formData.append('to_zone', 'OBR');
+              const response = await fetch(moveForm.action, {
+                method: 'POST',
+                body: formData,
+                credentials: 'same-origin',
+                headers: { 'X-CSRFToken': csrfToken },
+              });
+              const finalUrl = response.url || '';
+              const ok = response.redirected || finalUrl.includes('ok=1');
+              if (ok) {
+                okCount += 1;
+                setRowStatus(row, 'Задание создано.', 'success');
+              } else {
+                failCount += 1;
+                setRowStatus(row, 'Не удалось создать задание.', 'error');
+              }
+            } catch (err) {
+              failCount += 1;
+              setRowStatus(row, 'Ошибка сети.', 'error');
+            }
+          }
+          if (okCount && !failCount) {
+            setMoveStatus(`Отправлено заданий: ${okCount}.`, 'success');
+            setTimeout(() => closeMoveModal(), 800);
+            if (activeMoveCard) {
+              invalidateItemCache(activeMoveCard);
+              updateMoveStatus(activeMoveCard);
+            }
+          } else if (okCount && failCount) {
+            setMoveStatus(`Успешно: ${okCount}, ошибки: ${failCount}.`, 'error');
+            if (activeMoveCard) {
+              invalidateItemCache(activeMoveCard);
+              updateMoveStatus(activeMoveCard);
+            }
+          } else {
+            setMoveStatus('Не удалось создать задания. Проверьте коды паллет.', 'error');
+          }
+          if (submitBtn) {
+            submitBtn.disabled = false;
+          }
+        });
+      }
 
       const clampQty = (input) => {
         if (!input) {
@@ -1146,6 +1617,7 @@
         }
         setPhotoPreview(photoBox, preview, card.dataset.photoUrl);
         renderRows(card, payload.rows || []);
+        updateMoveStatus(card);
       };
 
       const createCard = (payload, options = {}) => {
@@ -1189,6 +1661,10 @@
             const url = `/orders/processing/${orderId}/card/${cardRouteId}/?article=${article}&return=${returnUrl}`;
             window.location.href = url;
           });
+        }
+        const moveBtn = card.querySelector('.card-move');
+        if (moveBtn) {
+          moveBtn.addEventListener('click', () => openMoveModal(card));
         }
 
         updateCardFromPayload(card, payload);
@@ -1392,9 +1868,60 @@
   <script>
     (() => {
       const selects = document.querySelectorAll('.param-select');
-      if (!selects.length) {
-        return;
-      }
+      const paramsTable = document.querySelector('.params-table');
+      const paramRows = paramsTable ? Array.from(paramsTable.querySelectorAll('tbody tr')) : [];
+
+      const isEmptyValue = (value) => {
+        const text = String(value ?? '').trim();
+        if (!text) {
+          return true;
+        }
+        const lowered = text.toLowerCase();
+        return ['-', '0', '0.0', 'none', 'нет', 'отсутствует'].includes(lowered);
+      };
+
+      const isRowUsed = (row) => {
+        const fields = row.querySelectorAll('input, select, textarea');
+        for (const field of fields) {
+          if (field.type === 'hidden' && field.dataset.neededFor) {
+            continue;
+          }
+          if (field.type === 'file') {
+            if (field.files && field.files.length > 0) {
+              return true;
+            }
+            if (!isEmptyValue(field.value)) {
+              return true;
+            }
+            continue;
+          }
+          if (field.type === 'checkbox' || field.type === 'radio') {
+            if (field.checked) {
+              return true;
+            }
+            continue;
+          }
+          if (field.tagName === 'SELECT') {
+            if (!isEmptyValue(field.value)) {
+              return true;
+            }
+            continue;
+          }
+          if (!isEmptyValue(field.value)) {
+            return true;
+          }
+        }
+        return false;
+      };
+
+      const refreshRows = () => {
+        if (!paramRows.length) {
+          return;
+        }
+        paramRows.forEach((row) => {
+          row.hidden = !isRowUsed(row);
+        });
+      };
 
       const toggleExtras = (select) => {
         const value = select.value;
@@ -1416,12 +1943,32 @@
         document.querySelectorAll(`input[data-needed-for="${name}"]`).forEach((hidden) => {
           hidden.value = value ? 'Да' : '';
         });
+        refreshRows();
       };
 
-      selects.forEach((select) => {
-        toggleExtras(select);
-        select.addEventListener('change', () => toggleExtras(select));
-      });
+      if (selects.length) {
+        selects.forEach((select) => {
+          toggleExtras(select);
+          select.addEventListener('change', () => toggleExtras(select));
+        });
+      } else {
+        refreshRows();
+      }
+
+      if (paramsTable) {
+        paramsTable.addEventListener('input', (event) => {
+          const row = event.target.closest('tr');
+          if (row) {
+            row.hidden = !isRowUsed(row);
+          }
+        });
+        paramsTable.addEventListener('change', (event) => {
+          const row = event.target.closest('tr');
+          if (row) {
+            row.hidden = !isRowUsed(row);
+          }
+        });
+      }
     })();
   </script>
   <script>
@@ -1600,228 +2147,11 @@
   </script>
   <script>
     (() => {
-      const section = document.getElementById('marking-section');
-      if (!section) {
-        return;
-      }
-      const baseUrlRaw = section.dataset.baseUrl || '';
-      const apiBase = baseUrlRaw
-        ? (baseUrlRaw.endsWith('/') ? baseUrlRaw : `${baseUrlRaw}/`)
-        : '';
-      const rows = Array.from(section.querySelectorAll('.marking-row'));
-      const activeLabel = document.getElementById('marking-active-label');
-      const totalEl = document.getElementById('marking-total-count');
-      const statusEl = document.getElementById('marking-status');
-      const codeInput = document.getElementById('marking-code-input');
-      const addBtn = document.getElementById('marking-add-btn');
-      const fileInput = document.getElementById('marking-import-file');
-      const importBtn = document.getElementById('marking-import-btn');
-      const csrfToken = document.querySelector('input[name="csrfmiddlewaretoken"]')?.value || '';
-
-      let activeRow = null;
-
-      const setStatus = (message, type) => {
-        if (!statusEl) {
-          return;
-        }
-        statusEl.textContent = message;
-        statusEl.classList.remove('success', 'error');
-        if (type) {
-          statusEl.classList.add(type);
-        }
-        statusEl.hidden = !message;
-      };
-
-      const setActiveRow = (row) => {
-        if (activeRow) {
-          activeRow.classList.remove('active');
-        }
-        activeRow = row;
-        if (activeRow) {
-          activeRow.classList.add('active');
-          if (activeLabel) {
-            const sku = activeRow.dataset.sku || '-';
-            const size = activeRow.dataset.size || '-';
-            activeLabel.textContent = `${sku} / ${size || '-'}`;
-          }
-          if (codeInput) {
-            codeInput.focus();
-          }
-        } else if (activeLabel) {
-          activeLabel.textContent = 'не выбрана';
-        }
-      };
-
-      const updateRowCounts = (row, count) => {
-        const countCell = row.querySelector('.marking-count');
-        const remainingCell = row.querySelector('.marking-remaining');
-        const expectedCell = row.querySelector('[data-expected]');
-        const expected = parseInt(expectedCell?.dataset?.expected || '0', 10) || 0;
-        if (countCell) {
-          countCell.textContent = count;
-        }
-        if (remainingCell) {
-          remainingCell.textContent = Math.max(expected - count, 0);
-        }
-      };
-
-      const refreshCounts = async () => {
-        if (!apiBase) {
-          return;
-        }
-        try {
-          const response = await fetch(`${apiBase}summary/`, {
-            headers: { 'X-CSRFToken': csrfToken },
-          });
-          const data = await response.json();
-          if (!data.ok) {
-            return;
-          }
-          const map = new Map();
-          (data.items || []).forEach((item) => {
-            const key = `${item.sku_code}||${item.size || ''}`;
-            map.set(key, item.count || 0);
-          });
-          let total = 0;
-          rows.forEach((row) => {
-            const key = `${row.dataset.sku || ''}||${row.dataset.size || ''}`;
-            const count = map.get(key) || 0;
-            updateRowCounts(row, count);
-            total += count;
-          });
-          if (totalEl) {
-            totalEl.textContent = total;
-          }
-        } catch (err) {
-          // ignore
-        }
-      };
-
-      rows.forEach((row) => {
-        const activateBtn = row.querySelector('.marking-activate');
-        if (activateBtn) {
-          activateBtn.addEventListener('click', () => setActiveRow(row));
-        }
-        row.addEventListener('click', (event) => {
-          if (event.target && event.target.classList.contains('marking-activate')) {
-            return;
-          }
-          setActiveRow(row);
-        });
-      });
-
-      if (rows.length) {
-        setActiveRow(rows[0]);
-      }
-
-      const submitCode = async () => {
-        if (!activeRow || !apiBase) {
-          setStatus('Выберите позицию для учета ЧЗ.', 'error');
-          return;
-        }
-        const code = (codeInput?.value || '').trim();
-        if (!code) {
-          return;
-        }
-        const payload = {
-          code,
-          sku_code: activeRow.dataset.sku || '',
-          size: activeRow.dataset.size || '',
-          barcode: activeRow.dataset.barcode || '',
-        };
-        try {
-          const response = await fetch(`${apiBase}scan/`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'X-CSRFToken': csrfToken,
-            },
-            body: JSON.stringify(payload),
-          });
-          const data = await response.json();
-          if (!response.ok || !data.ok) {
-            setStatus(data.error || 'Не удалось сохранить код.', 'error');
-            return;
-          }
-          updateRowCounts(activeRow, data.count || 0);
-          if (totalEl && data.total_count !== undefined) {
-            totalEl.textContent = data.total_count;
-          }
-          if (codeInput) {
-            codeInput.value = '';
-          }
-          setStatus('Код сохранен.', 'success');
-        } catch (err) {
-          setStatus('Не удалось сохранить код.', 'error');
-        }
-      };
-
-      if (addBtn) {
-        addBtn.addEventListener('click', submitCode);
-      }
-      if (codeInput) {
-        codeInput.addEventListener('keydown', (event) => {
-          if (event.key === 'Enter') {
-            event.preventDefault();
-            submitCode();
-          }
-        });
-      }
-
-      const importFile = async () => {
-        if (!apiBase) {
-          return;
-        }
-        const file = fileInput?.files?.[0];
-        if (!file) {
-          setStatus('Выберите файл для импорта.', 'error');
-          return;
-        }
-        const formData = new FormData();
-        formData.append('file', file);
-        try {
-          const response = await fetch(`${apiBase}import/`, {
-            method: 'POST',
-            headers: { 'X-CSRFToken': csrfToken },
-            body: formData,
-          });
-          const data = await response.json();
-          if (!response.ok || !data.ok) {
-            setStatus(data.error || 'Не удалось импортировать файл.', 'error');
-            return;
-          }
-          const parts = [`Добавлено: ${data.added || 0}`];
-          if (data.duplicates) {
-            parts.push(`Дубликаты: ${data.duplicates}`);
-          }
-          if (data.unknown_barcodes) {
-            parts.push(`Неизвестные ШК: ${data.unknown_barcodes}`);
-          }
-          if (data.mismatched_barcodes) {
-            parts.push(`Чужие ШК: ${data.mismatched_barcodes}`);
-          }
-          if (data.invalid_rows) {
-            parts.push(`Пустые строки: ${data.invalid_rows}`);
-          }
-          setStatus(parts.join(' • '), 'success');
-          if (fileInput) {
-            fileInput.value = '';
-          }
-          await refreshCounts();
-        } catch (err) {
-          setStatus('Не удалось импортировать файл.', 'error');
-        }
-      };
-
-      if (importBtn) {
-        importBtn.addEventListener('click', importFile);
-      }
-    })();
-  </script>
-  <script>
-    (() => {
       document.querySelectorAll('.processing-params select, .processing-params input, .processing-params textarea')
         .forEach((field) => {
+          if (field.form && field.form.id === 'assign-packaging-form') {
+            return;
+          }
           field.disabled = true;
           field.setAttribute('readonly', 'readonly');
         });
@@ -1831,6 +2161,22 @@
           return;
         }
         field.readOnly = true;
+      });
+    })();
+  </script>
+  <script>
+    (() => {
+      const assignForm = document.getElementById('assign-packaging-form');
+      const assignButton = document.querySelector('[data-assign-packaging]');
+      if (!assignForm || !assignButton) {
+        return;
+      }
+      assignButton.addEventListener('click', () => {
+        if (typeof assignForm.requestSubmit === 'function') {
+          assignForm.requestSubmit();
+        } else {
+          assignForm.submit();
+        }
       });
     })();
   </script>

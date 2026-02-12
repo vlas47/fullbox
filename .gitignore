@@ -11,3 +11,12 @@ fullbox/db.sqlite3
 /fullbox/*/migrations/__pycache__/
 /fullbox/*/migrations/*.pyc
 /fullbox/*/*.pyc
+
+# Build artifacts / binaries
+fullbox_agent/dist/
+fullbox_agent/out/
+fullbox_agent/**/bin/
+fullbox_agent/**/obj/
+fullbox/static/agents/*.exe
+fullbox/static/agents/*.zip
+fullbox_agent/fullbox_agent_bundle.zip

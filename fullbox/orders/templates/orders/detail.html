@@ -85,6 +85,9 @@
             Статус: <span class="meta-value">{{ status_label }}</span>
             {% if goods_type_label %}<br>Тип поставки: <span class="meta-value">{{ goods_type_label }}</span>{% endif %}
             {% if responsible %}<div class="meta-row">Текущий ответственный: <span class="meta-value">{{ responsible }}</span></div>{% endif %}
+            {% if order_type == 'processing' and processing_packers_label %}
+              <div class="meta-row">Упаковывает: <span class="meta-value">{{ processing_packers_label }}</span></div>
+            {% endif %}
           </div>
         </div>
 

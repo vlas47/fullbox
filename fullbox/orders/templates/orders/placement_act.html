@@ -102,7 +102,7 @@
         <div class="side-card">
           <h4 class="side-title">Действия</h4>
           <div class="side-actions">
-            <a class="tab" href="/orders/receiving/{{ order_id }}/">К заявке</a>
+            <a class="tab" href="{{ order_detail_url }}">К заявке</a>
             <a class="tab" href="{{ cabinet_url }}">В кабинет</a>
             <a class="tab" href="/logout/">Выход</a>
           </div>
@@ -158,11 +158,27 @@
           </div>
 
           <div class="scanner-panel">
+            {% if cz_only %}
+              <div class="scanner-field">
+                <div class="scanner-label">Позиция для ЧЗ</div>
+                <select id="cz-item-select" class="scanner-input">
+                  {% for item in remaining_items %}
+                    <option value="{{ item.sku_code|default:'' }}|{{ item.size|default:'' }}">{{ item.name|default:"-" }} · {{ item.sku_code|default:"-" }}{% if item.size %} · {{ item.size }}{% endif %}</option>
+                  {% endfor %}
+                </select>
+              </div>
+            {% endif %}
             <div class="scanner-field">
               <div class="scanner-label">Сканер</div>
-              <input id="scan-input" class="scanner-input" placeholder="Сканируйте штрихкод (Enter в конце)">
+              <input id="scan-input" class="scanner-input" placeholder="{% if cz_only %}Сканируйте ЧЗ (Enter в конце){% else %}Сканируйте штрихкод (Enter в конце){% endif %}">
             </div>
-            <div class="scanner-status" id="scan-status">Готов к сканированию. По штрихкоду добавляется 1 шт. в короб.</div>
+            <div class="scanner-status" id="scan-status">
+              {% if cz_only %}
+                Готов к сканированию ЧЗ. Код закрепляется за выбранной позицией и коробом.
+              {% else %}
+                Готов к сканированию. По штрихкоду добавляется 1 шт. в короб.
+              {% endif %}
+            </div>
           </div>
 
           <form method="post" id="placement-form">
@@ -325,6 +341,10 @@
       const placedFilterInputs = placedSummary ? placedSummary.querySelectorAll('select[data-filter-col]') : [];
       const scanInput = document.getElementById('scan-input');
       const scanStatus = document.getElementById('scan-status');
+      const czItemSelect = document.getElementById('cz-item-select');
+      const czOnly = {{ cz_only|yesno:"true,false" }};
+      const markingScanUrl = "{{ marking_scan_url|escapejs }}";
+      const csrfToken = (document.querySelector('input[name="csrfmiddlewaretoken"]') || {}).value || '';
       const barcodeMapEl = document.getElementById('barcode-map');
       const barcodeMap = barcodeMapEl ? JSON.parse(barcodeMapEl.textContent || '{}') : {};
 
@@ -338,6 +358,7 @@
       const DEFAULT_LOCATION = 'PR';
       const zoneLabels = {
         PR: 'Зона приемки',
+        OBR: 'Зона обработки',
         OTG: 'Зона отгрузки',
         MR: 'Между рядами',
         OS: 'Основной склад',
@@ -372,6 +393,9 @@
         }
         if (/^pr$/i.test(text) || /зона приемки|поле приемки/i.test(text)) {
           return 'PR';
+        }
+        if (/^obr$/i.test(text) || /зона обработк|обработк/i.test(text)) {
+          return 'OBR';
         }
         if (/^otg?$/i.test(text) || /зона отгрузки|отгрузк/i.test(text)) {
           return 'OTG';
@@ -421,7 +445,7 @@
         result.section = section ? String(section).trim() : '';
         result.tier = tier ? String(tier).trim() : '';
         result.cell = cell ? String(cell).trim() : '';
-        if (result.zone === 'PR' || result.zone === 'OTG') {
+        if (result.zone === 'PR' || result.zone === 'OBR' || result.zone === 'OTG') {
           result.row = '';
           result.section = '';
           result.tier = '';
@@ -830,7 +854,7 @@
         remainingBody.innerHTML = '';
         const activeContainer = getActiveContainer();
         addTargetLabelText(activeContainer ? { type: state.active.type } : null);
-        const allowInput = isEditable && activeContainer && !activeContainer.sealed;
+        const allowInput = isEditable && activeContainer && !activeContainer.sealed && !czOnly;
         const rows = getRemainingRows();
         if (!rows.length) {
           const row = document.createElement('tr');
@@ -903,7 +927,11 @@
               updateHidden();
               updateAddBoxAvailability();
             });
-            inputCell.appendChild(input);
+            if (allowInput) {
+              inputCell.appendChild(input);
+            } else {
+              inputCell.textContent = czOnly ? 'Сканируйте ЧЗ' : '-';
+            }
             row.appendChild(inputCell);
             remainingBody.appendChild(row);
           });
@@ -1122,6 +1150,7 @@
                 <select class="loc-input" data-field="zone">
                 ${customLocationOption}
                   <option value="PR">PR · Зона приемки</option>
+                  <option value="OBR">OBR · Зона обработки</option>
                   <option value="OTG">OTG · Зона отгрузки</option>
                   <option value="MR">MR · Между рядами</option>
                   <option value="OS">OS · Основной склад</option>
@@ -1273,7 +1302,7 @@
               tier: tierSelect ? tierSelect.value : '',
               cell: cellSelect ? cellSelect.value : '',
             };
-            if (zone === 'PR' || zone === 'OTG') {
+            if (zone === 'PR' || zone === 'OBR' || zone === 'OTG') {
               next.row = '';
               next.section = '';
               next.tier = '';
@@ -1644,6 +1673,17 @@
         return '';
       };
 
+      const barcodeByKey = {};
+      Object.entries(barcodeMap || {}).forEach(([barcode, data]) => {
+        if (!data) {
+          return;
+        }
+        const key = findItemKeyByValue(data.sku, data.name, data.size);
+        if (key && !barcodeByKey[key]) {
+          barcodeByKey[key] = barcode;
+        }
+      });
+
       const resolveScanItem = (barcode) => {
         const normalized = normalizeBarcode(barcode);
         if (!normalized) {
@@ -1723,9 +1763,97 @@
         return { added: true, qty: nextQty, max: maxQty };
       };
 
+      const getCzSelection = () => {
+        if (!czItemSelect) {
+          return null;
+        }
+        const value = (czItemSelect.value || '').trim();
+        if (!value) {
+          return null;
+        }
+        const parts = value.split('|');
+        const sku = (parts[0] || '').trim();
+        const size = (parts[1] || '').trim();
+        const key = findItemKeyByValue(sku, '', size);
+        if (!key || !baseByKey[key]) {
+          return null;
+        }
+        const item = baseByKey[key];
+        return {
+          key,
+          item,
+          sku: item.sku || sku,
+          size: item.size || size,
+          barcode: barcodeByKey[key] || '',
+        };
+      };
+
+      const handleCzScan = async (code) => {
+        if (!isEditable) {
+          setScanStatus('Акт закрыт. Сканирование недоступно.', 'warn');
+          return;
+        }
+        const selection = getCzSelection();
+        if (!selection) {
+          setScanStatus('Выберите позицию для ЧЗ перед сканированием.', 'warn');
+          return;
+        }
+        const targetBox = ensureActiveBoxForScan();
+        if (!targetBox) {
+          setScanStatus('Откройте короб или создайте новый для сканирования.', 'warn');
+          return;
+        }
+        const remainingRows = getRemainingRows();
+        const remainingRow = remainingRows.find((row) => row.key === selection.key);
+        if (!remainingRow || remainingRow.remaining <= 0) {
+          setScanStatus('Остаток по выбранной позиции исчерпан.', 'warn');
+          return;
+        }
+        try {
+          const resp = await fetch(markingScanUrl, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-CSRFToken': csrfToken,
+            },
+            credentials: 'same-origin',
+            body: JSON.stringify({
+              code,
+              sku_code: selection.sku,
+              size: selection.size,
+              barcode: selection.barcode,
+              box_barcode: targetBox.code || '',
+            }),
+          });
+          const data = await resp.json().catch(() => ({}));
+          if (!resp.ok || !data.ok) {
+            const message = data.error || 'Не удалось сохранить ЧЗ.';
+            setScanStatus(message, 'warn');
+            return;
+          }
+        } catch (err) {
+          setScanStatus('Ошибка связи при сохранении ЧЗ.', 'warn');
+          return;
+        }
+        const result = incrementBoxItem(targetBox, selection.key, selection.item);
+        if (!result.added) {
+          setScanStatus('Остаток по выбранной позиции исчерпан.', 'warn');
+          return;
+        }
+        state.active = { type: 'box', code: targetBox.code || '' };
+        renderAll();
+        highlightRemainingRow(selection.key);
+        focusRemainingItem(selection.key);
+        setScanStatus(`ЧЗ учтен: ${selection.item.name || selection.item.sku} (+1) в короб ${targetBox.code}.`, 'ok');
+      };
+
       const handleScan = (raw) => {
         const barcode = normalizeBarcode(raw);
         if (!barcode) {
+          return;
+        }
+        if (czOnly) {
+          handleCzScan(barcode);
           return;
         }
         if (!isEditable) {

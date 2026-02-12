@@ -3,6 +3,7 @@ import re
 from datetime import timedelta
 
 from django.db import models
+from django.db.models import Case, CharField, Count, F, Value, When
 from django.http import HttpResponseForbidden, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -13,6 +14,8 @@ from urllib.parse import urlencode
 
 from employees.models import Employee
 from employees.access import get_request_role, is_staff_role, resolve_cabinet_url
+from marking.models import MarkingCode
+from processing_app.views import _import_marking_codes
 from sku.models import Agency, SKU, SKUBarcode
 from sku.views import SKUCreateView, SKUUpdateView, SKUDuplicateView
 from todo.models import Task
@@ -394,6 +397,121 @@ def dashboard(request):
             "client_messages": client_messages,
         },
     )
+
+
+def marking_tools(request):
+    if not request.user.is_authenticated:
+        return HttpResponseForbidden("Доступ запрещен")
+    selected_client, _client_view, allowed = _get_client_for_request(request)
+    if not allowed:
+        return HttpResponseForbidden("Доступ запрещен")
+    if not selected_client:
+        return redirect("/client/")
+    base_qs = MarkingCode.objects.filter(agency=selected_client, order_type="processing")
+    available_filter = models.Q(order_id__isnull=True) | models.Q(order_id="")
+    available_qs = base_qs.filter(used_at__isnull=True).filter(available_filter)
+    reserved_qs = base_qs.filter(used_at__isnull=True).exclude(available_filter)
+    used_qs = base_qs.filter(used_at__isnull=False)
+    available_map = {
+        row["barcode"]: row["count"]
+        for row in available_qs.values("barcode").annotate(count=Count("id"))
+    }
+    reserved_map = {
+        row["barcode"]: row["count"]
+        for row in reserved_qs.values("barcode").annotate(count=Count("id"))
+    }
+    used_map = {
+        row["barcode"]: row["count"]
+        for row in used_qs.values("barcode").annotate(count=Count("id"))
+    }
+    barcodes = set(available_map) | set(reserved_map) | set(used_map)
+    sorted_barcodes = sorted(barcodes, key=lambda value: (value == "", value))
+    cz_rows = [
+        {
+            "barcode": barcode or "-",
+            "free": available_map.get(barcode, 0),
+            "reserved": reserved_map.get(barcode, 0),
+            "used": used_map.get(barcode, 0),
+        }
+        for barcode in sorted_barcodes
+    ]
+    status_expr = Case(
+        When(used_at__isnull=False, then=Value("used")),
+        When(order_id__isnull=True, then=Value("free")),
+        When(order_id="", then=Value("free")),
+        default=Value("reserved"),
+        output_field=CharField(),
+    )
+    order_group_expr = Case(
+        When(order_id__isnull=True, then=Value("Без заявки")),
+        When(order_id="", then=Value("Без заявки")),
+        default=F("order_id"),
+        output_field=CharField(),
+    )
+    status_labels = {
+        "used": "Использован",
+        "reserved": "Забронирован",
+        "free": "Свободен",
+    }
+    history_rows = []
+    history_qs = (
+        base_qs.annotate(status=status_expr, order_group=order_group_expr)
+        .values("status", "order_group", "barcode")
+        .annotate(count=Count("id"))
+    )
+    for row in history_qs:
+        status_key = row["status"]
+        if status_key == "free":
+            order_label = "Свободные"
+        else:
+            order_label = row["order_group"] or "Без заявки"
+        history_rows.append(
+            {
+                "order_label": order_label,
+                "barcode": row["barcode"] or "-",
+                "status_key": status_key,
+                "status_label": status_labels.get(status_key, status_key),
+                "count": row["count"],
+            }
+        )
+    status_order = {"used": 0, "reserved": 1, "free": 2}
+    history_rows.sort(
+        key=lambda item: (
+            status_order.get(item["status_key"], 9),
+            item["order_label"],
+            item["barcode"],
+        )
+    )
+    return render(
+        request,
+        "client_cabinet/marking_tools.html",
+        {
+            "client_agency": selected_client,
+            "total_count": base_qs.count(),
+            "available_count": available_qs.count(),
+            "reserved_count": reserved_qs.count(),
+            "used_count": used_qs.count(),
+            "cz_rows": cz_rows,
+            "history_rows": history_rows,
+        },
+    )
+
+
+def marking_import(request):
+    if request.method != "POST":
+        return HttpResponseForbidden("Доступ запрещен")
+    if not request.user.is_authenticated:
+        return HttpResponseForbidden("Доступ запрещен")
+    selected_client, _client_view, allowed = _get_client_for_request(request)
+    if not allowed or not selected_client:
+        return HttpResponseForbidden("Доступ запрещен")
+    file = request.FILES.get("file") or request.FILES.get("marking_cz_file")
+    if not file:
+        return JsonResponse({"ok": False, "error": "Файл не выбран."}, status=400)
+    ok, result = _import_marking_codes(file, {}, "", selected_client, request.user)
+    if not ok:
+        return JsonResponse({"ok": False, "error": result.get("error") or "Ошибка импорта."}, status=400)
+    return JsonResponse({"ok": True, **result})
 
 
 def receiving_redirect(request, pk: int):

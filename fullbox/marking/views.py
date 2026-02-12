@@ -2,8 +2,9 @@ import json
 
 from django.contrib.auth.decorators import login_required
 from django.db import IntegrityError, transaction
-from django.db.models import Count
+from django.db.models import Count, Q
 from django.http import HttpResponseBadRequest, HttpResponseForbidden, JsonResponse
+from django.utils import timezone
 from django.views.decorators.http import require_GET, require_POST
 from openpyxl import load_workbook
 
@@ -80,7 +81,7 @@ def processing_marking_summary(request, order_id: str):
     if not latest:
         return HttpResponseBadRequest("Заявка не найдена")
     rows = (
-        MarkingCode.objects.filter(order_type="processing", order_id=order_id)
+        MarkingCode.objects.filter(order_type="processing", order_id=order_id, used_at__isnull=False)
         .values("sku_code", "size")
         .annotate(count=Count("id"))
     )
@@ -108,6 +109,7 @@ def processing_marking_scan(request, order_id: str):
     sku_code = (data.get("sku_code") or "").strip()
     size = (data.get("size") or "").strip()
     barcode = (data.get("barcode") or "").strip()
+    box_barcode = (data.get("box_barcode") or "").strip()
     if not code:
         return JsonResponse({"ok": False, "error": "Код ЧЗ не указан"}, status=400)
     if not sku_code:
@@ -126,33 +128,82 @@ def processing_marking_scan(request, order_id: str):
                 {"ok": False, "error": "Позиция не найдена в заявке."},
                 status=400,
             )
-    if MarkingCode.objects.filter(code=code).exists():
-        return JsonResponse({"ok": False, "error": "Код уже учтен."}, status=409)
-    sku = _resolve_sku(agency, sku_code)
-    try:
-        MarkingCode.objects.create(
-            order_type="processing",
-            order_id=order_id,
-            agency=agency,
-            sku=sku,
-            sku_code=sku_code,
-            size=size,
-            barcode=barcode,
-            code=code,
-            source="scan",
-            created_by=request.user if request.user.is_authenticated else None,
-        )
-    except IntegrityError:
-        return JsonResponse({"ok": False, "error": "Код уже учтен."}, status=409)
+    now = timezone.localtime()
+    existing = (
+        MarkingCode.objects.select_related("agency", "sku")
+        .filter(code=code)
+        .first()
+    )
+    if existing:
+        if existing.used_at:
+            return JsonResponse({"ok": False, "error": "Код уже использован."}, status=409)
+        if agency and existing.agency_id and existing.agency_id != agency.id:
+            return JsonResponse({"ok": False, "error": "Код принадлежит другому клиенту."}, status=409)
+        if existing.order_type and existing.order_type != "processing":
+            return JsonResponse({"ok": False, "error": "Код закреплен в другом процессе."}, status=409)
+        if existing.order_id and existing.order_id != order_id:
+            return JsonResponse({"ok": False, "error": "Код закреплен за другой заявкой."}, status=409)
+        if existing.sku_code and existing.sku_code != sku_code:
+            return JsonResponse({"ok": False, "error": "Код относится к другому артикулу."}, status=409)
+        if existing.size and size and existing.size != size:
+            return JsonResponse({"ok": False, "error": "Код относится к другому размеру."}, status=409)
+        if existing.box_barcode and box_barcode and existing.box_barcode != box_barcode:
+            return JsonResponse({"ok": False, "error": "Код закреплен за другим коробом."}, status=409)
+        update_fields = []
+        if not existing.order_id:
+            existing.order_id = order_id
+            update_fields.append("order_id")
+        if not existing.order_type:
+            existing.order_type = "processing"
+            update_fields.append("order_type")
+        if not existing.size and size:
+            existing.size = size
+            update_fields.append("size")
+        if not existing.barcode and barcode:
+            existing.barcode = barcode
+            update_fields.append("barcode")
+        if box_barcode and not existing.box_barcode:
+            existing.box_barcode = box_barcode
+            update_fields.append("box_barcode")
+        if not existing.sku:
+            sku = _resolve_sku(agency, sku_code)
+            existing.sku = sku
+            update_fields.append("sku")
+        existing.used_at = now
+        existing.used_by = request.user if request.user.is_authenticated else None
+        update_fields.extend(["used_at", "used_by"])
+        existing.save(update_fields=update_fields)
+    else:
+        sku = _resolve_sku(agency, sku_code)
+        try:
+            MarkingCode.objects.create(
+                order_type="processing",
+                order_id=order_id,
+                agency=agency,
+                sku=sku,
+                sku_code=sku_code,
+                size=size,
+                barcode=barcode,
+                box_barcode=box_barcode,
+                code=code,
+                source="scan",
+                created_by=request.user if request.user.is_authenticated else None,
+                used_at=now,
+                used_by=request.user if request.user.is_authenticated else None,
+            )
+        except IntegrityError:
+            return JsonResponse({"ok": False, "error": "Код уже учтен."}, status=409)
     count = MarkingCode.objects.filter(
         order_type="processing",
         order_id=order_id,
         sku_code=sku_code,
         size=size,
+        used_at__isnull=False,
     ).count()
     total_count = MarkingCode.objects.filter(
         order_type="processing",
         order_id=order_id,
+        used_at__isnull=False,
     ).count()
     return JsonResponse(
         {
@@ -163,6 +214,117 @@ def processing_marking_scan(request, order_id: str):
             "total_count": total_count,
         }
     )
+
+
+@login_required
+@require_POST
+def processing_marking_print(request, order_id: str):
+    ok, response = _require_processing_role(request)
+    if not ok:
+        return response
+    latest, payload, agency = _get_processing_order(order_id)
+    if not latest:
+        return HttpResponseBadRequest("Заявка не найдена")
+    data = _parse_json_body(request)
+    if data is None:
+        return HttpResponseBadRequest("Некорректный JSON")
+    qty = data.get("qty")
+    try:
+        qty_value = int(qty)
+    except (TypeError, ValueError):
+        qty_value = 0
+    if qty_value <= 0:
+        return JsonResponse({"ok": False, "error": "Количество для печати не указано."}, status=400)
+    barcode = (data.get("barcode") or "").strip()
+    size = (data.get("size") or "").strip()
+    if not barcode:
+        return JsonResponse({"ok": False, "error": "ШК не указан."}, status=400)
+    now = timezone.now()
+    with transaction.atomic():
+        base_qs = MarkingCode.objects.select_for_update().filter(
+            order_type="processing",
+            used_at__isnull=True,
+            printed_at__isnull=True,
+            barcode=barcode,
+        )
+        if agency:
+            base_qs = base_qs.filter(agency=agency)
+        if size:
+            base_qs = base_qs.filter(size=size)
+        reserved = list(
+            base_qs.filter(order_id=order_id)
+            .order_by("created_at")
+            .values_list("id", "code")[:qty_value]
+        )
+        remaining = qty_value - len(reserved)
+        extra = []
+        if remaining > 0:
+            extra = list(
+                base_qs.filter(Q(order_id__isnull=True) | Q(order_id=""))
+                .order_by("created_at")
+                .values_list("id", "code")[:remaining]
+            )
+        codes = reserved + extra
+        if len(codes) < qty_value:
+            return JsonResponse(
+                {"ok": False, "error": "Недостаточно кодов ЧЗ.", "available": len(codes)},
+                status=409,
+            )
+        ids = [item[0] for item in codes]
+        MarkingCode.objects.filter(id__in=ids).update(
+            printed_at=now,
+            printed_by=request.user,
+            order_id=order_id,
+        )
+    return JsonResponse({"ok": True, "codes": [item[1] for item in codes], "count": len(codes)})
+
+
+@login_required
+@require_POST
+def processing_marking_reset_printed(request, order_id: str):
+    ok, response = _require_processing_role(request)
+    if not ok:
+        return response
+    latest, _payload, agency = _get_processing_order(order_id)
+    if not latest:
+        return HttpResponseBadRequest("Заявка не найдена")
+    data = _parse_json_body(request)
+    if data is None:
+        return HttpResponseBadRequest("Некорректный JSON")
+    barcode = (data.get("barcode") or "").strip()
+    size = (data.get("size") or "").strip()
+    qty = data.get("qty")
+    try:
+        qty_value = int(qty)
+    except (TypeError, ValueError):
+        qty_value = 0
+    if not barcode:
+        return JsonResponse({"ok": False, "error": "ШК не указан."}, status=400)
+    with transaction.atomic():
+        qs = MarkingCode.objects.select_for_update().filter(
+            order_type="processing",
+            order_id=order_id,
+            used_at__isnull=True,
+            printed_at__isnull=False,
+            barcode=barcode,
+        )
+        if agency:
+            qs = qs.filter(agency=agency)
+        if size:
+            qs = qs.filter(size=size)
+        if qty_value > 0:
+            ids = list(
+                qs.order_by("-printed_at", "-created_at")
+                .values_list("id", flat=True)[:qty_value]
+            )
+        else:
+            ids = list(qs.values_list("id", flat=True))
+        if ids:
+            MarkingCode.objects.filter(id__in=ids).update(
+                printed_at=None,
+                printed_by=None,
+            )
+    return JsonResponse({"ok": True, "count": len(ids)})
 
 
 @login_required

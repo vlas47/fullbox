@@ -43,6 +43,7 @@ urlpatterns = [
     path('orders/', include('orders.urls')),
     path('head-manager/', include('head_manager.urls')),
     path('processing-head/', include('processing_head.urls')),
+    path('processing-worker/', include('processing_worker.urls')),
     path('reachtruck/', include('reachtruck.urls')),
     path('client/', include('client_cabinet.urls')),
     path('sku/', include('sku.urls')),
@@ -55,6 +56,7 @@ urlpatterns = [
     path('stockmap/', include('stockmap.urls')),
     path('labels/', include('labels.urls')),
     path('marking/', include('marking.urls')),
+    path('agent/', include('agent.urls')),
 ]
 
 if settings.DEBUG:

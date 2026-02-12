@@ -47,7 +47,12 @@
           <div style="display:grid; gap:8px;">
             {% for employee in employees %}
               <div style="display:flex; justify-content:space-between; gap:8px; padding:8px 10px; border:1px solid var(--stroke); border-radius:10px; background:#10111a;">
-                <div>{{ employee.full_name }}</div>
+                <div>
+                  {{ employee.full_name }}
+                  {% if employee.role == "processing_worker" %}
+                    (обработчик)
+                  {% endif %}
+                </div>
                 <div class="muted" style="white-space:nowrap;">{{ employee.user.username|default:"-" }}</div>
               </div>
             {% empty %}
