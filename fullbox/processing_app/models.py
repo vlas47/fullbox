@@ -1,4 +1,7 @@
+from django.conf import settings
 from django.db import models
+
+from employees.models import Employee
 
 
 class ProcessingPrintJob(models.Model):
@@ -31,3 +34,46 @@ class ProcessingPrintJob(models.Model):
 
     def __str__(self) -> str:
         return f"PrintJob #{self.pk} ({self.barcode})"
+
+
+class ProcessingFlowSession(models.Model):
+    STATUS_OPEN = "open"
+    STATUS_CLOSED = "closed"
+    STATUS_CHOICES = [
+        (STATUS_OPEN, "Открыта"),
+        (STATUS_CLOSED, "Закрыта"),
+    ]
+
+    order_id = models.CharField(max_length=64)
+    order_type = models.CharField(max_length=32, default="processing")
+    agent_id = models.CharField(max_length=128, blank=True)
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="processing_flow_sessions",
+    )
+    employee = models.ForeignKey(
+        Employee,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="processing_flow_sessions",
+    )
+    flow_state = models.JSONField(default=dict, blank=True)
+    status = models.CharField(max_length=16, choices=STATUS_CHOICES, default=STATUS_OPEN)
+    last_seen = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["order_id", "status"]),
+            models.Index(fields=["agent_id", "status"]),
+            models.Index(fields=["user", "status"]),
+        ]
+
+    def __str__(self) -> str:
+        label = self.agent_id or "agent"
+        return f"FlowSession {self.order_id} ({label})"

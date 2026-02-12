@@ -29,6 +29,7 @@ class StockMapView(RoleRequiredMixin, TemplateView):
         context = super().get_context_data(**kwargs)
         cells = [
             {"zone": "PR", "row": "", "section": "", "tier": "", "cell": 150},
+            {"zone": "OBR", "row": "", "section": "", "tier": "", "cell": 20},
             {"zone": "OTG", "row": "", "section": "", "tier": "", "cell": 150},
             {"zone": "MR", "row": 1, "section": "", "tier": "", "cell": 50},
             {"zone": "MR", "row": 2, "section": "", "tier": "", "cell": 50},
@@ -48,6 +49,7 @@ class StockMapView(RoleRequiredMixin, TemplateView):
         occupied_os = set()
         occupied_mr = {}
         occupied_pr = 0
+        occupied_obr = 0
         occupied_otg = 0
         for entry in _latest_closed_placement_entries():
             payload = entry.payload or {}
@@ -57,6 +59,8 @@ class StockMapView(RoleRequiredMixin, TemplateView):
                     occupied_os.add((row_num, section_num, tier_num, cell_num))
                 elif zone == "PR":
                     occupied_pr += 1
+                elif zone == "OBR":
+                    occupied_obr += 1
                 elif zone == "OTG":
                     occupied_otg += 1
                 elif zone == "MR" and row_num:
@@ -78,6 +82,9 @@ class StockMapView(RoleRequiredMixin, TemplateView):
             elif row.get("zone") == "PR":
                 row["occupied"] = occupied_pr
                 row["free"] = max(0, total - occupied_pr)
+            elif row.get("zone") == "OBR":
+                row["occupied"] = occupied_obr
+                row["free"] = max(0, total - occupied_obr)
             elif row.get("zone") == "OTG":
                 row["occupied"] = occupied_otg
                 row["free"] = max(0, total - occupied_otg)
@@ -163,6 +170,10 @@ def _normalize_zone(value: str) -> str:
         r"зона приемки|поле приемки", text, re.IGNORECASE
     ):
         return "PR"
+    if re.search(r"^obr$", text, re.IGNORECASE) or re.search(
+        r"зона обработк|обработк", text, re.IGNORECASE
+    ):
+        return "OBR"
     if re.search(r"^otg?$", text, re.IGNORECASE) or re.search(
         r"зона отгрузки|отгрузк", text, re.IGNORECASE
     ):

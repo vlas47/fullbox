@@ -24,6 +24,7 @@
   .task-meta { color:var(--muted); font-size:12px; line-height:1.4; }
   .task-meta-label { color:var(--muted); }
   .task-meta-value { color:#0e6b5b; font-weight:600; }
+  .task-meta-value.accent { color:#b45309; font-weight:700; }
   .task-meta-value.status-waiting { color:#d14343; }
   .task-meta-value.status-done { color:#1f9d55; }
   .task-tags { display:flex; gap:6px; flex-wrap:wrap; margin-top:6px; }
@@ -96,7 +97,11 @@
                       <a href="{{ task.route }}">{{ task.display_title }}</a>
                     {% endif %}
                   {% elif task.route and "/orders/processing/" in task.route %}
-                    <a href="{{ task.route }}">{{ task.display_title }}</a>
+                    {% if task_panel_role == "processing_worker" and task.worker_title %}
+                      <a href="{{ task.route }}">{{ task.worker_title }}</a>
+                    {% else %}
+                      <a href="{{ task.route }}">{{ task.display_title }}</a>
+                    {% endif %}
                   {% else %}
                     <a href="{% url 'todo:detail' task.id %}">{{ task.display_title }}</a>
                   {% endif %}
@@ -121,8 +126,8 @@
                         {% endif %}
                       {% else %}
                         Исполнитель:
-                        {% if task.assigned_to %}
-                          {{ task.assigned_to.full_name }}
+                        {% if task.executor_label %}
+                          {{ task.executor_label }}
                         {% else %}
                           не назначен
                         {% endif %}
@@ -153,8 +158,8 @@
                       {% endif %}
                     {% else %}
                       Исполнитель:
-                      {% if task.assigned_to %}
-                        {{ task.assigned_to.full_name }}
+                      {% if task.executor_label %}
+                        {{ task.executor_label }}
                       {% else %}
                         не назначен
                       {% endif %}
@@ -165,6 +170,12 @@
                         -
                       {% endif %}
                     {% endif %}
+                  </div>
+                {% endif %}
+                {% if task.route and "/orders/processing/" in task.route and task.processing_packers_label %}
+                  <div class="task-meta">
+                    <span class="task-meta-label">Раскоробовка поручена:</span>
+                    <span class="task-meta-value accent">{{ task.processing_packers_label }}</span>
                   </div>
                 {% endif %}
                 {% if task.order_status_label %}

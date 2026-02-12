@@ -17,6 +17,7 @@ from openpyxl.cell.cell import MergedCell
 from audit.models import OrderAuditEntry, log_order_action, log_staff_overaction
 from employees.models import Employee
 from employees.access import RoleRequiredMixin, get_request_role, resolve_cabinet_url, is_staff_role
+from marking.utils import extract_processing_items
 from sku.models import Agency, SKU, SKUBarcode
 from todo.models import Task
 from stockmap.views import _OS_CELLS_PER_TIER, _OS_ROW_SECTIONS, _OS_TIERS
@@ -407,6 +408,141 @@ def _parse_qty_value(raw: str | None) -> int | None:
         return None
 
 
+def _processing_card_id(card: dict) -> str:
+    if not isinstance(card, dict):
+        return ""
+    value = card.get("id") or card.get("article") or card.get("sku") or ""
+    return str(value).strip()
+
+
+def _processing_card_sets(payload: dict) -> tuple[set[str], set[str]]:
+    payload = payload or {}
+    processed = set()
+    placed = set()
+    for card in payload.get("cards") or []:
+        card_id = _processing_card_id(card)
+        if not card_id:
+            continue
+        if card.get("processed_at") or card.get("processed_done") or card.get("processed"):
+            processed.add(card_id)
+        if card.get("placed_at") or card.get("placed_done"):
+            placed.add(card_id)
+    for value in payload.get("processed_cards") or []:
+        text = str(value).strip()
+        if text:
+            processed.add(text)
+    for value in payload.get("placed_cards") or []:
+        text = str(value).strip()
+        if text:
+            placed.add(text)
+    return processed, placed
+
+
+def _payload_has_value(payload: dict, *keys: str) -> bool:
+    payload = payload or {}
+    for key in keys:
+        value = payload.get(key)
+        if value is None:
+            continue
+        text = str(value).strip()
+        if text and text not in {"-", "0", "0.0"}:
+            return True
+    return False
+
+
+def _processing_receiving_items(
+    payload: dict,
+    agency_id: int | None,
+    only_cards: set[str] | None = None,
+) -> list[dict]:
+    totals: dict[tuple[str, str], int] = {}
+    allowed_articles = set()
+    if only_cards:
+        for card in payload.get("cards") or []:
+            card_id = _processing_card_id(card)
+            if not card_id or card_id not in only_cards:
+                continue
+            article = str(card.get("article") or card.get("sku") or "").strip()
+            if article:
+                allowed_articles.add(article.lower())
+
+    def is_allowed_article(article_value: str) -> bool:
+        if not only_cards:
+            return True
+        if not allowed_articles:
+            return False
+        return article_value.lower() in allowed_articles
+
+    results = payload.get("processing_results") or []
+    if isinstance(results, list) and results:
+        for row in results:
+            if not isinstance(row, dict):
+                continue
+            sku = str(row.get("article") or row.get("sku") or row.get("sku_code") or "").strip()
+            if not sku or not is_allowed_article(sku):
+                continue
+            size = str(row.get("size") or "").strip()
+            processed_qty = _parse_qty_value(row.get("processed")) or 0
+            shipped = _parse_qty_value(row.get("shipped_qty")) or 0
+            qty = max(processed_qty - shipped, 0)
+            if qty <= 0:
+                continue
+            key = (sku, size)
+            totals[key] = totals.get(key, 0) + qty
+    if not totals:
+        if only_cards:
+            for card in payload.get("cards") or []:
+                card_id = _processing_card_id(card)
+                if not card_id or card_id not in only_cards:
+                    continue
+                base_article = str(card.get("article") or card.get("sku") or "").strip()
+                for row in card.get("rows") or []:
+                    if not isinstance(row, dict):
+                        continue
+                    sku = str(row.get("article") or base_article).strip()
+                    if not sku:
+                        continue
+                    size = str(row.get("size") or "").strip()
+                    qty = _parse_qty_value(row.get("qty")) or 0
+                    if qty <= 0:
+                        continue
+                    key = (sku, size)
+                    totals[key] = totals.get(key, 0) + qty
+        else:
+            for row in extract_processing_items(payload):
+                if not isinstance(row, dict):
+                    continue
+                sku = str(row.get("sku_code") or row.get("article") or row.get("sku") or "").strip()
+                if not sku:
+                    continue
+                size = str(row.get("size") or "").strip()
+                qty = _parse_qty_value(row.get("qty")) or 0
+                if qty <= 0:
+                    continue
+                key = (sku, size)
+                totals[key] = totals.get(key, 0) + qty
+    if not totals:
+        return []
+    sku_codes = {sku for (sku, _) in totals.keys() if sku}
+    sku_map = {}
+    if sku_codes and agency_id:
+        for sku in SKU.objects.filter(agency_id=agency_id, sku_code__in=sku_codes, deleted=False):
+            sku_map[sku.sku_code] = sku
+    items = []
+    for (sku, size), qty in totals.items():
+        sku_obj = sku_map.get(sku)
+        name = (sku_obj.name or "").strip() if sku_obj else ""
+        items.append(
+            {
+                "sku_code": sku,
+                "name": name or "-",
+                "size": size,
+                "actual_qty": qty,
+            }
+        )
+    return items
+
+
 def _parse_int_value(raw) -> int:
     try:
         return int(str(raw).strip())
@@ -759,6 +895,9 @@ def _latest_payload_from_entries(entries):
         "flow_pallets",
         "flow_active_box",
         "flow_active_pallet",
+        "packing_assignee",
+        "packing_assignee_id",
+        "packing_assignee_role",
     }
     fallback_ignored = {
         "comment",
@@ -768,6 +907,9 @@ def _latest_payload_from_entries(entries):
         "flow_pallets",
         "flow_active_box",
         "flow_active_pallet",
+        "packing_assignee",
+        "packing_assignee_id",
+        "packing_assignee_role",
     }
     for entry in reversed(entries):
         payload = entry.payload or {}
@@ -2642,6 +2784,9 @@ class OrdersDetailView(RoleRequiredMixin, TemplateView):
                 "status",
                 "status_label",
                 "submit_action",
+                "packing_assignee",
+                "packing_assignee_id",
+                "packing_assignee_role",
             }
             if significant_keys:
                 return payload
@@ -4587,10 +4732,11 @@ class PlacementActView(RoleRequiredMixin, TemplateView):
         occupied_keys = set()
         seen_orders = set()
         for entry in (
-            OrderAuditEntry.objects.filter(order_type=self.order_type)
-            .exclude(order_id=order_id)
+            OrderAuditEntry.objects.filter(order_type__in=("receiving", "processing"))
             .order_by("-created_at")
         ):
+            if entry.order_id == order_id and entry.order_type == self.order_type:
+                continue
             if entry.order_id in seen_orders:
                 continue
             payload = entry.payload or {}
@@ -4631,6 +4777,7 @@ class PlacementActView(RoleRequiredMixin, TemplateView):
                 "status_label": _status_label_from_entry(status_entry) if status_entry else "-",
                 "cabinet_url": resolve_cabinet_url(get_request_role(self.request)),
                 "goods_type": (status_payload.get("goods_type") or "").strip().lower(),
+                "order_detail_url": f"/orders/receiving/{order_id}/",
                 "can_submit": can_submit,
                 "can_open_act": can_open_act,
                 "signed_by_storekeeper": signed_by_storekeeper,
@@ -4644,6 +4791,390 @@ class PlacementActView(RoleRequiredMixin, TemplateView):
                 "pallets_data": pallets_data,
                 "os_config": os_config,
                 "occupied_cells": occupied_cells,
+                "ok": kwargs.get("ok", False),
+                "error": kwargs.get("error"),
+            }
+        )
+        return ctx
+
+
+class ProcessingPlacementActView(PlacementActView):
+    order_type = "processing"
+    allowed_roles = ("storekeeper", "processing_head", "head_manager", "director", "admin", "manager")
+
+    def _load_entries(self, order_id):
+        return list(
+            OrderAuditEntry.objects.filter(order_id=order_id, order_type=self.order_type)
+            .select_related("user", "agency")
+            .order_by("created_at")
+        )
+
+    def _ensure_receiving_act(self, request, order_id, entries):
+        if not entries:
+            return entries
+        latest = entries[-1]
+        status_entry = _current_status_entry(entries)
+        base_payload = dict((status_entry.payload or latest.payload or {}))
+        processed_cards, placed_cards = _processing_card_sets(base_payload)
+        ready_cards = processed_cards - placed_cards if processed_cards else set()
+        items = _processing_receiving_items(
+            base_payload,
+            latest.agency_id,
+            ready_cards if ready_cards else None,
+        )
+        if not items:
+            return entries
+        existing_act = self._receiving_act_entry(entries)
+        if existing_act:
+            existing_items = (existing_act.payload or {}).get("act_items") or []
+
+            def _normalize_items(source):
+                return sorted(
+                    [
+                        (
+                            str(item.get("sku_code") or "").strip(),
+                            str(item.get("size") or "").strip(),
+                            int(item.get("actual_qty") or 0),
+                        )
+                        for item in source
+                        if isinstance(item, dict)
+                    ]
+                )
+
+            if _normalize_items(existing_items) == _normalize_items(items):
+                return entries
+        act_payload = dict(base_payload)
+        act_payload.update(
+            {
+                "act": "receiving",
+                "act_label": "Акт приемки (обработка)",
+                "act_state": "closed",
+                "act_items": items,
+            }
+        )
+        log_order_action(
+            "update",
+            order_id=order_id,
+            order_type=self.order_type,
+            user=request.user if request.user.is_authenticated else None,
+            agency=latest.agency,
+            description="Подготовлен состав для размещения после обработки",
+            payload=act_payload,
+        )
+        return self._load_entries(order_id)
+
+    def _can_create(self, entries):
+        if not entries:
+            return False
+        receiving_act = self._receiving_act_entry(entries)
+        items = (receiving_act.payload or {}).get("act_items") if receiving_act else []
+        return bool(items)
+
+    def get(self, request, *args, **kwargs):
+        ok = request.GET.get("ok") == "1"
+        error = request.GET.get("error")
+        ctx = self.get_context_data(ok=ok, error=error, **kwargs)
+        return self.render_to_response(ctx)
+
+    def post(self, request, *args, **kwargs):
+        order_id = kwargs.get("order_id")
+        entries = self._load_entries(order_id)
+        if not entries:
+            return redirect("/orders/")
+        entries = self._ensure_receiving_act(request, order_id, entries)
+        action = (request.POST.get("action") or "close").lower()
+        role = get_request_role(request)
+        base_url = f"/orders/processing/{order_id}/placement/"
+        if role != "storekeeper":
+            return redirect(base_url)
+        if not self._can_create(entries):
+            return redirect(f"{base_url}?error=1")
+        status_entry = _current_status_entry(entries)
+        latest = entries[-1]
+        base_payload = dict((status_entry.payload or latest.payload or {}))
+        processed_cards, placed_cards = _processing_card_sets(base_payload)
+        ready_cards = processed_cards - placed_cards if processed_cards else set()
+        placement_act = self._placement_act_entry(entries)
+        if action == "open":
+            if not placement_act:
+                return redirect(base_url)
+            payload = placement_act.payload or {}
+            current_state = (payload.get("act_state") or "closed").lower()
+            if current_state == "open":
+                return redirect(base_url)
+            act_payload = dict(base_payload)
+            act_payload.update(payload)
+            act_payload["act"] = "placement"
+            act_payload["act_label"] = act_payload.get("act_label") or "Акт размещения"
+            act_payload["act_state"] = "open"
+            log_order_action(
+                "update",
+                order_id=order_id,
+                order_type=self.order_type,
+                user=request.user if request.user.is_authenticated else None,
+                agency=latest.agency,
+                description="Открыт акт размещения после обработки",
+                payload=act_payload,
+            )
+            return redirect(base_url)
+        if not ready_cards:
+            return redirect(f"{base_url}?error=1")
+        act_items = _processing_receiving_items(
+            base_payload,
+            latest.agency_id,
+            ready_cards,
+        )
+        if not act_items:
+            return redirect(f"{base_url}?error=1")
+        placement_items = []
+        boxes_raw = request.POST.get("boxes_json") or "[]"
+        pallets_raw = request.POST.get("pallets_json") or "[]"
+        try:
+            boxes_data = json.loads(boxes_raw)
+            pallets_data = json.loads(pallets_raw)
+        except (TypeError, ValueError):
+            return redirect(f"{base_url}?error=1")
+        totals = {}
+
+        def add_total(item, qty, container_type):
+            key = _item_key(item.get("sku"), item.get("name"), item.get("size"))
+            if not key:
+                return
+            entry = totals.setdefault(key, {"box": 0, "pallet": 0, "total": 0})
+            entry[container_type] += qty
+            entry["total"] += qty
+
+        for box in boxes_data if isinstance(boxes_data, list) else []:
+            items = box.get("items") if isinstance(box, dict) else None
+            for item in items or []:
+                qty = _parse_qty_value(item.get("qty"))
+                if qty is None:
+                    continue
+                add_total(item, qty, "box")
+        for pallet in pallets_data if isinstance(pallets_data, list) else []:
+            items = pallet.get("items") if isinstance(pallet, dict) else None
+            for item in items or []:
+                qty = _parse_qty_value(item.get("qty"))
+                if qty is None:
+                    continue
+                add_total(item, qty, "pallet")
+        placement_items = []
+        for item in act_items:
+            key = _item_key(item.get("sku_code"), item.get("name"), item.get("size"))
+            entry = totals.get(key, {"box": 0, "pallet": 0, "total": 0})
+            actual_qty = _parse_qty_value(item.get("actual_qty")) or 0
+            if entry["total"] > actual_qty:
+                return redirect(f"{base_url}?error=1")
+            if entry["total"] != actual_qty:
+                return redirect(f"{base_url}?error=1")
+            placement_items.append(
+                {
+                    "sku_code": item.get("sku_code"),
+                    "name": item.get("name"),
+                    "size": item.get("size"),
+                    "actual_qty": actual_qty,
+                    "box_qty": entry["box"],
+                    "pallet_qty": entry["pallet"],
+                }
+            )
+        placed_cards_list = base_payload.get("placed_cards") or []
+        if not isinstance(placed_cards_list, list):
+            placed_cards_list = []
+        for card_id in ready_cards:
+            if card_id and card_id not in placed_cards_list:
+                placed_cards_list.append(card_id)
+        base_payload["placed_cards"] = placed_cards_list
+        now = timezone.localtime().isoformat()
+        for card in base_payload.get("cards") or []:
+            card_id = _processing_card_id(card)
+            if card_id and card_id in ready_cards:
+                card["placed_at"] = card.get("placed_at") or now
+                card["placed_done"] = True
+        act_payload = dict(base_payload)
+        act_payload["act"] = "placement"
+        act_payload["act_label"] = "Акт размещения"
+        act_payload["act_state"] = "closed"
+        act_payload["act_items"] = placement_items
+        act_payload["act_boxes"] = boxes_data if isinstance(boxes_data, list) else []
+        act_payload["act_pallets"] = pallets_data if isinstance(pallets_data, list) else []
+        log_order_action(
+            "update",
+            order_id=order_id,
+            order_type=self.order_type,
+            user=request.user if request.user.is_authenticated else None,
+            agency=latest.agency,
+            description="Создан акт размещения после обработки",
+            payload=act_payload,
+        )
+        return redirect(f"{base_url}?ok=1")
+
+    def get_context_data(self, **kwargs):
+        ctx = TemplateView.get_context_data(self, **kwargs)
+        order_id = kwargs.get("order_id")
+        entries = self._load_entries(order_id)
+        entries = self._ensure_receiving_act(self.request, order_id, entries)
+        latest = entries[-1] if entries else None
+        status_entry = _current_status_entry(entries)
+        status_payload = status_entry.payload or {} if status_entry else {}
+        base_payload = dict(status_payload or (latest.payload or {}) if latest else {})
+        processed_cards, placed_cards = _processing_card_sets(base_payload)
+        ready_cards = processed_cards - placed_cards if processed_cards else set()
+        receiving_act = self._receiving_act_entry(entries)
+        placement_act = self._placement_act_entry(entries)
+        receiving_items = (receiving_act.payload or {}).get("act_items") if receiving_act else []
+        placement_items = (placement_act.payload or {}).get("act_items") if placement_act else []
+        display_items = []
+        source_items = placement_items or receiving_items
+        for item in source_items:
+            display_items.append(
+                {
+                    "sku_code": item.get("sku_code") or "",
+                    "name": item.get("name") or "-",
+                    "size": item.get("size") or "-",
+                    "actual_qty": item.get("actual_qty") or 0,
+                    "box_qty": item.get("box_qty") or 0,
+                    "pallet_qty": item.get("pallet_qty") or 0,
+                }
+            )
+        catalog_items = []
+        remaining_items = []
+        for item in receiving_items:
+            catalog_items.append(
+                {
+                    "sku_code": item.get("sku_code") or "",
+                    "name": item.get("name") or "",
+                    "size": item.get("size") or "",
+                }
+            )
+            remaining_items.append(
+                {
+                    "sku_code": item.get("sku_code") or "",
+                    "name": item.get("name") or "",
+                    "size": item.get("size") or "",
+                    "actual_qty": item.get("actual_qty") or 0,
+                }
+            )
+        barcode_map = {}
+        if latest and latest.agency_id and receiving_items:
+            sku_codes = {
+                (item.get("sku_code") or "").strip()
+                for item in receiving_items
+                if (item.get("sku_code") or "").strip()
+            }
+            if sku_codes:
+                for sku in (
+                    SKU.objects.filter(
+                        agency_id=latest.agency_id,
+                        sku_code__in=sku_codes,
+                        deleted=False,
+                    )
+                    .prefetch_related("barcodes")
+                ):
+                    for barcode in sku.barcodes.all():
+                        value = (barcode.value or "").strip()
+                        if not value:
+                            continue
+                        barcode_map.setdefault(
+                            value,
+                            {
+                                "sku": sku.sku_code,
+                                "name": sku.name,
+                                "size": (barcode.size or sku.size or "").strip(),
+                            },
+                        )
+                    sku_code_barcode = (sku.code or "").strip()
+                    if sku_code_barcode:
+                        barcode_map.setdefault(
+                            sku_code_barcode,
+                            {
+                                "sku": sku.sku_code,
+                                "name": sku.name,
+                                "size": (sku.size or "").strip(),
+                            },
+                        )
+        client_label = "-"
+        if latest and latest.agency:
+            name = latest.agency.agn_name or latest.agency.fio_agn or str(latest.agency)
+            client_label = _shorten_ip_name(name)
+        role = get_request_role(self.request)
+        can_submit = role == "storekeeper"
+        act_state = "open"
+        if placement_act:
+            act_state = (placement_act.payload or {}).get("act_state") or "closed"
+        can_open_act = can_submit and act_state == "closed" and bool(receiving_items)
+        boxes_data = (placement_act.payload or {}).get("act_boxes") if placement_act else []
+        pallets_data = (placement_act.payload or {}).get("act_pallets") if placement_act else []
+        occupied_cells = []
+        occupied_keys = set()
+        seen_orders = set()
+        for entry in (
+            OrderAuditEntry.objects.filter(order_type__in=("receiving", "processing"))
+            .order_by("-created_at")
+        ):
+            if entry.order_id == order_id and entry.order_type == self.order_type:
+                continue
+            if entry.order_id in seen_orders:
+                continue
+            payload = entry.payload or {}
+            if payload.get("act") != "placement":
+                continue
+            state = (payload.get("act_state") or "closed").lower()
+            if state != "closed":
+                continue
+            seen_orders.add(entry.order_id)
+            for pallet in payload.get("act_pallets") or []:
+                parts = _location_parts((pallet or {}).get("location"), pallet)
+                if parts.get("zone") != "OS":
+                    continue
+                if not all(parts.get(key) for key in ("row", "section", "tier", "cell")):
+                    continue
+                key = (parts["row"], parts["section"], parts["tier"], parts["cell"])
+                if key in occupied_keys:
+                    continue
+                occupied_keys.add(key)
+                occupied_cells.append(
+                    {
+                        "row": parts["row"],
+                        "section": parts["section"],
+                        "tier": parts["tier"],
+                        "cell": parts["cell"],
+                    }
+                )
+        os_config = {
+            "row_sections": _OS_ROW_SECTIONS,
+            "tiers": _OS_TIERS,
+            "cells_per_tier": _OS_CELLS_PER_TIER,
+            "mr_rows": [1, 2, 3, 4],
+        }
+        cz_only = _payload_has_value(
+            base_payload,
+            "marking_5840_each_qty",
+            "marking_5840_each_needed",
+        )
+        ctx.update(
+            {
+                "order_id": order_id,
+                "client_label": client_label,
+                "status_label": _status_label_from_entry(status_entry) if status_entry else "-",
+                "cabinet_url": resolve_cabinet_url(get_request_role(self.request)),
+                "goods_type": (status_payload.get("goods_type") or "").strip().lower(),
+                "order_detail_url": f"/orders/processing/{order_id}/",
+                "can_submit": can_submit,
+                "can_open_act": can_open_act,
+                "signed_by_storekeeper": False,
+                "act_exists": bool(placement_act),
+                "act_state": act_state,
+                "items": display_items,
+                "catalog_items": catalog_items,
+                "remaining_items": remaining_items,
+                "barcode_map": barcode_map,
+                "boxes_data": boxes_data,
+                "pallets_data": pallets_data,
+                "os_config": os_config,
+                "occupied_cells": occupied_cells,
+                "cz_only": cz_only,
+                "marking_scan_url": f"/marking/processing/{order_id}/scan/",
+                "ready_cards_count": len(ready_cards),
                 "ok": kwargs.get("ok", False),
                 "error": kwargs.get("error"),
             }

@@ -38,6 +38,7 @@ class MarkingCode(models.Model):
     sku_code = models.CharField("Артикул", max_length=64)
     size = models.CharField("Размер", max_length=64, blank=True)
     barcode = models.CharField("Штрихкод", max_length=128, blank=True)
+    box_barcode = models.CharField("Штрихкод короба", max_length=128, blank=True)
     code = models.TextField("Код ЧЗ", unique=True)
     source = models.CharField("Источник", max_length=16, choices=SOURCE_CHOICES, default="scan")
     created_at = models.DateTimeField(auto_now_add=True)
@@ -48,6 +49,24 @@ class MarkingCode(models.Model):
         blank=True,
         related_name="marking_codes",
         verbose_name="Пользователь",
+    )
+    used_at = models.DateTimeField("Использован", null=True, blank=True)
+    used_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="used_marking_codes",
+        verbose_name="Использовал",
+    )
+    printed_at = models.DateTimeField("Напечатан", null=True, blank=True)
+    printed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="printed_marking_codes",
+        verbose_name="Напечатал",
     )
 
     class Meta:

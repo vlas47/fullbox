@@ -25,6 +25,8 @@ DEV_USERS = [
     ("accountant", "Бухгалтер"),
     ("head_manager", "Главный менеджер"),
     ("processing_head", "Руководитель участка обработки"),
+    ("processing_worker", "Обработчик: Илья Соколов"),
+    ("processing_worker2", "Обработчик: Алина Морозова"),
     ("manager", "Менеджер"),
     ("storekeeper", "Кладовщик"),
     ("reachtruck_driver", "Водитель ричтрака"),
@@ -85,21 +87,31 @@ def dev_login(request, username):
         employee_role = "storekeeper"
     elif username == "reachtruck_driver":
         employee_role = "reachtruck_driver"
+    elif username in {"processing_worker", "processing_worker2"}:
+        employee_role = "processing_worker"
 
-    if employee_role:
+    employee = None
+    if employee_role == "processing_worker" and username in {"processing_worker", "processing_worker2"}:
+        workers = list(
+            Employee.objects.filter(role="processing_worker", is_active=True)
+            .order_by("full_name")[:2]
+        )
+        if workers:
+            if username == "processing_worker2" and len(workers) > 1:
+                employee = workers[1]
+            else:
+                employee = workers[0]
+    elif employee_role:
         employee = (
             Employee.objects.filter(role=employee_role, is_active=True)
             .order_by("full_name")
             .first()
         )
-        if employee:
-            request.session["employee_id"] = employee.id
-            request.session["employee_name"] = employee.full_name
-            request.session["employee_role"] = employee.role
-        else:
-            request.session.pop("employee_id", None)
-            request.session.pop("employee_name", None)
-            request.session.pop("employee_role", None)
+
+    if employee:
+        request.session["employee_id"] = employee.id
+        request.session["employee_name"] = employee.full_name
+        request.session["employee_role"] = employee.role
     else:
         request.session.pop("employee_id", None)
         request.session.pop("employee_name", None)

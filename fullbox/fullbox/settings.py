@@ -35,6 +35,7 @@ CSRF_TRUSTED_ORIGINS = [
     for host in os.environ.get("CSRF_TRUSTED_ORIGINS", ",".join(ALLOWED_HOSTS)).split(",")
     if host.strip()
 ]
+AGENT_SHARED_TOKEN = os.environ.get("FULLBOX_AGENT_TOKEN", "")
 
 
 # Application definition
@@ -55,6 +56,7 @@ INSTALLED_APPS = [
     "employees",
     "head_manager",
     "processing_head",
+    "processing_worker",
     "reachtruck",
     "todo",
     "market_sync",
@@ -63,6 +65,7 @@ INSTALLED_APPS = [
     "stockmap",
     "labels",
     "marking",
+    "agent",
 ]
 
 MIDDLEWARE = [

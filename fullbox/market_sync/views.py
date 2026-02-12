@@ -17,6 +17,7 @@ from sku.models import Agency, Market, MarketCredential, SKU, SKUBarcode, SKUPho
 OZON_API_BASE = "https://api-seller.ozon.ru"
 
 from .forms import WBSettingsForm, OzonSettingsForm
+from .models import MarketSyncReport
 
 
 def dashboard(request):
@@ -40,6 +41,19 @@ def dashboard(request):
         and (ozon_credential.market_key or "").strip()
         and (ozon_credential.client_id or "").strip()
     )
+    wb_report = None
+    ozon_report = None
+    if selected_client:
+        wb_report = (
+            MarketSyncReport.objects.filter(
+                agency=selected_client, marketplace="WB"
+            ).order_by("-finished_at").first()
+        )
+        ozon_report = (
+            MarketSyncReport.objects.filter(
+                agency=selected_client, marketplace="OZON"
+            ).order_by("-finished_at").first()
+        )
     marketplaces = [
         {
             "name": "Wildberries",
@@ -83,6 +97,9 @@ def dashboard(request):
             "selected_client": selected_client,
             "marketplaces": marketplaces,
             "wb_configured": wb_configured,
+            "ozon_configured": ozon_configured,
+            "wb_report": wb_report,
+            "ozon_report": ozon_report,
         },
     )
 
@@ -92,6 +109,13 @@ def wb_settings(request):
     if not client_id:
         return redirect("/market-sync/")
     selected_client = get_object_or_404(Agency, pk=client_id)
+    last_report = (
+        MarketSyncReport.objects.filter(
+            agency=selected_client, marketplace="WB"
+        ).order_by("-finished_at").first()
+        if selected_client
+        else None
+    )
     wb_market = Market.objects.filter(name__iexact="WB").first()
     if not wb_market:
         return render(
@@ -101,6 +125,7 @@ def wb_settings(request):
                 "selected_client": selected_client,
                 "form": WBSettingsForm(),
                 "market_missing": True,
+                "last_report": last_report,
             },
         )
     credential = MarketCredential.objects.filter(
@@ -126,6 +151,7 @@ def wb_settings(request):
             "selected_client": selected_client,
             "form": form,
             "market_missing": False,
+            "last_report": last_report,
         },
     )
 
@@ -135,6 +161,13 @@ def ozon_settings(request):
     if not client_id:
         return redirect("/market-sync/")
     selected_client = get_object_or_404(Agency, pk=client_id)
+    last_report = (
+        MarketSyncReport.objects.filter(
+            agency=selected_client, marketplace="OZON"
+        ).order_by("-finished_at").first()
+        if selected_client
+        else None
+    )
     ozon_market = Market.objects.filter(name__iexact="OZON").first()
     if not ozon_market:
         return render(
@@ -144,6 +177,7 @@ def ozon_settings(request):
                 "selected_client": selected_client,
                 "form": OzonSettingsForm(),
                 "market_missing": True,
+                "last_report": last_report,
             },
         )
     credential = MarketCredential.objects.filter(
@@ -169,7 +203,35 @@ def ozon_settings(request):
             "selected_client": selected_client,
             "form": form,
             "market_missing": False,
+            "last_report": last_report,
         },
+    )
+
+
+def report_detail(request, report_id: int):
+    report = get_object_or_404(
+        MarketSyncReport.objects.select_related("agency"), pk=report_id
+    )
+    return JsonResponse(
+        {
+            "id": report.id,
+            "marketplace": report.marketplace,
+            "status": report.status,
+            "agency": {
+                "id": report.agency_id,
+                "name": report.agency.agn_name,
+            },
+            "started_at": report.started_at.isoformat() if report.started_at else None,
+            "finished_at": report.finished_at.isoformat()
+            if report.finished_at
+            else None,
+            "duration_sec": report.duration_sec,
+            "processed": report.processed,
+            "created": report.created,
+            "updated": report.updated,
+            "barcodes_created": report.barcodes_created,
+            "errors": report.errors or [],
+        }
     )
 
 
@@ -495,6 +557,12 @@ def _ozon_weight_kg(value):
     return _parse_weight_kg(value)
 
 
+def _report_link(report: MarketSyncReport | None) -> str:
+    if not report:
+        return ""
+    return f"/market-sync/report/{report.id}/"
+
+
 @require_POST
 def wb_sync_run(request):
     try:
@@ -519,6 +587,7 @@ def wb_sync_run(request):
     if not token:
         return JsonResponse({"ok": False, "errors": ["Не указан токен WB."]}, status=400)
 
+    started_at = timezone.now()
     created = 0
     updated = 0
     processed = 0
@@ -790,6 +859,20 @@ def wb_sync_run(request):
         else:
             break
 
+    finished_at = timezone.now()
+    report = MarketSyncReport.objects.create(
+        agency=agency,
+        marketplace="WB",
+        status="ok" if not errors else "error",
+        started_at=started_at,
+        finished_at=finished_at,
+        duration_sec=(finished_at - started_at).total_seconds(),
+        processed=processed,
+        created=created,
+        updated=updated,
+        barcodes_created=barcode_created,
+        errors=errors,
+    )
     return JsonResponse(
         {
             "ok": not errors,
@@ -798,6 +881,9 @@ def wb_sync_run(request):
             "updated": updated,
             "barcodes_created": barcode_created,
             "errors": errors,
+            "report_id": report.id,
+            "report_url": _report_link(report),
+            "duration_sec": report.duration_sec,
         }
     )
 
@@ -867,6 +953,7 @@ def ozon_sync_run(request):
             status=400,
         )
 
+    started_at = timezone.now()
     created = 0
     updated = 0
     processed = 0
@@ -899,6 +986,20 @@ def ozon_sync_run(request):
         last_id = next_last_id
 
     if not errors and not list_items:
+        finished_at = timezone.now()
+        report = MarketSyncReport.objects.create(
+            agency=agency,
+            marketplace="OZON",
+            status="ok",
+            started_at=started_at,
+            finished_at=finished_at,
+            duration_sec=(finished_at - started_at).total_seconds(),
+            processed=0,
+            created=0,
+            updated=0,
+            barcodes_created=0,
+            errors=[],
+        )
         return JsonResponse(
             {
                 "ok": True,
@@ -907,6 +1008,9 @@ def ozon_sync_run(request):
                 "updated": 0,
                 "barcodes_created": 0,
                 "errors": [],
+                "report_id": report.id,
+                "report_url": _report_link(report),
+                "duration_sec": report.duration_sec,
             }
         )
 
@@ -1139,6 +1243,20 @@ def ozon_sync_run(request):
                 if idx == 0:
                     has_primary = True
 
+    finished_at = timezone.now()
+    report = MarketSyncReport.objects.create(
+        agency=agency,
+        marketplace="OZON",
+        status="ok" if not errors else "error",
+        started_at=started_at,
+        finished_at=finished_at,
+        duration_sec=(finished_at - started_at).total_seconds(),
+        processed=processed,
+        created=created,
+        updated=updated,
+        barcodes_created=barcode_created,
+        errors=errors,
+    )
     return JsonResponse(
         {
             "ok": not errors,
@@ -1147,5 +1265,8 @@ def ozon_sync_run(request):
             "updated": updated,
             "barcodes_created": barcode_created,
             "errors": errors,
+            "report_id": report.id,
+            "report_url": _report_link(report),
+            "duration_sec": report.duration_sec,
         }
     )

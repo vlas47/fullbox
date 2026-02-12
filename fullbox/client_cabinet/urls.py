@@ -16,6 +16,8 @@ from .views import (
     ClientPackingCreateView,
     receiving_redirect,
     packing_redirect,
+    marking_tools,
+    marking_import,
 )
 
 urlpatterns = [
@@ -31,5 +33,7 @@ urlpatterns = [
     path('<int:pk>/orders/new/', ClientOrderFormView.as_view(), name='client-order-new'),
     path('<int:pk>/receiving/new/', receiving_redirect, name='client-receiving-new'),
     path('<int:pk>/packing/new/', packing_redirect, name='client-packing-new'),
+    path('marking/', marking_tools, name='client-marking-tools'),
+    path('marking/import/', marking_import, name='client-marking-import'),
     path('fetch-by-inn/', fetch_by_inn, name='client-fetch-inn'),
 ]
