@@ -4,9 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Складские остатки | FULLBOX</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="/static/vendor/space-grotesk.css" rel="stylesheet">
   <style>
     :root { --bg:#f6f4ed; --card:#ffffff; --card-soft:#f8f6f1; --gold:#c79a1c; --gold-soft:#f2d48c; --muted:#6b7280; --stroke: rgba(31,35,40,0.12); --text:#1f2328; }
     * { box-sizing: border-box; }
@@ -20,10 +18,19 @@
     .btn:hover { border-color: var(--gold); box-shadow:0 10px 25px rgba(199,154,32,0.2); }
     .pill { display:inline-flex; align-items:center; gap:6px; padding:6px 10px; border-radius:999px; border:1px solid var(--stroke); background:rgba(199,154,32,0.18); color:var(--gold); font-weight:600; }
     .card { background:var(--card); border:1px solid var(--stroke); border-radius:18px; padding:18px; box-shadow:0 20px 40px rgba(15,23,42,0.12); margin-top:18px; }
+    .controls { display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end; margin: 0 0 14px; }
+    .field { display:flex; flex-direction:column; gap:6px; min-width:160px; }
+    .field.grow { flex:1 1 320px; }
+    .field label { font-size:12px; color:var(--muted); font-weight:600; }
+    .input { width:100%; height:38px; border-radius:10px; border:1px solid var(--stroke); background:#fff; padding:0 10px; font:inherit; color:var(--text); }
+    .input:focus { outline:none; border-color:var(--gold); box-shadow:0 0 0 2px rgba(199,154,32,0.15); }
     .table-wrap { overflow:auto; border-radius:14px; border:1px solid var(--stroke); background:rgba(15,23,42,0.03); }
     table { width:100%; border-collapse:collapse; min-width:1200px; }
     th, td { border-bottom:1px solid var(--stroke); padding:10px; text-align:left; vertical-align:top; }
     th { color: var(--muted); font-weight:600; font-size:12px; text-transform:uppercase; letter-spacing:1px; background:rgba(15,23,42,0.04); }
+    .filter-row th { background: transparent; padding: 6px 10px 10px; }
+    .filter-select { width:100%; height:32px; border-radius:8px; border:1px solid var(--stroke); background:#fff; color:var(--text); font:inherit; font-size:12px; }
+    .filter-select:focus { outline:none; border-color:var(--gold); box-shadow:0 0 0 2px rgba(199,154,32,0.15); }
   </style>
 </head>
 <body>
@@ -52,8 +59,30 @@
           Показан ваш товар.
         {% endif %}
       </div>
+      <form class="controls" method="get">
+        {% if request.GET.client %}
+          <input type="hidden" name="client" value="{{ request.GET.client }}">
+        {% endif %}
+        {% if request.GET.agency %}
+          <input type="hidden" name="agency" value="{{ request.GET.agency }}">
+        {% endif %}
+        <div class="field grow">
+          <label for="q">Поиск по всем полям</label>
+          <input id="q" class="input" type="search" name="q" value="{{ q }}" placeholder="Текст, SKU, короб, палета, зона...">
+        </div>
+        <div class="field">
+          <label for="date_from">Период с</label>
+          <input id="date_from" class="input" type="date" name="date_from" value="{{ date_from }}">
+        </div>
+        <div class="field">
+          <label for="date_to">Период по</label>
+          <input id="date_to" class="input" type="date" name="date_to" value="{{ date_to }}">
+        </div>
+        <button class="btn" type="submit">Найти</button>
+        <a class="btn" href="{% if request.GET.client %}?client={{ request.GET.client }}{% elif request.GET.agency %}?agency={{ request.GET.agency }}{% else %}/sklad/journal/{% endif %}">Сброс</a>
+      </form>
       <div class="table-wrap">
-        <table>
+        <table data-filter-table>
           <thead>
             <tr>
               <th>Когда</th>
@@ -64,9 +93,60 @@
               <th>Размер</th>
               <th>Тип товара</th>
               <th>Кол-во</th>
+              <th>Доступный остаток</th>
               <th>Короб</th>
               <th>Палета</th>
               <th>Зона</th>
+            </tr>
+            <tr class="filter-row">
+              <th><span class="muted">-</span></th>
+              <th>
+                <select class="filter-select" data-col="1">
+                  <option value="">Все</option>
+                </select>
+              </th>
+              <th>
+                <select class="filter-select" data-col="2">
+                  <option value="">Все</option>
+                </select>
+              </th>
+              <th>
+                <select class="filter-select" data-col="3">
+                  <option value="">Все</option>
+                </select>
+              </th>
+              <th>
+                <select class="filter-select" data-col="4">
+                  <option value="">Все</option>
+                </select>
+              </th>
+              <th>
+                <select class="filter-select" data-col="5">
+                  <option value="">Все</option>
+                </select>
+              </th>
+              <th>
+                <select class="filter-select" data-col="6">
+                  <option value="">Все</option>
+                </select>
+              </th>
+              <th><span class="muted">-</span></th>
+              <th><span class="muted">-</span></th>
+              <th>
+                <select class="filter-select" data-col="9">
+                  <option value="">Все</option>
+                </select>
+              </th>
+              <th>
+                <select class="filter-select" data-col="10">
+                  <option value="">Все</option>
+                </select>
+              </th>
+              <th>
+                <select class="filter-select" data-col="11">
+                  <option value="">Все</option>
+                </select>
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -74,19 +154,20 @@
               <tr>
                 <td>{{ row.created_at|date:"d.m.Y, H:i" }}</td>
                 <td>{{ row.client_label }}</td>
-                <td>{{ row.order_id }}</td>
+                <td>{{ row.order_type_code }}-{{ row.order_id }}</td>
                 <td>{{ row.sku }}</td>
                 <td>{{ row.name }}</td>
                 <td>{{ row.size }}</td>
                 <td>{{ row.goods_type }}</td>
                 <td>{{ row.qty }}</td>
+                <td>{{ row.available_qty|default:0 }}</td>
                 <td>{{ row.box_code }}</td>
                 <td>{{ row.pallet_code }}</td>
                 <td>{{ row.location }}</td>
               </tr>
             {% empty %}
               <tr>
-                <td colspan="11" class="muted">Записей пока нет.</td>
+                <td colspan="12" class="muted">Записей пока нет.</td>
               </tr>
             {% endfor %}
           </tbody>
@@ -94,5 +175,57 @@
       </div>
     </div>
   </div>
+  <script>
+    document.addEventListener("DOMContentLoaded", () => {
+      const table = document.querySelector("table[data-filter-table]");
+      if (!table) return;
+      const body = table.tBodies[0];
+      if (!body) return;
+      const rows = Array.from(body.rows);
+      const selects = Array.from(table.querySelectorAll("select[data-col]"));
+      const normalize = (value) => (value || "").replace(/\s+/g, " ").trim();
+
+      selects.forEach((select) => {
+        const col = Number(select.dataset.col);
+        const values = new Set();
+        rows.forEach((row) => {
+          const cell = row.cells[col];
+          if (!cell) return;
+          const text = normalize(cell.textContent);
+          if (text) values.add(text);
+        });
+        Array.from(values)
+          .sort((a, b) => a.localeCompare(b, "ru"))
+          .forEach((value) => {
+            const option = document.createElement("option");
+            option.value = value;
+            option.textContent = value;
+            select.appendChild(option);
+          });
+      });
+
+      const applyFilters = () => {
+        const filters = selects.map((select) => ({
+          col: Number(select.dataset.col),
+          value: select.value,
+        }));
+        rows.forEach((row) => {
+          let visible = true;
+          for (const filter of filters) {
+            if (!filter.value) continue;
+            const cell = row.cells[filter.col];
+            const text = normalize(cell ? cell.textContent : "");
+            if (text !== filter.value) {
+              visible = false;
+              break;
+            }
+          }
+          row.style.display = visible ? "" : "none";
+        });
+      };
+
+      selects.forEach((select) => select.addEventListener("change", applyFilters));
+    });
+  </script>
 </body>
 </html>

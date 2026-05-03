@@ -1,9 +1,10 @@
+{% load order_display %}
 <!doctype html>
 <html lang="ru">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Размещение после обработки · заявка № {{ order_id }}</title>
+  <title>Размещение после обработки · заявка № {{ order_id|display_order_number:"processing" }}</title>
   <style>
     :root {
       --bg: #f6f4ed;
@@ -532,7 +533,7 @@
       <aside class="detail-side scroll-col">
         <div class="side-card">
           <div class="muted">FULLBOX · {% include "partials/current_user.html" %}</div>
-          <h3>Размещение после обработки · заявка № {{ order_id }}</h3>
+          <h3>Размещение после обработки · заявка № {{ order_id|display_order_number:"processing" }}</h3>
           <div class="muted">Статус: {{ status_label }}</div>
           <div class="muted">Тип поставки: {{ goods_type_label|default:"-" }}</div>
         </div>
@@ -541,7 +542,7 @@
           <h4 class="side-title">Действия</h4>
           <div class="side-actions">
             <a class="tab" href="/orders/processing/{{ order_id }}/work/">К заявке</a>
-            <a class="tab" href="/labels/settings/">Настройка сканера</a>
+            <a class="tab" href="/labels/settings/?return={{ request.get_full_path|urlencode }}">Настройка сканера</a>
             {% if act_print_url %}
               <a class="tab" href="{{ act_print_url }}">Акт размещения</a>
             {% endif %}
@@ -579,6 +580,12 @@
               </div>
             </div>
             <div class="scanner-test">
+              <div class="scanner-test-line">
+                <span class="muted">Агент</span>
+                <select class="qty-input" id="agent-select" style="max-width: 220px;">
+                  <option value="">Выберите агент</option>
+                </select>
+              </div>
               <div class="scanner-test-line">
                 <span class="muted">Статус агента</span>
                 <span class="scanner-test-value" id="agent-status">не выбран</span>
@@ -628,6 +635,26 @@
             <div class="error">
               {% if error == "open_boxes" %}
                 Есть открытые короба с товаром. Закройте их перед завершением размещения.
+              {% elif error == "no_boxes" %}
+                Нет заполненных коробов. Добавьте товары в короба перед завершением размещения.
+              {% elif error == "no_pallets" %}
+                Нет палет с коробами. Распределите короба по палетам перед завершением размещения.
+              {% elif error == "unassigned_boxes" %}
+                Есть короба без палеты. Переместите все короба на палеты перед завершением размещения.
+              {% elif error == "qty_mismatch" %}
+                Количество в коробах не совпадает с фактом. Подтвердите расхождение при завершении.
+              {% elif error == "qty_mismatch_head_only" %}
+                Есть расхождения по количеству. Завершить размещение с расхождениями может только руководитель обработки.
+              {% elif error == "no_act_items" %}
+                Нет данных для акта размещения. Проверьте обработку карточек.
+              {% elif error == "invalid_json" %}
+                Ошибка данных размещения. Обновите страницу и попробуйте снова.
+              {% elif error == "cannot_start" %}
+                Заявка не готова к завершению размещения. Проверьте статус обработки.
+              {% elif error == "marking_box_mismatch" %}
+                Не все коды ЧЗ привязаны к валидным коробам. Проверьте раскладку по коробам и повторите завершение.
+              {% elif error == "box_move_head_only" %}
+                Перемещать короба между палетами может только руководитель обработки.
               {% else %}
                 Не удалось завершить размещение. Проверьте данные.
               {% endif %}
@@ -646,6 +673,7 @@
             <input type="hidden" name="pallets_json" id="pallets-json">
             <input type="hidden" name="agent_id" id="agent-id-hidden">
             <input type="hidden" name="flow_session_id" id="flow-session-id">
+            <input type="hidden" name="allow_mismatch" id="allow-mismatch" value="0">
           </form>
 
           <div class="split-grid">
@@ -714,7 +742,7 @@
                         type="submit"
                         id="finish-btn"
                         form="flow-form"
-                        {% if not can_finish_flow %}disabled title="Только руководитель обработки может завершить размещение"{% endif %}
+                        {% if not can_finish_flow %}disabled title="Завершить размещение может только обработчик"{% endif %}
                       >
                         Завершить размещение
                       </button>
@@ -745,7 +773,7 @@
   </div>
   <div class="context-menu" id="pallet-context-menu" aria-hidden="true">
     <button type="button" data-action="open">Открыть палету</button>
-    <button type="button" data-action="print">Печать QR (75*120)</button>
+    <button type="button" data-action="print">Печать QR (58x60)</button>
     <button type="button" data-action="location">Указать место хранения</button>
   </div>
 
@@ -756,6 +784,16 @@
         <button type="button" class="btn" id="box-view-close">Закрыть</button>
       </div>
       <div class="box-modal-list" id="box-view-body"></div>
+      </div>
+    </div>
+
+    <div class="box-modal" id="pallet-view-modal" aria-hidden="true">
+      <div class="box-modal-card">
+        <div class="box-modal-header">
+          <div class="box-modal-title">Палета <span id="pallet-view-code">-</span></div>
+          <button type="button" class="btn" id="pallet-view-close">Закрыть</button>
+        </div>
+        <div class="box-modal-list" id="pallet-view-body"></div>
       </div>
     </div>
 
@@ -830,8 +868,11 @@
     {{ scanner_agents|json_script:"scanner-agents-data" }}
   <script src="/static/vendor/qrcode.min.js"></script>
     <script>window.__flowLocked = {{ flow_locked|yesno:"true,false" }};</script>
+    <script>window.__flowReopened = {{ flow_reopened|yesno:"true,false" }};</script>
     <script>window.__czRequired = {{ cz_required|yesno:"true,false" }};</script>
     <script>window.__canFinishFlow = {{ can_finish_flow|yesno:"true,false" }};</script>
+    <script>window.__canFinishFlowMismatch = {{ can_finish_flow_mismatch|yesno:"true,false" }};</script>
+    <script>window.__canReassignBoxes = {{ can_reassign_boxes|yesno:"true,false" }};</script>
 
   <textarea id="scanner-agent-devices" class="scanner-block">{{ scanner_agent_devices_json|default:"{}" }}</textarea>
   <script>
@@ -846,8 +887,11 @@
         const scannerAgentsDataEl = document.getElementById('scanner-agents-data');
         const scannerAgentsData = scannerAgentsDataEl ? JSON.parse(scannerAgentsDataEl.textContent || '[]') : [];
         const flowLocked = Boolean(window.__flowLocked);
+        const flowReopened = Boolean(window.__flowReopened);
         const czRequired = Boolean(window.__czRequired);
         const canFinishFlow = Boolean(window.__canFinishFlow);
+        const canFinishFlowMismatch = Boolean(window.__canFinishFlowMismatch);
+        const canReassignBoxes = Boolean(window.__canReassignBoxes);
       const goodsType = String("{{ goods_type|escapejs }}").trim().toLowerCase();
       const goodsTypeSuffix = goodsType ? `-${goodsType}` : '';
       const clientPrefixRaw = String("{{ client_prefix|escapejs }}").trim();
@@ -871,6 +915,7 @@
       const closeBoxBtn = document.getElementById('close-box-btn');
       const closePalletBtn = document.getElementById('close-pallet-btn');
       const finishBtn = document.getElementById('finish-btn');
+      const allowMismatchInput = document.getElementById('allow-mismatch');
         const barcodeInput = document.getElementById('barcode-input');
         const scannerStatus = document.getElementById('scanner-status');
         const scannerMode = document.getElementById('scanner-mode');
@@ -959,10 +1004,14 @@
           document.querySelector('input[name="csrfmiddlewaretoken"]')?.value || '';
         const contextMenu = document.getElementById('box-context-menu');
       const palletContextMenu = document.getElementById('pallet-context-menu');
-        const boxViewModal = document.getElementById('box-view-modal');
-        const boxViewCode = document.getElementById('box-view-code');
-        const boxViewBody = document.getElementById('box-view-body');
-        const boxViewClose = document.getElementById('box-view-close');
+      const boxViewModal = document.getElementById('box-view-modal');
+      const boxViewCode = document.getElementById('box-view-code');
+      const boxViewBody = document.getElementById('box-view-body');
+      const boxViewClose = document.getElementById('box-view-close');
+      const palletViewModal = document.getElementById('pallet-view-modal');
+      const palletViewCode = document.getElementById('pallet-view-code');
+      const palletViewBody = document.getElementById('pallet-view-body');
+      const palletViewClose = document.getElementById('pallet-view-close');
         const boxCopyModal = document.getElementById('box-copy-modal');
         const boxCopyCode = document.getElementById('box-copy-code');
         const boxCopyForm = document.getElementById('box-copy-form');
@@ -1248,6 +1297,7 @@
       const mainQrQueue = [];
       let flowSessionId = '';
       let flowSessionReady = false;
+      let agentId = '';
 
       const normalizePrefix = (value) => {
         const raw = String(value || '').trim().toUpperCase();
@@ -1332,7 +1382,26 @@
           const second = parts.length > 1 ? normalizeInitial(parts[1]) : '';
           return `${first}${second}`;
         };
+        const resolveActorLabel = (label, agentIdValue, userIdValue, fallback = 'Не указано') => {
+          const direct = String(label || '').trim();
+          if (direct) {
+            return direct;
+          }
+          const agent = String(agentIdValue || '').trim();
+          if (agent && agent !== '__reopen_snapshot__') {
+            return agent;
+          }
+          const userId = String(userIdValue || '').trim();
+          if (userId) {
+            return `ID ${userId}`;
+          }
+          return String(fallback || '').trim();
+        };
         const formatBoxDisplayNumber = (index, box) => {
+          const fixedLabel = String(box?.fixed_label || '').trim();
+          if (fixedLabel && box?.sealed) {
+            return fixedLabel;
+          }
           const numeric = Number(index || 0);
           if (!numeric) {
             return '-';
@@ -1349,6 +1418,7 @@
             code: box?.code || '',
             items,
             sealed: !!box?.sealed,
+            fixed_label: box?.fixed_label || '',
             owner_agent_id: box?.owner_agent_id || '',
             owner_user_id: box?.owner_user_id || '',
             owner_user_label: box?.owner_user_label || '',
@@ -1412,23 +1482,49 @@
         const syncLocalFromShared = () => {
           const boxesMap = new Map();
           state.boxes.forEach((box) => {
-            if (box && box.code) {
-              boxesMap.set(box.code, cloneBox(box));
+            if (!box || !box.code) {
+              return;
             }
+            if (!isEntryOwnedByCurrentUser(box, true)) {
+              return;
+            }
+            boxesMap.set(box.code, cloneBox(box));
           });
           sharedState.boxes.forEach((box) => {
-            if (box && box.code && !boxesMap.has(box.code)) {
+            if (!box || !box.code) {
+              return;
+            }
+            if (!isEntryOwnedByCurrentUser(box, false)) {
+              return;
+            }
+            if (!boxesMap.has(box.code)) {
               boxesMap.set(box.code, cloneBox(box));
+              return;
+            }
+            const local = boxesMap.get(box.code);
+            const sharedFixed = String(box.fixed_label || '').trim();
+            if (local && !String(local.fixed_label || '').trim() && sharedFixed) {
+              local.fixed_label = sharedFixed;
             }
           });
           const palletsMap = new Map();
           state.pallets.forEach((pallet) => {
-            if (pallet && pallet.code) {
-              palletsMap.set(pallet.code, clonePallet(pallet));
+            if (!pallet || !pallet.code) {
+              return;
             }
+            if (!isEntryOwnedByCurrentUser(pallet, true)) {
+              return;
+            }
+            palletsMap.set(pallet.code, clonePallet(pallet));
           });
           sharedState.pallets.forEach((pallet) => {
-            if (pallet && pallet.code && !palletsMap.has(pallet.code)) {
+            if (!pallet || !pallet.code) {
+              return;
+            }
+            if (!isEntryOwnedByCurrentUser(pallet, false)) {
+              return;
+            }
+            if (!palletsMap.has(pallet.code)) {
               palletsMap.set(pallet.code, clonePallet(pallet));
             }
           });
@@ -1446,9 +1542,15 @@
             state.activePallet = '';
           }
         };
-        syncLocalFromShared();
+        if (!flowLocked) {
+          syncLocalFromShared();
+        }
         const moveBoxToPallet = (boxCode, targetPalletCode) => {
           if (flowLocked) {
+            return false;
+          }
+          if (!canReassignBoxes) {
+            alert('Перемещать короба между палетами может только руководитель обработки.');
             return false;
           }
           if (!boxCode || !targetPalletCode) {
@@ -1501,6 +1603,7 @@
           code,
           items: [],
           sealed: false,
+          fixed_label: '',
           owner_agent_id: agentId || '',
           owner_user_id: currentUserId || '',
           owner_user_label: currentUserLabel || '',
@@ -1541,14 +1644,27 @@
         );
       };
 
-      function isOwnedByCurrentUser(pallet) {
-        if (!pallet) {
+      function isEntryOwnedByCurrentUser(entry, allowUnassigned = false) {
+        if (!entry || typeof entry !== 'object') {
           return false;
         }
-        const ownerId = String(pallet.owner_user_id || '').trim();
-        const ownerLabel = String(pallet.owner_user_label || '').trim();
-        return (currentUserId && ownerId && ownerId === currentUserId)
-          || (currentUserLabel && ownerLabel && ownerLabel === currentUserLabel);
+        const ownerId = String(entry.owner_user_id || '').trim();
+        const ownerLabel = String(entry.owner_user_label || '').trim();
+        const ownerAgent = String(entry.owner_agent_id || '').trim();
+        if (!ownerId && !ownerLabel && !ownerAgent) {
+          return allowUnassigned;
+        }
+        if (ownerId) {
+          return !!(currentUserId && ownerId === currentUserId);
+        }
+        if (ownerLabel) {
+          return !!(currentUserLabel && ownerLabel === currentUserLabel);
+        }
+        return !!(agentId && ownerAgent && ownerAgent === agentId);
+      }
+
+      function isOwnedByCurrentUser(pallet) {
+        return isEntryOwnedByCurrentUser(pallet, false);
       }
 
       const getPalletOwnerKey = (pallet) => {
@@ -1611,7 +1727,7 @@
           .map((code) => getBox(code))
           .filter((box) => box);
         const emptyBoxCodes = new Set();
-        palletBoxes.forEach((box) => {
+        palletBoxes.forEach((box, boxIndex) => {
           if (!box) {
             return;
           }
@@ -1620,6 +1736,9 @@
             return;
           }
           if (!box.sealed) {
+            if (!String(box.fixed_label || '').trim()) {
+              box.fixed_label = formatBoxDisplayNumber(boxIndex + 1, box);
+            }
             box.sealed = true;
           }
         });
@@ -1667,6 +1786,9 @@
       }
 
       function enforceSingleOpenPalletForUser(keepCode = '') {
+        if (flowReopened) {
+          return;
+        }
         const currentOwnerKey = getCurrentOwnerKey();
         const openByOwner = new Map();
         const allPallets = getAllPallets();
@@ -1763,35 +1885,35 @@
       };
 
       const ensureOpenContainers = (forceOpen = false) => {
-        const shouldOpen = forceOpen || hasRemaining();
+        const ownOpenPallet = state.pallets.find(
+          (pallet) => pallet && !pallet.sealed && isOwnedByCurrentUser(pallet),
+        ) || null;
         let activePallet = getPallet(state.activePallet);
-        if (!activePallet || activePallet.sealed) {
-          activePallet = state.pallets.find((pallet) => !pallet.sealed) || null;
-          if (!activePallet && shouldOpen) {
+        if (
+          !activePallet
+          || activePallet.sealed
+          || !isOwnedByCurrentUser(activePallet)
+        ) {
+          activePallet = ownOpenPallet;
+          if (!activePallet) {
             openNewPallet();
             return;
           }
-          if (activePallet) {
-            state.activePallet = activePallet.code;
-          }
+          state.activePallet = activePallet ? activePallet.code : '';
         }
-        let activeBox = getBox(state.activeBox);
-        if (!activeBox || activeBox.sealed) {
-          const pallet = getPallet(state.activePallet);
-          let openBox = null;
-          if (pallet) {
-            openBox = (pallet.boxes || [])
-              .map((code) => getBox(code))
-              .find((box) => box && !box.sealed);
-          }
-          if (!openBox && pallet && shouldOpen) {
-            openNewBox(pallet);
-            return;
-          }
-          if (openBox) {
-            state.activeBox = openBox.code;
-          }
+        const pallet = getPallet(state.activePallet);
+        if (!pallet) {
+          state.activeBox = '';
+          return;
         }
+        const openBox = (pallet.boxes || [])
+          .map((code) => getBox(code))
+          .find((box) => box && !box.sealed);
+        if (!openBox && isOwnedByCurrentUser(pallet)) {
+          openNewBox(pallet);
+          return;
+        }
+        state.activeBox = openBox ? openBox.code : '';
       };
 
       const getPlacedMap = () => {
@@ -1990,6 +2112,10 @@
           }
           return;
         }
+        if (!String(box.fixed_label || '').trim()) {
+          const info = findBoxPalletInfo(box.code);
+          box.fixed_label = formatBoxDisplayNumber(info.index || 0, box);
+        }
         box.sealed = true;
         markDraftDirty();
         if (autoNext && hasRemaining()) {
@@ -2112,6 +2238,9 @@
           }
           resetFlowState();
           applyFlowState(data.flow_state || {});
+          if (!flowLocked && (!state.boxes.length && !state.pallets.length)) {
+            syncLocalFromShared();
+          }
           enforceSingleOpenPalletForUser();
           flowSessionId = data.session_id || '';
           flowSessionReady = true;
@@ -2249,9 +2378,17 @@
         }
         const remaining = getRemaining();
         const totalPlaced = remaining.reduce((sum, item) => sum + Number(item.placed || 0), 0);
-        const allDone = remaining.every((item) => item.remaining <= 0);
+        const missingTotal = remaining.reduce(
+          (sum, item) => sum + Math.max(0, Number(item.remaining || 0)),
+          0,
+        );
+        const overTotal = remaining.reduce(
+          (sum, item) => sum + Math.max(0, -Number(item.remaining || 0)),
+          0,
+        );
+        const hasMismatch = missingTotal > 0 || overTotal > 0;
         if (finishBtn) {
-          finishBtn.disabled = !canFinishFlow || totalPlaced <= 0;
+          finishBtn.disabled = !canFinishFlow || totalPlaced <= 0 || (hasMismatch && !canFinishFlowMismatch);
         }
       };
 
@@ -2619,8 +2756,18 @@
             const isActive = state.activePallet === pallet.code;
             card.className = `pallet-card${pallet.sealed ? '' : ' is-open'}${isOwnPallet ? '' : ' readonly'}${isActive ? ' is-active' : ''}`;
             card.dataset.palletCode = pallet.code || '';
-            const openerLabel = pallet.owner_user_label || pallet.owner_agent_id || '';
-            const closerLabel = pallet.closed_by_user_label || pallet.closed_by_agent_id || '';
+            const openerLabel = resolveActorLabel(
+              pallet.owner_user_label,
+              pallet.owner_agent_id,
+              pallet.owner_user_id,
+              '',
+            );
+            const closerLabel = resolveActorLabel(
+              pallet.closed_by_user_label,
+              pallet.closed_by_agent_id,
+              pallet.closed_by_user_id,
+              '',
+            );
             const openerInitials = getPackerInitials(openerLabel) || '-';
             const closerInitials = getPackerInitials(closerLabel) || '-';
             const boxCount = (pallet.boxes || []).length;
@@ -2646,6 +2793,7 @@
               statusEl.className = 'pallet-status';
               statusEl.textContent = 'Закрыта';
               header.appendChild(statusEl);
+              card.title = `Открыл: ${openerLabel || 'Не указано'} · Закрыл: ${closerLabel || 'Не указано'}`;
             }
             card.appendChild(header);
             const grid = document.createElement('div');
@@ -2673,7 +2821,7 @@
                 const ownerLabel = box?.owner_user_label || box?.owner_agent_id || 'другой пользователь';
                 chip.title = `${displayNumber} · ${code} · ${ownerLabel}`;
               }
-              const canDrag = !flowLocked && !pallet.sealed;
+              const canDrag = !flowLocked && !pallet.sealed && canReassignBoxes;
               if (canDrag) {
                 chip.draggable = true;
                 chip.addEventListener('dragstart', (event) => {
@@ -2694,7 +2842,7 @@
               }
               selectPalletByCode(pallet.code);
             });
-            const canDrop = !flowLocked && !pallet.sealed;
+            const canDrop = !flowLocked && !pallet.sealed && canReassignBoxes;
             if (canDrop) {
               card.addEventListener('dragover', (event) => {
                 event.preventDefault();
@@ -2725,8 +2873,18 @@
               closedPallets.forEach(({ pallet, palletNumber }) => {
                 const chip = document.createElement('div');
                 chip.className = 'pallet-chip';
-                const openerLabel = pallet.owner_user_label || pallet.owner_agent_id || '';
-                const closerLabel = pallet.closed_by_user_label || pallet.closed_by_agent_id || '';
+                const openerLabel = resolveActorLabel(
+                  pallet.owner_user_label,
+                  pallet.owner_agent_id,
+                  pallet.owner_user_id,
+                  '',
+                );
+                const closerLabel = resolveActorLabel(
+                  pallet.closed_by_user_label,
+                  pallet.closed_by_agent_id,
+                  pallet.closed_by_user_id,
+                  '',
+                );
                 const openerInitials = getPackerInitials(openerLabel) || '-';
                 const closerInitials = getPackerInitials(closerLabel) || '-';
                 const boxCount = (pallet.boxes || []).length;
@@ -2735,8 +2893,13 @@
                   <div class="pallet-chip-bottom">${boxCount} кор.</div>
                 `;
                 const locationLabel = formatLocationLabel(pallet.location);
-              chip.title = locationLabel ? `${pallet.code || ''} · ${locationLabel}` : (pallet.code || '');
+              const baseTitle = locationLabel ? `${pallet.code || ''} · ${locationLabel}` : (pallet.code || '');
+              chip.title = `${baseTitle} · Открыл: ${openerLabel || 'Не указано'} · Закрыл: ${closerLabel || 'Не указано'}`;
               chip.dataset.palletCode = pallet.code || '';
+              chip.addEventListener('click', (event) => {
+                event.stopPropagation();
+                openPalletViewModal(pallet.code || '');
+              });
               grid.appendChild(chip);
             });
           palletBoard.appendChild(grid);
@@ -3492,6 +3655,84 @@
         palletLocationModal.setAttribute('aria-hidden', 'true');
         locationModalPalletCode = '';
       };
+      const closePalletViewModal = () => {
+        if (!palletViewModal) {
+          return;
+        }
+        palletViewModal.classList.remove('is-open');
+        palletViewModal.setAttribute('aria-hidden', 'true');
+        if (palletViewBody) {
+          palletViewBody.innerHTML = '';
+        }
+        if (palletViewCode) {
+          palletViewCode.textContent = '-';
+        }
+      };
+
+      const openPalletViewModal = (palletCode) => {
+        if (!palletViewModal || !palletViewBody || !palletViewCode) {
+          return;
+        }
+        const pallet = getAnyPallet(palletCode);
+        if (!pallet) {
+          return;
+        }
+        palletViewCode.textContent = pallet.code || '-';
+        palletViewBody.innerHTML = '';
+        const openerLabel = resolveActorLabel(
+          pallet.owner_user_label,
+          pallet.owner_agent_id,
+          pallet.owner_user_id,
+          'Не указано',
+        );
+        const closerLabel = pallet.sealed
+          ? resolveActorLabel(
+            pallet.closed_by_user_label,
+            pallet.closed_by_agent_id,
+            pallet.closed_by_user_id,
+            'Не указано',
+          )
+          : 'Палета еще не закрыта';
+        const openerRow = document.createElement('div');
+        openerRow.className = 'box-modal-row';
+        openerRow.innerHTML = `<span>Открыл</span><span>${openerLabel}</span>`;
+        palletViewBody.appendChild(openerRow);
+        const closerRow = document.createElement('div');
+        closerRow.className = 'box-modal-row';
+        closerRow.innerHTML = `<span>Закрыл</span><span>${closerLabel}</span>`;
+        palletViewBody.appendChild(closerRow);
+        const boxes = (pallet.boxes || [])
+          .map((code) => getAnyBox(code))
+          .filter((box) => box);
+        const directTotal = getBoxItemsCount({ items: pallet.items || [] });
+        const boxesTotal = boxes.reduce((sum, box) => sum + getBoxItemsCount(box), 0);
+        const total = directTotal + boxesTotal;
+        const summaryRow = document.createElement('div');
+        summaryRow.className = 'box-modal-row';
+        summaryRow.innerHTML = `<strong>Всего товаров</strong><span>${total} шт.</span>`;
+        palletViewBody.appendChild(summaryRow);
+        const boxesRow = document.createElement('div');
+        boxesRow.className = 'box-modal-row';
+        boxesRow.innerHTML = `<span>Коробов</span><span>${boxes.length} шт.</span>`;
+        palletViewBody.appendChild(boxesRow);
+        if (!boxes.length) {
+          const empty = document.createElement('div');
+          empty.className = 'muted';
+          empty.textContent = 'Коробов в палете нет.';
+          palletViewBody.appendChild(empty);
+        } else {
+          boxes.forEach((box) => {
+            const info = findBoxPalletInfo(box.code);
+            const label = formatBoxDisplayNumber(info.index || 0, box);
+            const row = document.createElement('div');
+            row.className = 'box-modal-row';
+            row.innerHTML = `<span>${label} · ${box.code}</span><span>${getBoxItemsCount(box)} шт.</span>`;
+            palletViewBody.appendChild(row);
+          });
+        }
+        palletViewModal.classList.add('is-open');
+        palletViewModal.setAttribute('aria-hidden', 'false');
+      };
 
       const closeBoxCopyModal = () => {
         if (!boxCopyModal) {
@@ -3617,16 +3858,18 @@
         if (!pallet) {
           return;
         }
-        const otherOpenPallets = state.pallets
-          .filter((entry) => entry && entry.code && entry.code !== pallet.code && !entry.sealed)
-          .map((entry) => entry.code);
-        if (otherOpenPallets.length) {
-          const previousActivePallet = state.activePallet;
-          otherOpenPallets.forEach((code) => {
-            state.activePallet = code;
-            closePallet(false);
-          });
-          state.activePallet = previousActivePallet;
+        if (!flowReopened) {
+          const otherOpenPallets = state.pallets
+            .filter((entry) => entry && entry.code && entry.code !== pallet.code && !entry.sealed)
+            .map((entry) => entry.code);
+          if (otherOpenPallets.length) {
+            const previousActivePallet = state.activePallet;
+            otherOpenPallets.forEach((code) => {
+              state.activePallet = code;
+              closePallet(false);
+            });
+            state.activePallet = previousActivePallet;
+          }
         }
         pallet.sealed = false;
         pallet.closed_by_agent_id = '';
@@ -3759,7 +4002,7 @@
         const palletIndex = state.pallets.findIndex((entry) => entry && entry.code === pallet.code);
         const palletNumber = palletIndex >= 0 ? String(palletIndex + 1) : '-';
         const qrPayload = pallet.code;
-        const doc = previewWindow || window.open('', '_blank', 'width=520,height=720');
+        const doc = previewWindow || window.open('', '_blank', 'width=560,height=640');
         if (!doc) {
           return;
         }
@@ -3770,32 +4013,33 @@
   <meta charset="utf-8">
   <title>Этикетка палеты</title>
   <style>
-    @page { size: 75mm 120mm; margin: 0; }
-    html, body { width: 75mm; height: 120mm; margin: 0; padding: 0; }
+    @page { size: 58mm 60mm; margin: 0; }
+    html, body { width: 58mm; height: 60mm; margin: 0; padding: 0; }
     body { font-family: Arial, sans-serif; color: #111; }
     .label {
-      width: 75mm;
-      height: 120mm;
+      width: 58mm;
+      height: 60mm;
       box-sizing: border-box;
-      padding: 6mm 6mm 6mm 8mm;
+      padding: 4mm 4mm 4mm 6mm;
       position: relative;
     }
-    .code-label { font-size: 10pt; text-transform: uppercase; letter-spacing: 0.6px; }
+    .code-label { font-size: 8pt; text-transform: uppercase; letter-spacing: 0.5px; }
     .code {
-      margin-top: 2mm;
-      font-size: 13pt;
+      margin-top: 1mm;
+      font-size: 10pt;
       font-weight: 700;
       word-break: normal;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
+      max-width: 40mm;
     }
     .qr {
       position: absolute;
       left: 50%;
       top: 50%;
-      width: 60mm;
-      height: 60mm;
+      width: 38mm;
+      height: 38mm;
       transform: translate(-50%, -50%);
       z-index: 2;
     }
@@ -3822,19 +4066,22 @@
     }
     .client {
       position: absolute;
-      left: 3mm;
-      bottom: 4mm;
+      left: 2mm;
+      bottom: 3mm;
       transform: rotate(-90deg);
       transform-origin: left bottom;
-      font-size: 11pt;
+      font-size: 8pt;
       font-weight: 600;
       white-space: nowrap;
+      max-width: 52mm;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
     .pallet-number {
       position: absolute;
-      right: 4mm;
-      bottom: 4mm;
-      font-size: 14pt;
+      right: 3mm;
+      bottom: 3mm;
+      font-size: 11pt;
       font-weight: 700;
     }
   </style>
@@ -4895,7 +5142,7 @@ ${labels}
 
         let agentPollTimer = null;
         let agentSinceId = 0;
-        let agentId = localStorage.getItem('fullbox_agent_id') || '';
+        agentId = localStorage.getItem('fullbox_agent_id') || '';
         let agentContextId = '';
         let agentContextTimer = null;
         let agentStatusTimer = null;
@@ -5688,9 +5935,14 @@ ${labels}
           return;
         }
         event.preventDefault();
+        event.stopImmediatePropagation();
         openContextMenu(event, target.dataset.boxCode || '');
       };
       const handlePalletContextMenu = (event) => {
+        const boxTarget = event.target.closest('[data-box-code]');
+        if (boxTarget) {
+          return;
+        }
         const target = event.target.closest('[data-pallet-code]');
         if (!target) {
           return;
@@ -5784,6 +6036,7 @@ ${labels}
             closeBoxView();
             closeBoxCopyModal();
             closePalletLocationModal();
+            closePalletViewModal();
           }
         });
       if (boxViewModal) {
@@ -5795,6 +6048,16 @@ ${labels}
       }
         if (boxViewClose) {
           boxViewClose.addEventListener('click', closeBoxView);
+        }
+        if (palletViewModal) {
+          palletViewModal.addEventListener('click', (event) => {
+            if (event.target === palletViewModal) {
+              closePalletViewModal();
+            }
+          });
+        }
+        if (palletViewClose) {
+          palletViewClose.addEventListener('click', closePalletViewModal);
         }
         if (boxCopyModal) {
           boxCopyModal.addEventListener('click', (event) => {
@@ -5879,31 +6142,51 @@ ${labels}
         });
       }
 
-        if (formEl) {
+      if (formEl) {
           formEl.addEventListener('submit', (event) => {
             if (!canFinishFlow) {
               event.preventDefault();
-              alert('Завершить размещение может только руководитель обработки.');
+              alert('Завершить размещение может только обработчик.');
               return;
+            }
+            if (allowMismatchInput) {
+              allowMismatchInput.value = '0';
             }
             const remaining = getRemaining();
             const totalPlaced = remaining.reduce((sum, item) => sum + Number(item.placed || 0), 0);
-            const allDone = remaining.every((item) => item.remaining <= 0);
+            const missingTotal = remaining.reduce(
+              (sum, item) => sum + Math.max(0, Number(item.remaining || 0)),
+              0,
+            );
+            const overTotal = remaining.reduce(
+              (sum, item) => sum + Math.max(0, -Number(item.remaining || 0)),
+              0,
+            );
           if (totalPlaced <= 0) {
             event.preventDefault();
             return;
           }
-          if (!allDone) {
-            const remainingTotal = remaining.reduce(
-              (sum, item) => sum + Math.max(0, Number(item.remaining || 0)),
-              0,
-            );
-            const shouldFinish = window.confirm(
-              `Осталось ${remainingTotal} шт. по заявке. Завершить размещение с расхождениями?`,
-            );
+            if (missingTotal > 0 || overTotal > 0) {
+            if (!canFinishFlowMismatch) {
+              event.preventDefault();
+              alert('Есть расхождения. Завершить размещение с расхождениями может только руководитель обработки.');
+              return;
+            }
+            let message = '';
+            if (missingTotal > 0 && overTotal > 0) {
+              message = `Недостача ${missingTotal} шт., излишек ${overTotal} шт. Завершить размещение с расхождениями?`;
+            } else if (missingTotal > 0) {
+              message = `Осталось ${missingTotal} шт. по заявке. Завершить размещение с расхождениями?`;
+            } else {
+              message = `Излишек ${overTotal} шт. по заявке. Завершить размещение с расхождениями?`;
+            }
+            const shouldFinish = window.confirm(message);
             if (!shouldFinish) {
               event.preventDefault();
               return;
+            }
+            if (allowMismatchInput) {
+              allowMismatchInput.value = '1';
             }
           }
           isSubmitting = true;

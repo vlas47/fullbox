@@ -4,9 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{{ title }} | FULLBOX</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="/static/vendor/space-grotesk.css" rel="stylesheet">
   <style>
     :root { --bg:#0b0b0f; --card:#14141f; --gold:#d6a300; --gold-soft:#e7c34a; --text:#e8e8ed; --muted:#9aa0b3; --stroke: rgba(255,255,255,0.08); }
     * { box-sizing: border-box; }
@@ -63,6 +61,11 @@
           <div class="muted">{{ subtitle }}</div>
         </div>
         <div style="display:flex; gap:10px; flex-wrap:wrap;">
+          {% if action_buttons %}
+            {% for item in action_buttons %}
+              <a class="btn{% if item.variant == 'primary' %} primary{% endif %}" href="{{ item.url }}">{{ item.label }}</a>
+            {% endfor %}
+          {% endif %}
           <a class="btn" href="/cabinet/director/">В кабинет директора</a>
           <a class="btn" href="/">Главная</a>
         </div>

@@ -5,9 +5,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Заявка на обработку (менеджер)</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@500;600;700&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="/static/vendor/bricolage-manrope.css" rel="stylesheet">
   <style>
     :root {
       --bg: #f2efe8;
@@ -1158,31 +1156,15 @@
         const baseUrl = addBtn?.dataset?.url || '/orders/processing/stock/';
         const agencyId = document.querySelector('input[name="agency_id"]')?.value;
         const editOrderId = document.querySelector('input[name="edit_order_id"]')?.value;
+        const orderIdFromPage = (document.body?.dataset?.orderId || '').trim();
+        const currentOrderId = (editOrderId || orderIdFromPage || '').trim();
         const params = new URLSearchParams();
         if (agencyId) {
           params.set('client', agencyId);
         }
-        if (editOrderId) {
-          params.set('order', editOrderId);
+        if (currentOrderId) {
+          params.set('order', currentOrderId);
         }
-        const selectedArticles = new Set();
-        cardsContainer.querySelectorAll('.processing-card').forEach((card) => {
-          const articleInput = card.querySelector('[data-field="article"]');
-          const raw = (articleInput?.value || '').trim();
-          if (raw) {
-            selectedArticles.add(raw.toLowerCase());
-          }
-        });
-        if (activeCardId) {
-          const activeCard = cardsContainer.querySelector(`[data-card-id="${activeCardId}"]`);
-          const activeArticle = (activeCard?.querySelector('[data-field="article"]')?.value || '').trim();
-          if (activeArticle) {
-            selectedArticles.delete(activeArticle.toLowerCase());
-          }
-        }
-        selectedArticles.forEach((article) => {
-          params.append('exclude', article);
-        });
         const url = params.toString() ? `${baseUrl}?${params}` : baseUrl;
         const popup = window.open(url, 'processing_stock_picker', 'width=1200,height=800');
         if (!popup) {

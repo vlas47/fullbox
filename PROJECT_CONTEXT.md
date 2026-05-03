@@ -56,6 +56,8 @@
 - If no: test in incognito or disable extensions; share pending requests if any.
 
 ## AI Action Log
+- 2026-04-30 08:53: deployed `todo_panel` orphan-receiving filter to `fullbox.ru`, restarted `fullbox`, verified storekeeper task panel returns zero tasks for stale receiving orders.
+- 2026-04-30 08:54: removed orphan receiving tasks from prod `todo_task` where `/orders/receiving/<id>/` remained but `audit_orderauditentry` for that order was empty.
 - 2026-02-02 20:44: deployed updated agent app (events poll) and processing flow polling; applied agent event migration (faked on server due to preexisting table).
 - 2026-02-02 20:22: wired processing flow to poll agent scan events; added printer commands integration in processing print queue actions.
 - 2026-02-02 20:22: expanded Windows agent to handle print jobs (existing print queue), printer control commands, and include printer list in ping meta.

@@ -1,12 +1,11 @@
+{% load order_display %}
 <!doctype html>
 <html lang="ru">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Карта обработки товара</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@500;600;700&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="/static/vendor/bricolage-manrope.css" rel="stylesheet">
   <style>
     :root {
       --bg: #f2efe8;
@@ -223,6 +222,48 @@
       grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
       gap: 18px;
     }
+    .top-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr) minmax(0, 1fr);
+      gap: 18px;
+      align-items: start;
+    }
+    .top-grid .card {
+      min-height: 100%;
+    }
+    .top-grid .hero-top {
+      grid-template-columns: 104px minmax(0, 1fr);
+      gap: 12px;
+      align-items: start;
+    }
+    .top-grid .photo {
+      width: 104px;
+      height: 104px;
+      border-radius: 14px;
+    }
+    .top-grid .hero-title {
+      font-size: 42px;
+      line-height: 1.05;
+      margin-bottom: 8px;
+    }
+    .top-grid .meta-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+      margin-top: 0;
+    }
+    .top-grid .meta-item {
+      padding: 8px 10px;
+    }
+    .top-grid .meta-label {
+      font-size: 11px;
+      letter-spacing: 0.6px;
+    }
+    .top-grid .meta-value {
+      font-size: 14px;
+    }
+    .top-grid .meta-value-description {
+      font-size: 16px;
+    }
     .direction-block {
       margin-top: 16px;
     }
@@ -230,6 +271,184 @@
       margin: 0 0 8px;
       font-size: 16px;
       font-weight: 700;
+    }
+    .results-table-wrap {
+      margin-top: 12px;
+      border: 1px solid var(--stroke);
+      border-radius: 14px;
+      overflow: auto;
+      background: var(--surface-2);
+    }
+    .results-table {
+      width: 100%;
+      min-width: 1200px;
+      border-collapse: collapse;
+    }
+    .results-table th {
+      position: sticky;
+      top: 0;
+      z-index: 1;
+      background: var(--surface-2);
+      vertical-align: top;
+      text-transform: none;
+      letter-spacing: 0.2px;
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .results-table td {
+      vertical-align: top;
+      background: #fff;
+      padding-top: 10px;
+      padding-bottom: 10px;
+    }
+    .results-table tbody tr:nth-child(odd) td {
+      background: #fcfbf8;
+    }
+    .results-table tbody tr:hover td {
+      background: #f7f6f2;
+    }
+    .results-col-note {
+      display: block;
+      margin-top: 4px;
+      font-size: 11px;
+      color: var(--muted);
+      font-weight: 500;
+      letter-spacing: 0;
+      text-transform: none;
+    }
+    .results-cell-stack {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .results-cell-inline {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      white-space: nowrap;
+    }
+    .results-badge {
+      display: inline-block;
+      border-radius: 999px;
+      padding: 2px 7px;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0;
+      border: 1px solid rgba(28,31,26,0.2);
+      color: var(--muted);
+      background: var(--surface);
+      margin-left: 4px;
+    }
+    .results-badge.required {
+      color: var(--accent);
+      border-color: rgba(14,107,91,0.35);
+      background: rgba(14,107,91,0.08);
+    }
+    .results-mini-input {
+      width: 70px !important;
+      min-width: 70px;
+      max-width: 70px;
+      padding: 5px 6px;
+      text-align: center;
+      border-radius: 8px;
+    }
+    .results-mini-input.compact {
+      width: 58px !important;
+      min-width: 58px;
+      max-width: 58px;
+      padding: 4px 5px;
+    }
+    .inline-print-status {
+      display: inline-block;
+      margin-left: 8px;
+      min-height: 16px;
+      font-size: 12px;
+      color: #6b6458;
+      vertical-align: middle;
+    }
+    .inline-print-status.ok {
+      color: #2d8f68;
+    }
+    .inline-print-status.error {
+      color: #b54032;
+    }
+    .print-cell {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 6px;
+      min-width: 0;
+    }
+    .print-cell-meta {
+      font-size: 11px;
+      color: #6b6458;
+      white-space: normal;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+    .print-type {
+      display: inline-flex;
+      align-items: center;
+      padding: 1px 6px;
+      border-radius: 999px;
+      font-size: 10px;
+      border: 1px solid rgba(31, 43, 33, 0.18);
+      background: #fff;
+      color: #4c4a45;
+      font-weight: 700;
+    }
+    .print-progress {
+      white-space: nowrap;
+    }
+    .inline-print-controls {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: nowrap;
+    }
+    .print-line {
+      padding: 5px 7px;
+      border-radius: 8px;
+      border: 1px solid rgba(31, 43, 33, 0.12);
+      background: #f8f7f3;
+      width: 100%;
+    }
+    .inline-print-qty {
+      width: 52px !important;
+      min-width: 52px;
+      max-width: 52px;
+      padding: 3px 4px;
+      text-align: center;
+      border-radius: 8px;
+    }
+    .inline-print-btn {
+      min-width: 30px;
+      padding: 4px 6px;
+      line-height: 1;
+      font-size: 14px;
+    }
+    .shipping-inline {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+    .shipping-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 2px 7px;
+      border-radius: 999px;
+      background: #f0efe9;
+      border: 1px solid rgba(31, 43, 33, 0.12);
+      font-size: 11px;
+      color: #4f4d47;
+    }
+    .shipping-chip strong {
+      font-size: 12px;
+      color: #1f2b21;
     }
     table { width: 100%; border-collapse: collapse; }
     th, td { padding: 8px; border-bottom: 1px solid var(--stroke); text-align: left; }
@@ -674,11 +893,32 @@
       white-space: nowrap;
     }
     {% include "labels/_label_styles.css" %}
+    @media (max-width: 1440px) {
+      .top-grid {
+        grid-template-columns: minmax(0, 1fr);
+      }
+      .top-grid .hero-top {
+        grid-template-columns: 140px minmax(0, 1fr);
+      }
+      .top-grid .photo {
+        width: 140px;
+        height: 140px;
+      }
+      .top-grid .hero-title {
+        font-size: 28px;
+      }
+      .top-grid .meta-grid {
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      }
+    }
     @media (max-width: 1024px) {
       .wrap { grid-template-columns: 1fr; }
       .grid { grid-template-columns: 1fr; }
       .hero-top { grid-template-columns: 1fr; }
       .photo { width: 100%; height: 200px; }
+      .results-table {
+        min-width: 980px;
+      }
     }
   </style>
 </head>
@@ -688,7 +928,7 @@
       <div class="brand-title">FULLBOX</div>
       <div class="side-block">
         <div class="side-label">Карта обработки</div>
-        <div class="side-value">Заявка № {{ order_id }}</div>
+        <div class="side-value">Заявка № {{ order_id|display_order_number:"processing" }}</div>
         <div class="side-label">Статус</div>
         <div class="side-value">{{ status_label }}</div>
       </div>
@@ -724,49 +964,50 @@
         {% if label_print_buttons %}
           <div class="label-print-actions">
             {% for btn in label_print_buttons %}
-              <a class="btn{% if btn.mode == 'cz' %} primary{% endif %}" href="{{ btn.url }}">{{ btn.label }}</a>
+                    <a class="btn{% if btn.mode == 'cz' %} primary{% endif %}" href="{{ btn.url }}" data-save-before-print="1">{{ btn.label }}</a>
             {% endfor %}
           </div>
         {% endif %}
       </div>
       <div class="side-actions">
+        <a class="btn primary" href="{{ technical_card_url }}">Техкарта (превью)</a>
         <a class="btn" id="return-to-processing" href="{{ return_url }}">К обработке</a>
         <a class="btn" href="{{ cabinet_url }}">Вернуться в кабинет</a>
       </div>
     </aside>
 
     <main class="main">
-      <section class="card hero">
-        <div class="hero-top">
-          <div class="photo">
-            {% if card.photo_url %}
-              <img src="{{ card.photo_url }}" alt="Фото товара">
-            {% else %}
-              <span>Фото</span>
-            {% endif %}
-          </div>
-          <div>
-            <h1 class="hero-title">{{ card.product_name|default:"Товар" }}</h1>
-            <div class="meta-grid">
-              {% for item in card_fields %}
-                <div class="meta-item">
-                  <div class="meta-label">{{ item.label }}</div>
-                  <div class="meta-value{% if item.label and 'наименование' in item.label|lower %} meta-value-description{% endif %}">
-                    {{ item.value }}
-                  </div>
-                </div>
-              {% endfor %}
-              {% if not card_fields %}
-                <div class="meta-item">
-                  <div class="meta-value">Нет данных</div>
-                </div>
+      <div class="top-grid">
+        <section class="card hero">
+          <div class="hero-top">
+            <div class="photo">
+              {% if card.photo_url %}
+                <img src="{{ card.photo_url }}" alt="Фото товара">
+              {% else %}
+                <span>Фото</span>
               {% endif %}
             </div>
+            <div>
+              <h1 class="hero-title">{{ card.product_name|default:"Товар" }}</h1>
+              <div class="meta-grid">
+                {% for item in card_fields %}
+                  <div class="meta-item">
+                    <div class="meta-label">{{ item.label }}</div>
+                    <div class="meta-value{% if item.label and 'наименование' in item.label|lower %} meta-value-description{% endif %}">
+                      {{ item.value }}
+                    </div>
+                  </div>
+                {% endfor %}
+                {% if not card_fields %}
+                  <div class="meta-item">
+                    <div class="meta-value">Нет данных</div>
+                  </div>
+                {% endif %}
+              </div>
+            </div>
           </div>
-        </div>
-      </section>
+        </section>
 
-      <div class="grid">
         <section class="card">
           <h3>Всего к обработке</h3>
           <table class="barcode-table">
@@ -780,15 +1021,7 @@
             <tbody>
               {% for row in card_rows %}
                 <tr data-size="{{ row.size|default:'' }}">
-                  <td>
-                    {{ row.size|default:"-" }}
-                    {% if can_edit_results %}
-                      <input type="hidden" name="result_article[]" value="{{ row.article|default:'' }}">
-                      <input type="hidden" name="result_size[]" value="{{ row.size|default:'' }}">
-                      <input type="hidden" name="result_destination[]" value="{{ row.destination|default:'' }}">
-                      <input type="hidden" name="result_received[]" value="{{ row.received|default:'' }}">
-                    {% endif %}
-                  </td>
+                  <td>{{ row.size|default:"-" }}</td>
                   <td class="barcode-cell" data-barcode="{{ row.barcode|default:'' }}" data-size="{{ row.size|default:'' }}">{{ row.barcode|default:"-" }}</td>
                   <td>{{ row.qty|default:"-" }}</td>
                 </tr>
@@ -798,31 +1031,6 @@
             </tbody>
           </table>
 
-          {% for direction in direction_tables %}
-            <div class="direction-block">
-              <div class="direction-title">В {{ direction.address }} нужно отправить: {{ direction.total }}</div>
-              <table>
-                <thead>
-                  <tr>
-                    <th>Размер</th>
-                    <th>ШК</th>
-                    <th>Кол-во</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {% for row in direction.rows %}
-                    <tr>
-                      <td>{{ row.size|default:"-" }}</td>
-                      <td>{{ row.barcode|default:"-" }}</td>
-                      <td>{{ row.qty|default:"-" }}</td>
-                    </tr>
-                  {% empty %}
-                    <tr><td colspan="3" class="empty">Данные не указаны.</td></tr>
-                  {% endfor %}
-                </tbody>
-              </table>
-            </div>
-          {% endfor %}
         </section>
 
         <section class="card">
@@ -853,7 +1061,7 @@
                           {% for btn in label_print_buttons %}
                             {% if btn.mode == "no-cz" %}
                               <a class="btn small" href="{{ btn.url }}">Распечатать этикетки</a>
-                              <span class="muted" data-print-count data-print-mode="no-cz" data-print-base="0">Напечатано: 0</span>
+                              <span class="muted" data-print-count data-print-mode="no-cz" data-print-base="{{ printed_no_cz_total|default:0 }}">Напечатано: {{ printed_no_cz_total|default:0 }}</span>
                             {% endif %}
                           {% endfor %}
                         {% endif %}
@@ -867,6 +1075,7 @@
             </tbody>
           </table>
         </section>
+
       </div>
 
       <section class="card">
@@ -878,60 +1087,137 @@
           <input type="hidden" name="return" value="{{ return_url }}">
           <input type="hidden" name="return_to" id="results-return-to" value="">
           <input type="hidden" name="card_id" value="{{ card_id }}">
-          <table>
-            <thead>
-              <tr>
-                <th>Размер</th>
-                <th>ШК</th>
-                <th>Получили</th>
-                <th>Обработали</th>
-                <th>Брак</th>
-                <th>Недостача</th>
-                <th>Отправили (кол-во)</th>
-                <th>Куда</th>
-              </tr>
-            </thead>
-            <tbody>
-              {% for row in results_rows %}
+          <div class="results-table-wrap">
+            <table class="results-table">
+              <thead>
                 <tr>
-                  <td>{{ row.size|default:"-" }}</td>
-                  <td>{{ row.barcode|default:"-" }}</td>
-                  <td>{{ row.received|default:"-" }}</td>
-                  <td>
-                    {% if can_edit_results %}
-                      <input type="number" min="0" name="result_processed[]" value="{{ row.processed|default:'' }}">
-                    {% else %}
-                      {{ row.processed|default:"-" }}
-                    {% endif %}
-                  </td>
-                  <td>
-                    {% if can_edit_results %}
-                      <input type="number" min="0" name="result_defect[]" value="{{ row.defect|default:'' }}">
-                    {% else %}
-                      {{ row.defect|default:"-" }}
-                    {% endif %}
-                  </td>
-                  <td>
-                    {% if can_edit_results %}
-                      <input type="number" min="0" name="result_shortage[]" value="{{ row.shortage|default:'' }}">
-                    {% else %}
-                      {{ row.shortage|default:"-" }}
-                    {% endif %}
-                  </td>
-                  <td>
-                    {% if can_edit_results %}
-                      <input type="number" min="0" name="result_shipped_qty[]" value="{{ row.shipped_qty|default:'' }}">
-                    {% else %}
-                      {{ row.shipped_qty|default:"-" }}
-                    {% endif %}
-                  </td>
-                  <td>{{ row.destination|default:"-" }}</td>
+                  <th>Размер</th>
+                  <th>ШК</th>
+                  <th>Получили</th>
+                  <th>Обработали</th>
+                  {% if results_quality_visible %}
+                    <th>Брак</th>
+                    <th>Недостача</th>
+                  {% endif %}
+                  {% if results_labels_visible %}
+                    <th>
+                      Печать этикеток
+                      <span class="results-col-note">тип, прогресс, печать</span>
+                    </th>
+                  {% endif %}
                 </tr>
-              {% empty %}
-                <tr><td colspan="8" class="empty">Данные не указаны.</td></tr>
-              {% endfor %}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {% for row in results_rows %}
+                  <tr data-result-size="{{ row.size|default:'' }}" data-result-barcode="{{ row.barcode|default:'' }}">
+                    <td>
+                      {{ row.size|default:"-" }}
+                      <input type="hidden" name="result_article[]" value="{{ row.article|default:'' }}">
+                      <input type="hidden" name="result_size[]" value="{{ row.size|default:'' }}">
+                      <input type="hidden" name="result_destination[]" value="{{ row.destination|default:'-' }}">
+                      <input type="hidden" name="result_received[]" value="{{ row.received|default:'' }}">
+                      <input type="hidden" name="result_labels_printed[]" value="{{ row.labels_printed|default:0 }}">
+                      <input type="hidden" name="result_labels_unboxed[]" value="{{ row.labels_unboxed|default:0 }}">
+                      <input type="hidden" name="result_shipped_qty[]" value="{{ row.shipped_qty|default:0 }}">
+                    </td>
+                    <td>{{ row.barcode|default:"-" }}</td>
+                    <td>{{ row.received|default:"-" }}</td>
+                    <td>
+                      {% if can_edit_results %}
+                        <input type="number" min="0" name="result_processed[]" class="results-mini-input compact" value="{{ row.processed|default:'' }}">
+                      {% else %}
+                        {{ row.processed|default:"-" }}
+                      {% endif %}
+                    </td>
+                    {% if results_quality_visible %}
+                      <td>
+                        {% if can_edit_results %}
+                          <input type="number" min="0" name="result_defect[]" class="results-mini-input compact" value="{{ row.defect|default:0 }}">
+                        {% else %}
+                          <span>{{ row.defect|default:"-" }}</span>
+                        {% endif %}
+                      </td>
+                      <td>
+                        {% if can_edit_results %}
+                          <input type="number" min="0" name="result_shortage[]" class="results-mini-input compact" value="{{ row.shortage|default:0 }}">
+                        {% else %}
+                          <span>{{ row.shortage|default:"-" }}</span>
+                        {% endif %}
+                      </td>
+                    {% endif %}
+                    {% if results_labels_visible %}
+                      <td>
+                        <div class="results-cell-stack">
+                          {% if row.print_items %}
+                            {% for print in row.print_items %}
+                              <div
+                                class="print-line"
+                                data-label-summary-row
+                                data-summary-mode="{{ print.mode|default:'no-cz' }}"
+                                data-summary-barcode="{{ print.barcode|default:'' }}"
+                                data-summary-size="{{ print.size|default:'' }}"
+                              >
+                                <div class="print-cell">
+                                  <span class="print-cell-meta">
+                                    <span class="print-type">{{ print.label_type|default:"58/40" }}</span>
+                                    <span class="print-progress">
+                                      План:
+                                      <strong data-summary-required>{{ print.required_qty|default:0 }}</strong>
+                                      / Готово:
+                                      <strong data-summary-printed data-summary-base="{{ print.printed_qty|default:0 }}">{{ print.printed_qty|default:0 }}</strong>
+                                    </span>
+                                  </span>
+                                  {% if label_print_buttons %}
+                                    {% for btn in label_print_buttons %}
+                                      {% if btn.mode == print.mode %}
+                                        <div class="inline-print-controls">
+                                          <input
+                                            class="results-mini-input inline-print-qty"
+                                            type="number"
+                                            min="0"
+                                            step="1"
+                                            value=""
+                                            data-inline-print-qty="1"
+                                            data-inline-required="{{ print.required_qty|default:0 }}"
+                                          >
+                                          <button
+                                            class="btn small inline-print-btn"
+                                            type="button"
+                                            data-inline-print-row="1"
+                                            data-inline-mode="{{ print.mode|default:'no-cz' }}"
+                                            title="Печать этикеток"
+                                            aria-label="Печать этикеток"
+                                          >
+                                            🖨
+                                          </button>
+                                          <span class="inline-print-status" data-inline-print-status></span>
+                                        </div>
+                                      {% endif %}
+                                    {% endfor %}
+                                  {% else %}
+                                    <span class="muted">—</span>
+                                  {% endif %}
+                                </div>
+                              </div>
+                            {% endfor %}
+                          {% else %}
+                            <span class="muted">—</span>
+                          {% endif %}
+                        </div>
+                      </td>
+                    {% endif %}
+                  </tr>
+                {% empty %}
+                  <tr><td colspan="12" class="empty">Данные не указаны.</td></tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+          {% if results_shipping_visible %}
+            <div class="muted" style="margin-top:8px;">
+              Раскоробовано: в {{ placement_total_boxes|default:0 }} коробов, в {{ placement_total_pallets|default:0 }} паллет.
+            </div>
+          {% endif %}
           {% if can_edit_results %}
             <div style="margin-top:12px;">
               <button class="btn primary" type="submit">Сохранить результаты</button>
@@ -1036,9 +1322,10 @@
 </body>
 {{ label_settings|json_script:"label-settings-data" }}
 {{ label_sizes_json|json_script:"label-sizes-data" }}
-<script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+<script src="/static/vendor/jsbarcode.min.js"></script>
+<script src="/static/vendor/qrcode.min.js"></script>
+<script src="/static/vendor/html2canvas.min.js"></script>
+<script src="/static/vendor/jspdf.umd.min.js"></script>
 <script>
   (() => {
     const btn = document.getElementById('sync-printers-btn');
@@ -1138,6 +1425,7 @@
     const statusEl = document.getElementById('print-status');
     const printProgressKey = 'processing_label_printed';
     const printCountLines = Array.from(document.querySelectorAll('[data-print-count]'));
+    const summaryPrintedCells = Array.from(document.querySelectorAll('[data-summary-printed]'));
     let printProgress = {};
 
     const setPrintStatus = (text, type) => {
@@ -1181,6 +1469,41 @@
       return [mode, orderId || '', barcodeValue, sizeValue].join('|');
     };
 
+    const normalizeResultField = (value) => {
+      const normalized = String(value || '').trim();
+      if (normalized === '-' || normalized === '—') {
+        return '';
+      }
+      return normalized;
+    };
+
+    const getLocalPrintedTotal = (mode, barcode, size) => {
+      const barcodeValue = normalizeResultField(barcode);
+      const sizeValue = normalizeResultField(size);
+      if (!mode || !orderId || !barcodeValue) {
+        return 0;
+      }
+      let total = 0;
+      Object.entries(printProgress).forEach(([key, value]) => {
+        const parts = String(key || '').split('|');
+        if (parts.length < 4) {
+          return;
+        }
+        const keyMode = String(parts[0] || '').trim();
+        const keyOrder = String(parts[1] || '').trim();
+        const keyBarcode = String(parts[2] || '').trim();
+        const keySize = String(parts[3] || '').trim();
+        if (keyMode !== mode || keyOrder !== orderId || keyBarcode !== barcodeValue || keySize !== sizeValue) {
+          return;
+        }
+        const num = parseInt(value, 10);
+        if (Number.isFinite(num) && num > 0) {
+          total += num;
+        }
+      });
+      return total;
+    };
+
     const updateParamPrintCounts = () => {
       if (!printCountLines.length) {
         return;
@@ -1206,6 +1529,26 @@
       });
     };
 
+    const updateSummaryPrintedCounts = () => {
+      if (!summaryPrintedCells.length) {
+        return;
+      }
+      summaryPrintedCells.forEach((cell) => {
+        const row = cell.closest('[data-label-summary-row]');
+        if (!row) {
+          return;
+        }
+        const mode = (row.dataset.summaryMode || 'no-cz').trim() || 'no-cz';
+        const barcode = normalizeResultField(row.dataset.summaryBarcode || '');
+        const size = normalizeResultField(row.dataset.summarySize || '');
+        const localTotal = getLocalPrintedTotal(mode, barcode, size);
+        const base = parseInt(cell.dataset.summaryBase || '0', 10);
+        const baseTotal = Number.isFinite(base) ? base : 0;
+        const total = Math.max(baseTotal, localTotal);
+        cell.textContent = String(total);
+      });
+    };
+
     const addPrintedCount = (mode, barcode, size, delta) => {
       if (!mode) {
         return;
@@ -1215,6 +1558,7 @@
       printProgress[key] = Math.max(0, current + (delta || 0));
       savePrintProgress(printProgress);
       updateParamPrintCounts();
+      updateSummaryPrintedCounts();
     };
 
     const getSelectedPrinter = () => {
@@ -1223,6 +1567,10 @@
         return value;
       }
       return (localStorage.getItem(storageKey) || localStorage.getItem('label_printer') || '').trim();
+    };
+    const isPdfPrinter = (name) => {
+      const value = String(name || '').toLowerCase();
+      return value.includes('print to pdf') || value.includes('pdf');
     };
 
     const getCookie = (name) => {
@@ -1512,6 +1860,57 @@
       }
     };
 
+    const exportLabelPdf = async (barcode, size, modeOverride, copiesOverride) => {
+      const mode = modeOverride || localStorage.getItem(labelModeKey) || 'cz';
+      if (mode === 'cz') {
+        setPrintStatus('PDF-печать для ЧЗ отключена.', 'error');
+        return false;
+      }
+      const printer = getSelectedPrinter();
+      if (!isPdfPrinter(printer)) {
+        return false;
+      }
+      const jsPdfApi = window.jspdf && window.jspdf.jsPDF ? window.jspdf.jsPDF : null;
+      if (!jsPdfApi) {
+        setPrintStatus('Не удалось загрузить модуль PDF', 'error');
+        alert('Не удалось загрузить модуль PDF. Обновите страницу и попробуйте снова.');
+        return false;
+      }
+      const copies = Math.max(1, Number.parseInt(String(copiesOverride || '1'), 10) || 1);
+      const dims = getLabelSizeForMode(mode);
+      const orientation = dims.width_mm >= dims.height_mm ? 'landscape' : 'portrait';
+      setPrintStatus(copies > 1 ? `Подготовка PDF: 1 / ${copies}` : 'Подготовка PDF…');
+      const image = await buildLabelImage(barcode, size, mode);
+      if (!image) {
+        setPrintStatus('Ошибка формирования этикетки', 'error');
+        alert('Не удалось сформировать этикетку.');
+        return false;
+      }
+      const doc = new jsPdfApi({
+        orientation,
+        unit: 'mm',
+        format: [dims.width_mm, dims.height_mm],
+        compress: true
+      });
+      for (let idx = 0; idx < copies; idx += 1) {
+        if (idx > 0) {
+          doc.addPage([dims.width_mm, dims.height_mm], orientation);
+        }
+        doc.addImage(image, 'PNG', 0, 0, dims.width_mm, dims.height_mm, undefined, 'FAST');
+      }
+      const sanitize = (value) => String(value || '')
+        .trim()
+        .replace(/[\\/:*?"<>|]+/g, '-')
+        .replace(/\s+/g, '_')
+        .replace(/_+/g, '_')
+        .replace(/^_+|_+$/g, '');
+      const barcodePart = sanitize(barcode) || 'no_barcode';
+      doc.save(`L_${barcodePart}_${copies}.pdf`);
+      addPrintedCount(mode, barcode, size, copies);
+      setPrintStatus(`PDF готов: ${copies} стр.`, 'ok');
+      return true;
+    };
+
     if (printerInput) {
       const stored = localStorage.getItem(storageKey) || localStorage.getItem('label_printer');
       if (stored) {
@@ -1628,15 +2027,18 @@
 
     window.processingLabelPrint = {
       enqueuePrintJob,
+      exportLabelPdf,
       openPreviewModal,
       renderPreview,
       getMode,
       isPreviewEnabled,
+      isPdfPrinter,
       setStageSizes: updateStageSizes
     };
 
     printProgress = loadPrintProgress();
     updateParamPrintCounts();
+    updateSummaryPrintedCounts();
   })();
 </script>
 <script>
@@ -1727,7 +2129,7 @@
     <svg id="barcode"></svg>
     <div class="code">${safeBarcodeText}</div>
   </div>
-  <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"><\/script>
+  <script src="/static/vendor/jsbarcode.min.js"><\/script>
   <script>
     window.addEventListener('load', () => {
       try {
@@ -1978,6 +2380,239 @@
 </script>
 <script>
   (() => {
+    const rowPrintButtons = Array.from(document.querySelectorAll('[data-inline-print-row="1"]'));
+    if (!rowPrintButtons.length) {
+      return;
+    }
+    const qtyStorageKey = 'processing_inline_print_qty_v1';
+    const orderMatch = window.location.pathname.match(/\/orders\/processing\/([^/]+)/i);
+    const orderId = orderMatch && orderMatch[1] ? orderMatch[1].trim() : '';
+    const normalize = (value) => {
+      const text = String(value || '').trim();
+      if (!text || text === '-' || text === '—') {
+        return '';
+      }
+      return text;
+    };
+    const parseIntSafe = (value, fallback = 0) => {
+      const num = Number.parseInt(String(value || '').trim(), 10);
+      return Number.isFinite(num) ? num : fallback;
+    };
+    const loadSavedQtyMap = () => {
+      try {
+        const raw = localStorage.getItem(qtyStorageKey);
+        if (!raw) {
+          return {};
+        }
+        const parsed = JSON.parse(raw);
+        if (!parsed || typeof parsed !== 'object') {
+          return {};
+        }
+        return parsed;
+      } catch (err) {
+        return {};
+      }
+    };
+    const saveSavedQtyMap = (map) => {
+      try {
+        localStorage.setItem(qtyStorageKey, JSON.stringify(map || {}));
+      } catch (err) {
+      }
+    };
+    const rowKey = (mode, barcode, size) => [String(mode || '').trim(), orderId, normalize(barcode), normalize(size)].join('|');
+    const currentPrintedForRow = (row) => {
+      if (!row) {
+        return 0;
+      }
+      const cell = row.querySelector('[data-summary-printed]');
+      if (!cell) {
+        return 0;
+      }
+      return Math.max(0, parseIntSafe(cell.textContent || '0', 0));
+    };
+    const calcPendingForRow = (row, requiredValue) => {
+      const requiredQty = Math.max(0, parseIntSafe(requiredValue, 0));
+      const printedQty = currentPrintedForRow(row);
+      return Math.max(requiredQty - printedQty, 0);
+    };
+    const setInlineStatus = (el, message, type) => {
+      if (!el) {
+        return;
+      }
+      el.textContent = String(message || '').trim();
+      el.classList.remove('ok', 'error');
+      if (type === 'ok') {
+        el.classList.add('ok');
+      } else if (type === 'error') {
+        el.classList.add('error');
+      }
+    };
+    const resolvePrinterName = () => {
+      const input = document.getElementById('label-printer');
+      const fromInput = input ? String(input.value || '').trim() : '';
+      if (fromInput) {
+        return fromInput;
+      }
+      const fromStorage = String(
+        localStorage.getItem('processing_label_printer')
+        || localStorage.getItem('label_printer')
+        || ''
+      ).trim();
+      return fromStorage;
+    };
+    const isPdfPrinterFromName = (name) => {
+      const value = String(name || '').toLowerCase();
+      return value.includes('print to pdf') || value.includes('pdf');
+    };
+    const applyPrinterHints = () => {
+      const printer = resolvePrinterName();
+      const hint = printer
+        ? `Печать на принтер: ${printer}`
+        : 'Принтер не выбран';
+      rowPrintButtons.forEach((btn) => {
+        btn.title = hint;
+        btn.setAttribute('aria-label', hint);
+      });
+    };
+    applyPrinterHints();
+    const printerInput = document.getElementById('label-printer');
+    if (printerInput) {
+      printerInput.addEventListener('input', applyPrinterHints);
+      printerInput.addEventListener('change', applyPrinterHints);
+      printerInput.addEventListener('blur', applyPrinterHints);
+    }
+    const savedQtyMap = loadSavedQtyMap();
+    rowPrintButtons.forEach((button) => {
+      const row = button.closest('[data-label-summary-row]');
+      const qtyInput = row ? row.querySelector('[data-inline-print-qty]') : null;
+      const mode = String(button.dataset.inlineMode || (row ? row.dataset.summaryMode : '') || 'no-cz').trim() || 'no-cz';
+      const barcode = normalize(row ? row.dataset.summaryBarcode : '');
+      const size = normalize(row ? row.dataset.summarySize : '');
+      const key = rowKey(mode, barcode, size);
+      if (qtyInput) {
+        const pendingQty = calcPendingForRow(row, qtyInput.dataset.inlineRequired || '0');
+        const savedQty = Math.max(0, parseIntSafe(savedQtyMap[key], 0));
+        if (savedQty > 0) {
+          qtyInput.value = String(savedQty);
+          qtyInput.dataset.manual = '1';
+        } else {
+          qtyInput.value = String(Math.max(0, pendingQty));
+          qtyInput.dataset.manual = '0';
+        }
+        const syncQtyStorage = () => {
+          const raw = String(qtyInput.value || '').trim();
+          const value = parseIntSafe(raw, 0);
+          if (!raw || value <= 0) {
+            delete savedQtyMap[key];
+            saveSavedQtyMap(savedQtyMap);
+            qtyInput.dataset.manual = '0';
+            const pending = calcPendingForRow(row, qtyInput.dataset.inlineRequired || '0');
+            qtyInput.value = String(Math.max(0, pending));
+            return;
+          }
+          qtyInput.dataset.manual = '1';
+          savedQtyMap[key] = value;
+          saveSavedQtyMap(savedQtyMap);
+        };
+        qtyInput.addEventListener('change', syncQtyStorage);
+        qtyInput.addEventListener('blur', syncQtyStorage);
+      }
+      button.addEventListener('click', async () => {
+        if (button.dataset.printing === '1') {
+          return;
+        }
+        applyPrinterHints();
+        const statusEl = row ? row.querySelector('[data-inline-print-status]') : null;
+        const api = window.processingLabelPrint || {};
+        if (!api.enqueuePrintJob) {
+          setInlineStatus(statusEl, 'Печать недоступна', 'error');
+          return;
+        }
+        if (!barcode) {
+          setInlineStatus(statusEl, 'Нет ШК для печати', 'error');
+          return;
+        }
+        let printCount = 1;
+        let pendingQty = 0;
+        if (qtyInput) {
+          pendingQty = calcPendingForRow(row, qtyInput.dataset.inlineRequired || '0');
+          const requestedQty = Math.max(0, parseIntSafe(qtyInput.value, 0));
+          printCount = requestedQty > 0 ? requestedQty : Math.max(0, pendingQty);
+          qtyInput.value = String(printCount);
+        }
+        if (printCount <= 0) {
+          if (pendingQty <= 0) {
+            setInlineStatus(statusEl, 'Уже напечатано', 'ok');
+          } else {
+            setInlineStatus(statusEl, 'Укажите количество', 'error');
+          }
+          return;
+        }
+        button.dataset.printing = '1';
+        button.disabled = true;
+        if (qtyInput) {
+          qtyInput.disabled = true;
+        }
+        setInlineStatus(statusEl, `Отправка 1/${printCount}…`);
+        let successCount = 0;
+        try {
+          const selectedPrinter = resolvePrinterName();
+          const canPdfBulk = mode !== 'cz'
+            && printCount > 0
+            && (api.isPdfPrinter ? api.isPdfPrinter(selectedPrinter) : isPdfPrinterFromName(selectedPrinter))
+            && typeof api.exportLabelPdf === 'function';
+          if (canPdfBulk) {
+            setInlineStatus(statusEl, 'Подготовка PDF…');
+            const pdfReady = await api.exportLabelPdf(barcode, size, mode, printCount);
+            if (pdfReady) {
+              successCount = printCount;
+            }
+          } else {
+            for (let idx = 0; idx < printCount; idx += 1) {
+              setInlineStatus(statusEl, `Отправка ${idx + 1}/${printCount}…`);
+              const queued = await api.enqueuePrintJob(barcode, size, mode);
+              if (!queued) {
+                break;
+              }
+              successCount += 1;
+            }
+          }
+          if (successCount === printCount) {
+            setInlineStatus(statusEl, `Отправлено: ${successCount}`, 'ok');
+          } else if (successCount > 0) {
+            setInlineStatus(statusEl, `Частично: ${successCount}/${printCount}`, 'error');
+          } else {
+            setInlineStatus(statusEl, 'Ошибка печати', 'error');
+          }
+        } catch (err) {
+          setInlineStatus(statusEl, 'Ошибка печати', 'error');
+        } finally {
+          button.dataset.printing = '0';
+          button.disabled = false;
+          if (qtyInput) {
+            qtyInput.disabled = false;
+            const isManual = qtyInput.dataset.manual === '1';
+            if (!isManual) {
+              const pendingAfter = calcPendingForRow(row, qtyInput.dataset.inlineRequired || '0');
+              qtyInput.value = String(Math.max(0, pendingAfter));
+            } else {
+              const manualQty = Math.max(0, parseIntSafe(qtyInput.value, 0));
+              if (manualQty > 0) {
+                savedQtyMap[key] = manualQty;
+              } else {
+                delete savedQtyMap[key];
+                qtyInput.dataset.manual = '0';
+              }
+              saveSavedQtyMap(savedQtyMap);
+            }
+          }
+        }
+      });
+    });
+  })();
+</script>
+<script>
+  (() => {
     const returnLink = document.getElementById('return-to-processing');
     const form = document.getElementById('processing-results-form');
     const returnInput = document.getElementById('results-return-to');
@@ -1993,6 +2628,164 @@
       returnInput.value = returnLink.getAttribute('href') || '';
       form.submit();
     });
+  })();
+</script>
+<script>
+  (() => {
+    const canEditResults = {{ can_edit_results|yesno:"true,false" }};
+    if (!canEditResults) {
+      return;
+    }
+    const form = document.getElementById('processing-results-form');
+    const returnInput = document.getElementById('results-return-to');
+    const actionInput = document.getElementById('results-action');
+    if (!form || !returnInput || !actionInput) {
+      return;
+    }
+    const printLinks = Array.from(document.querySelectorAll('a[data-save-before-print="1"]'));
+    if (!printLinks.length) {
+      return;
+    }
+    printLinks.forEach((link) => {
+      link.addEventListener('click', (event) => {
+        const href = (link.getAttribute('href') || '').trim();
+        if (!href || !href.startsWith('/')) {
+          return;
+        }
+        event.preventDefault();
+        actionInput.value = 'save_results';
+        returnInput.value = href;
+        form.submit();
+      });
+    });
+  })();
+</script>
+<script>
+  (() => {
+    const form = document.getElementById('processing-results-form');
+    if (!form) {
+      return;
+    }
+    const processedInputs = Array.from(form.querySelectorAll('input[name="result_processed[]"]'));
+    const tagsInputs = Array.from(form.querySelectorAll('input[name="result_tags_replaced[]"]'));
+    const printedInputs = Array.from(form.querySelectorAll('input[name="result_labels_printed[]"]'));
+    const shippedInputs = Array.from(form.querySelectorAll('input[name="result_shipped_qty[]"]'));
+    const unboxedInputs = Array.from(form.querySelectorAll('input[name="result_labels_unboxed[]"]'));
+    const orderMatch = window.location.pathname.match(/\/orders\/processing\/([^/]+)/i);
+    const orderId = orderMatch && orderMatch[1] ? orderMatch[1].trim() : '';
+    const loadPrintProgress = () => {
+      try {
+        const raw = localStorage.getItem('processing_label_printed');
+        return raw ? JSON.parse(raw) : {};
+      } catch (err) {
+        return {};
+      }
+    };
+    const resolveLocalPrinted = (progress, barcode, size) => {
+      if (!barcode || !orderId || !progress || typeof progress !== 'object') {
+        return 0;
+      }
+      const barcodeValue = String(barcode).trim();
+      const sizeValue = String(size || '').trim();
+      let total = 0;
+      Object.entries(progress).forEach(([key, value]) => {
+        const parts = String(key || '').split('|');
+        if (parts.length < 4) {
+          return;
+        }
+        const keyOrder = String(parts[1] || '').trim();
+        const keyBarcode = String(parts[2] || '').trim();
+        const keySize = String(parts[3] || '').trim();
+        if (keyOrder !== orderId || keyBarcode !== barcodeValue || keySize !== sizeValue) {
+          return;
+        }
+        const count = Number.parseInt(String(value || '0').trim(), 10);
+        if (Number.isFinite(count) && count > 0) {
+          total += count;
+        }
+      });
+      return total;
+    };
+    if (printedInputs.length) {
+      const progress = loadPrintProgress();
+      printedInputs.forEach((input) => {
+        const hasValue = (input.value || '').trim().length > 0;
+        input.dataset.userEdited = hasValue ? '1' : '0';
+        input.addEventListener('input', () => {
+          input.dataset.userEdited = '1';
+        });
+        const row = input.closest('tr[data-result-barcode]');
+        if (!row) {
+          return;
+        }
+        const barcode = (row.dataset.resultBarcode || '').trim();
+        const size = (row.dataset.resultSize || '').trim();
+        const localPrinted = resolveLocalPrinted(progress, barcode, size);
+        if (localPrinted <= 0) {
+          return;
+        }
+        const userEdited = input.dataset.userEdited === '1';
+        if (!userEdited || !(input.value || '').trim()) {
+          input.value = String(localPrinted);
+        }
+      });
+    }
+    if (shippedInputs.length && shippedInputs.length === unboxedInputs.length) {
+      unboxedInputs.forEach((input) => {
+        const hasValue = (input.value || '').trim().length > 0;
+        input.dataset.userEdited = hasValue ? '1' : '0';
+        input.addEventListener('input', () => {
+          input.dataset.userEdited = '1';
+        });
+      });
+      shippedInputs.forEach((shippedInput, idx) => {
+        const unboxedInput = unboxedInputs[idx];
+        if (!unboxedInput) {
+          return;
+        }
+        const syncUnboxed = () => {
+          const shippedValue = (shippedInput.value || '').trim();
+          const unboxedValue = (unboxedInput.value || '').trim();
+          const userEdited = unboxedInput.dataset.userEdited === '1';
+          if (!userEdited || !unboxedValue) {
+            unboxedInput.value = shippedValue;
+          }
+        };
+        shippedInput.addEventListener('input', syncUnboxed);
+        shippedInput.addEventListener('change', syncUnboxed);
+        syncUnboxed();
+      });
+    }
+    if (processedInputs.length && processedInputs.length === tagsInputs.length) {
+      tagsInputs.forEach((input) => {
+        const hasValue = (input.value || '').trim().length > 0;
+        input.dataset.userEdited = hasValue ? '1' : '0';
+        if (input.type === 'hidden') {
+          return;
+        }
+        input.addEventListener('input', () => {
+          const value = (input.value || '').trim();
+          input.dataset.userEdited = value ? '1' : '0';
+        });
+      });
+      processedInputs.forEach((processedInput, idx) => {
+        const tagsInput = tagsInputs[idx];
+        if (!tagsInput) {
+          return;
+        }
+        const syncTags = () => {
+          const processedValue = (processedInput.value || '').trim();
+          const tagsValue = (tagsInput.value || '').trim();
+          const userEdited = tagsInput.dataset.userEdited === '1';
+          if (!userEdited || !tagsValue) {
+            tagsInput.value = processedValue;
+          }
+        };
+        processedInput.addEventListener('input', syncTags);
+        processedInput.addEventListener('change', syncTags);
+        syncTags();
+      });
+    }
   })();
 </script>
 </html>

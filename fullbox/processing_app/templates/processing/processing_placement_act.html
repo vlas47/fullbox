@@ -1,9 +1,10 @@
+{% load order_display %}
 <!doctype html>
 <html lang="ru">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Размещение после обработки · заявка № {{ order_id }}</title>
+  <title>Размещение после обработки · заявка № {{ order_id|display_order_number:"processing" }}</title>
   <style>
     :root { --bg:#f6f4ed; --card:#ffffff; --card-soft:#f8f6f1; --gold:#c79a1c; --gold-soft:#f2d48c; --muted:#6b7280; --stroke: rgba(31,35,40,0.12); --text:#1f2328; --danger:#d14343; --success:#1f9d55; }
     * { box-sizing: border-box; }
@@ -95,7 +96,7 @@
       <aside class="detail-side">
         <div class="side-card">
           <div class="muted">FULLBOX · {% include "partials/current_user.html" %}</div>
-          <h3>Размещение после обработки · заявка № {{ order_id }}</h3>
+          <h3>Размещение после обработки · заявка № {{ order_id|display_order_number:"processing" }}</h3>
           <div class="muted">Статус: {{ status_label }}</div>
         </div>
 
@@ -118,7 +119,7 @@
             <div class="info-item">
               <div class="info-label">Итог</div>
               <div class="info-value" id="info-summary">
-                По заявке № {{ order_id }} обработано и размещено 0 товаров, в 0 коробах, на 0 палете
+                По заявке № {{ order_id|display_order_number:"processing" }} обработано и размещено 0 товаров, в 0 коробах, на 0 палете
               </div>
             </div>
           </div>
@@ -305,7 +306,9 @@
   {{ pallets_data|json_script:"pallets-data" }}
   {{ os_config|json_script:"os-config" }}
   {{ occupied_cells|json_script:"occupied-cells" }}
+  {{ current_agency_id|json_script:"current-agency-id" }}
 
+  <script src="/static/vendor/qrcode.min.js"></script>
   <script>
     (() => {
       const remainingData = JSON.parse(document.getElementById('remaining-data').textContent || '[]');
@@ -313,10 +316,12 @@
       const palletsData = JSON.parse(document.getElementById('pallets-data').textContent || '[]');
       const osConfig = JSON.parse(document.getElementById('os-config').textContent || '{}');
       const occupiedCellsData = JSON.parse(document.getElementById('occupied-cells').textContent || '[]');
+      const currentAgencyId = Number(JSON.parse(document.getElementById('current-agency-id').textContent || '0') || 0);
       const canSubmit = {{ can_submit|yesno:"true,false" }};
       const actState = "{{ act_state|escapejs }}";
       const actClosed = actState === 'closed';
       const orderId = "{{ order_id|escapejs }}";
+      const displayOrderId = "{{ order_id|display_order_number:'processing'|escapejs }}";
       const goodsType = String("{{ goods_type|escapejs }}").trim().toLowerCase();
       const goodsTypeSuffix = goodsType ? `-${goodsType}` : '';
       const clientPrefixRaw = String("{{ client_prefix|escapejs }}").trim();
@@ -376,6 +381,25 @@
           return `${row}|${section}|${tier}|${cell}`;
         })
       );
+      const baseSectionAgencyMap = new Map();
+      (occupiedCellsData || []).forEach((item) => {
+        const row = item && item.row ? String(item.row).trim() : '';
+        const section = item && item.section ? String(item.section).trim() : '';
+        if (!(row && section)) {
+          return;
+        }
+        const key = `${row}|${section}`;
+        if (!baseSectionAgencyMap.has(key)) {
+          baseSectionAgencyMap.set(key, new Set());
+        }
+        const agencies = Array.isArray(item?.agency_ids) ? item.agency_ids : [item?.agency_id];
+        agencies.forEach((value) => {
+          const agency = Number(value || 0);
+          if (agency > 0) {
+            baseSectionAgencyMap.get(key).add(String(agency));
+          }
+        });
+      });
 
       const normalizeBox = (box, index) => {
         const code = (box || {}).code || `BOX-${index + 1}`;
@@ -468,6 +492,93 @@
           sealed: pallet.sealed !== undefined ? !!pallet.sealed : true,
           location: locationValue,
         };
+      };
+
+      const findSuggestedWarehouseLocation = (palletCode = '') => {
+        const usedKeys = new Set();
+        const sectionAgencyMap = new Map();
+        baseSectionAgencyMap.forEach((values, key) => {
+          sectionAgencyMap.set(key, new Set(values));
+        });
+        state.pallets.forEach((item) => {
+          if (!item || item.code === palletCode) {
+            return;
+          }
+          const loc = normalizeLocationValue(item);
+          if (loc.zone !== 'OS') {
+            return;
+          }
+          if (!(loc.row && loc.section && loc.tier && loc.cell)) {
+            return;
+          }
+          usedKeys.add(`${loc.row}|${loc.section}|${loc.tier}|${loc.cell}`);
+          if (currentAgencyId > 0) {
+            const sectionKey = `${loc.row}|${loc.section}`;
+            if (!sectionAgencyMap.has(sectionKey)) {
+              sectionAgencyMap.set(sectionKey, new Set());
+            }
+            sectionAgencyMap.get(sectionKey).add(String(currentAgencyId));
+          }
+        });
+        const osRows = Object.keys(osRowSections)
+          .map((value) => String(value))
+          .sort((left, right) => Number(left) - Number(right));
+        const sectionBuckets = { same: [], empty: [], other: [] };
+        osRows.forEach((row) => {
+          const sections = Number(osRowSections[row] || 0);
+          for (let section = 1; section <= sections; section += 1) {
+            const sectionKey = `${row}|${section}`;
+            const agencies = sectionAgencyMap.get(sectionKey) || new Set();
+            if (currentAgencyId > 0 && agencies.has(String(currentAgencyId))) {
+              sectionBuckets.same.push({ row, section: String(section) });
+            } else if (!agencies.size) {
+              sectionBuckets.empty.push({ row, section: String(section) });
+            } else {
+              sectionBuckets.other.push({ row, section: String(section) });
+            }
+          }
+        });
+        for (const bucket of ['same', 'empty', 'other']) {
+          for (const candidate of sectionBuckets[bucket]) {
+            for (let tier = 1; tier <= osTiers; tier += 1) {
+              for (let cell = 1; cell <= osCellsPerTier; cell += 1) {
+                const key = `${candidate.row}|${candidate.section}|${tier}|${cell}`;
+                if (occupiedCellKeys.has(key) || usedKeys.has(key)) {
+                  continue;
+                }
+                return {
+                  zone: 'OS',
+                  row: candidate.row,
+                  section: candidate.section,
+                  tier: String(tier),
+                  cell: String(cell),
+                };
+              }
+            }
+          }
+        }
+        if (mrRows.length) {
+          return {
+            zone: 'MR',
+            row: String(mrRows[0]),
+            section: '',
+            tier: '',
+            cell: '',
+          };
+        }
+        return { zone: DEFAULT_LOCATION, row: '', section: '', tier: '', cell: '' };
+      };
+
+      const ensureSuggestedWarehouseLocation = (pallet) => {
+        if (!pallet || typeof pallet !== 'object') {
+          return;
+        }
+        const location = normalizeLocationValue(pallet);
+        if (location.zone && location.zone !== 'PR') {
+          pallet.location = location;
+          return;
+        }
+        pallet.location = findSuggestedWarehouseLocation(pallet.code || '');
       };
 
       const state = {
@@ -1128,6 +1239,7 @@
         }
         const boxMap = new Map(state.boxes.map((box) => [box.code, box]));
         state.pallets.forEach((pallet) => {
+          ensureSuggestedWarehouseLocation(pallet);
           const isActive = state.active.type === 'pallet' && state.active.code === pallet.code;
           const locationValue = normalizeLocationValue(pallet);
           const zoneValue = locationValue.zone || DEFAULT_LOCATION;
@@ -1998,7 +2110,7 @@
         const itemsLabel = pluralize(totalItems, 'товар', 'товара', 'товаров');
         const boxesLabel = pluralize(totalBoxes, 'коробе', 'коробах', 'коробах');
         const palletsLabel = pluralize(totalPallets, 'палете', 'палетах', 'палетах');
-        summaryEl.textContent = `По заявке № ${orderId} принято и размещено ${totalItems} ${itemsLabel}, в ${totalBoxes} ${boxesLabel}, на ${totalPallets} ${palletsLabel}`;
+        summaryEl.textContent = `По заявке № ${displayOrderId} принято и размещено ${totalItems} ${itemsLabel}, в ${totalBoxes} ${boxesLabel}, на ${totalPallets} ${palletsLabel}`;
       };
 
       const renderAll = () => {
@@ -2013,6 +2125,35 @@
         updateAddBoxAvailability();
       };
 
+      const buildQrDataUrl = (value) => new Promise((resolve, reject) => {
+        if (typeof QRCode === 'undefined') {
+          reject(new Error('QRCode library is unavailable.'));
+          return;
+        }
+        const host = document.createElement('div');
+        host.style.position = 'fixed';
+        host.style.left = '-9999px';
+        host.style.top = '0';
+        document.body.appendChild(host);
+        new QRCode(host, {
+          text: value,
+          width: 360,
+          height: 360,
+          correctLevel: QRCode.CorrectLevel.M,
+        });
+        window.setTimeout(() => {
+          const canvas = host.querySelector('canvas');
+          const image = host.querySelector('img');
+          const dataUrl = canvas ? canvas.toDataURL('image/png') : (image ? image.src : '');
+          host.remove();
+          if (dataUrl) {
+            resolve(dataUrl);
+            return;
+          }
+          reject(new Error('Failed to render QR code.'));
+        }, 80);
+      });
+
       const printQr = (code) => {
         if (!code) {
           return;
@@ -2020,7 +2161,6 @@
         const qrCode = goodsTypeSuffix && !code.endsWith(goodsTypeSuffix) ? `${code}${goodsTypeSuffix}` : code;
         const widthMm = 58 * 0.95;
         const heightMm = 60 * 0.95;
-        const url = `https://api.qrserver.com/v1/create-qr-code/?size=360x360&data=${encodeURIComponent(qrCode)}`;
         const win = window.open('', '_blank', 'width=520,height=640');
         if (!win) {
           return;
@@ -2035,11 +2175,18 @@
               </style>
             </head>
             <body>
-              <img src="${url}" alt="QR" />
+              <div>Генерируем QR...</div>
             </body>
           </html>
         `);
         win.document.close();
+        buildQrDataUrl(qrCode)
+          .then((dataUrl) => {
+            win.document.body.innerHTML = `<img src="${dataUrl}" alt="QR" style="width:${widthMm}mm; height:${heightMm}mm;" />`;
+          })
+          .catch(() => {
+            win.close();
+          });
       };
 
       const draftKey = orderId ? `placement-act-${orderId}` : null;

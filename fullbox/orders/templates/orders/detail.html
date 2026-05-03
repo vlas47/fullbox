@@ -1,12 +1,11 @@
+{% load order_display %}
 <!doctype html>
 <html lang="ru">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{{ order_title }} № {{ order_id }}</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600&display=swap" rel="stylesheet">
+  <title>{{ order_title }} № {{ order_id|display_order_number:order_type }}</title>
+  <link href="/static/vendor/space-grotesk.css" rel="stylesheet">
   <style>
     :root { --bg:#f6f4ed; --card:#ffffff; --card-soft:#f8f6f1; --gold:#c79a1c; --gold-soft:#f2d48c; --muted:#6b7280; --stroke: rgba(31,35,40,0.12); --text:#1f2328; }
     * { box-sizing: border-box; }
@@ -80,11 +79,12 @@
       <aside class="detail-side">
         <div class="side-card">
           <div class="muted">FULLBOX · {% include "partials/current_user.html" %}</div>
-          <h3>{{ order_title }} № {{ order_id }}</h3>
+          <h3>{{ order_title }} № {{ order_id|display_order_number:order_type }}</h3>
           <div class="muted">
             Статус: <span class="meta-value">{{ status_label }}</span>
             {% if goods_type_label %}<br>Тип поставки: <span class="meta-value">{{ goods_type_label }}</span>{% endif %}
             {% if responsible %}<div class="meta-row">Текущий ответственный: <span class="meta-value">{{ responsible }}</span></div>{% endif %}
+            {% if next_step_label %}<div class="meta-row">Следующий шаг: <span class="meta-value">{{ next_step_label }}</span></div>{% endif %}
             {% if order_type == 'processing' and processing_packers_label %}
               <div class="meta-row">Упаковывает: <span class="meta-value">{{ processing_packers_label }}</span></div>
             {% endif %}
@@ -117,13 +117,23 @@
                   <button class="tab primary" type="submit">Отправить акт клиенту</button>
                 </form>
               {% endif %}
+              {% if can_manage_storage_placement %}
+                <a class="tab primary" href="{{ receiving_flow_url }}">{{ storage_placement_action_label }}</a>
+              {% endif %}
+              {% if reachtruck_request_url %}
+                <a class="tab" href="{{ reachtruck_request_url }}">Задание ричтраку</a>
+              {% endif %}
               {% if not client_view %}
                 {% if can_open_flow %}
-                  <button class="tab{% if can_continue_flow %} primary{% endif %}" type="button" id="take-in-work-btn" data-act-url="/orders/receiving/{{ order_id }}/flow/" data-goods-type="{{ goods_type|default:'' }}">Потоковая приемка</button>
+                  <button class="tab{% if can_continue_flow and receiving_mode != 'cz' %} primary{% endif %}" type="button" data-take-flow-btn data-receiving-mode="standard" data-act-url="/orders/receiving/{{ order_id }}/flow/" data-goods-type="{{ goods_type|default:'' }}">Потоковая приемка</button>
+                  {% if has_marked_receiving_items %}
+                    <button class="tab{% if can_continue_flow and receiving_mode == 'cz' %} primary{% endif %}" type="button" data-take-flow-btn data-receiving-mode="cz" data-act-url="/orders/receiving/{{ order_id }}/flow/" data-goods-type="{{ goods_type|default:'' }}">Потоковая приемка с ЧЗ</button>
+                  {% endif %}
                   <form method="post" id="take-in-work-form">
                     {% csrf_token %}
                     <input type="hidden" name="action" value="create_receiving_act">
                     <input type="hidden" name="goods_type" id="goods-type-input">
+                    <input type="hidden" name="receiving_mode" id="receiving-mode-input" value="{{ receiving_mode|default:'standard' }}">
                   </form>
                 {% endif %}
                 {% if can_print_receiving_act %}
@@ -452,18 +462,19 @@
 
   <script>
     (() => {
-      const takeBtn = document.getElementById('take-in-work-btn');
+      const takeButtons = Array.from(document.querySelectorAll('[data-take-flow-btn]'));
       const modal = document.getElementById('goods-type-modal');
       const closeBtn = document.getElementById('goods-type-close');
       const form = document.getElementById('take-in-work-form');
       const goodsInput = document.getElementById('goods-type-input');
+      const receivingModeInput = document.getElementById('receiving-mode-input');
 
-      if (!takeBtn || !modal || !form || !goodsInput) {
+      if (!takeButtons.length || !modal || !form || !goodsInput || !receivingModeInput) {
         return;
       }
 
-      const actUrl = takeBtn.dataset.actUrl || '';
-      const currentType = (takeBtn.dataset.goodsType || '').trim();
+      let pendingMode = receivingModeInput.value || 'standard';
+      let currentButton = takeButtons[0];
       const openModal = () => {
         modal.classList.add('is-open');
         modal.setAttribute('aria-hidden', 'false');
@@ -473,12 +484,19 @@
         modal.setAttribute('aria-hidden', 'true');
       };
 
-      takeBtn.addEventListener('click', () => {
-        if (currentType && actUrl) {
-          window.location.href = actUrl;
-          return;
-        }
-        openModal();
+      takeButtons.forEach((btn) => {
+        btn.addEventListener('click', () => {
+          currentButton = btn;
+          pendingMode = btn.dataset.receivingMode || 'standard';
+          receivingModeInput.value = pendingMode;
+          const currentType = (btn.dataset.goodsType || '').trim();
+          if (currentType) {
+            goodsInput.value = currentType;
+            form.submit();
+            return;
+          }
+          openModal();
+        });
       });
 
       modal.addEventListener('click', (event) => {
@@ -498,6 +516,7 @@
       modal.querySelectorAll('[data-goods-type]')?.forEach((btn) => {
         btn.addEventListener('click', () => {
           goodsInput.value = btn.dataset.goodsType || '';
+          receivingModeInput.value = pendingMode || currentButton?.dataset.receivingMode || 'standard';
           form.submit();
         });
       });

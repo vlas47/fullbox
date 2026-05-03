@@ -1,12 +1,11 @@
+{% load order_display %}
 <!doctype html>
 <html lang="ru">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>FULLBOX | {{ task.display_title }}</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600&display=swap" rel="stylesheet">
+  <link href="/static/vendor/space-grotesk.css" rel="stylesheet">
   <style>
     :root { --bg:#f6f4ed; --card:#ffffff; --card-soft:#f8f6f1; --gold:#c79a1c; --gold-soft:#f2d48c; --muted:#6b7280; --stroke: rgba(31,35,40,0.12); --text:#1f2328; --green:#1f9d55; --red:#d14343; }
     * { box-sizing: border-box; }
@@ -19,8 +18,10 @@
     .tab.primary { border-color: var(--gold); color:#1f2328; background: linear-gradient(120deg,var(--gold),var(--gold-soft)); box-shadow:0 10px 30px rgba(199,154,32,0.2); }
     .card { background:var(--card); border:1px solid var(--stroke); border-radius:16px; padding:16px; box-shadow:0 20px 40px rgba(15,23,42,0.12); }
     .detail-layout { display:grid; grid-template-columns: 280px minmax(0, 1fr) 300px; gap:16px; align-items:start; min-height: calc(100vh - 88px); }
+    .detail-layout.trip-mode { grid-template-columns: 280px minmax(0, 1fr); }
     .detail-side { display:grid; gap:12px; }
     .detail-main { display:grid; gap:12px; height: calc(100vh - 88px); overflow:hidden; }
+    .detail-main.trip-mode { height:auto; overflow:visible; min-height: calc(100vh - 88px); }
     .detail-chat { display:grid; gap:12px; }
     .table-card { height: 100%; display:flex; flex-direction:column; min-height:0; overflow:hidden; }
     .table-scroll { overflow:auto; min-height:0; flex:1; border:1px solid var(--stroke); border-radius:12px; }
@@ -66,19 +67,26 @@
     .list { display:grid; gap:10px; }
     .item { padding:12px; border:1px solid var(--stroke); border-radius:12px; background:var(--card-soft); }
     .item-head { display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; }
+    .trip-table th, .trip-table td { white-space: nowrap; }
+    .trip-table td.trip-destination,
+    .trip-table td.trip-comment { white-space: normal; min-width: 220px; }
     @media (max-width: 1100px) {
       .detail-layout { grid-template-columns: 1fr; }
+      .detail-layout.trip-mode { grid-template-columns: 1fr; }
     }
   </style>
 </head>
 <body>
   <div class="wrap">
-    <div class="detail-layout">
+    <div class="detail-layout{% if trip_context %} trip-mode{% endif %}">
       <aside class="detail-side">
         <div class="side-card">
           <div class="muted">FULLBOX · {% include "partials/current_user.html" %}</div>
-          {% if order_context %}
-            <h3>Заявка № {{ order_context.order_id }}</h3>
+          {% if trip_context %}
+            <h3>Рейс № {{ trip_context.trip_display_number }}</h3>
+            <div class="muted">Статус: {{ trip_context.status_label }} · В задаче погрузки</div>
+          {% elif order_context %}
+            <h3>Заявка № {{ order_context.order_id|display_order_number:"receiving" }}</h3>
             <div class="muted">Статус: {{ order_context.status_label }} · Текущий ответственный: {{ order_context.responsible }}</div>
           {% else %}
             <h3>{{ task.display_title }}</h3>
@@ -89,7 +97,7 @@
           <h4 class="side-title">Действия</h4>
           <div class="side-actions">
             {% if task.route %}
-              <a class="tab" href="{{ task.route }}">К заявке</a>
+              <a class="tab" href="{{ task.route }}">{% if trip_context %}К рейсу{% else %}К заявке{% endif %}</a>
             {% endif %}
             {% if order_context %}
               {% if receiving_act_exists %}
@@ -158,7 +166,13 @@
         <div class="side-card">
           <h4 class="side-title">Участники</h4>
           <div class="participants">
-            {% if order_context %}
+            {% if trip_context %}
+              {% for person in trip_context.participants %}
+                <div class="participant">{{ person }}</div>
+              {% empty %}
+                <div class="muted">Нет данных.</div>
+              {% endfor %}
+            {% elif order_context %}
               {% for person in order_context.participants %}
                 <div class="participant">{{ person }}</div>
               {% empty %}
@@ -171,6 +185,38 @@
             {% endif %}
           </div>
         </div>
+
+        {% if trip_context %}
+          <div class="side-card">
+            <h4 class="side-title">Параметры рейса</h4>
+            <div class="info-list">
+              <div class="info-item">
+                <div class="info-label">Транспорт</div>
+                <div class="info-value">{{ trip_context.vehicle_name }}</div>
+              </div>
+              <div class="info-item">
+                <div class="info-label">Номер авто</div>
+                <div class="info-value">{{ trip_context.vehicle_number }}</div>
+              </div>
+              <div class="info-item">
+                <div class="info-label">Водитель</div>
+                <div class="info-value">{{ trip_context.driver_name }}</div>
+              </div>
+              <div class="info-item">
+                <div class="info-label">Телефон водителя</div>
+                <div class="info-value">{{ trip_context.driver_phone }}</div>
+              </div>
+              <div class="info-item">
+                <div class="info-label">Комментарий маршрута</div>
+                <div class="info-value">{{ trip_context.route_comment }}</div>
+              </div>
+              <div class="info-item">
+                <div class="info-label">Комментарий погрузки</div>
+                <div class="info-value">{{ trip_context.loading_comment }}</div>
+              </div>
+            </div>
+          </div>
+        {% endif %}
 
         <div class="side-card">
           <h4 class="side-title">Файлы</h4>
@@ -201,9 +247,46 @@
         </div>
       </aside>
 
-      <main class="detail-main">
+      <main class="detail-main{% if trip_context %} trip-mode{% endif %}">
         <div class="card table-card">
-          {% if order_context %}
+          {% if trip_context %}
+            <h3>Заявки, включенные в рейс</h3>
+            <div class="muted">Маршрутная последовательность, клиент, склад назначения и фактические объемы по рейсу.</div>
+            <div class="table-scroll" style="margin-top:12px;">
+              <table class="trip-table">
+                <thead>
+                  <tr>
+                    <th>Маршрут</th>
+                    <th>№ заявки</th>
+                    <th>Клиент</th>
+                    <th>Склад назначения</th>
+                    <th>Дата слота</th>
+                    <th>Паллет</th>
+                    <th>Коробов</th>
+                    <th>Статус</th>
+                    <th>Комментарий логиста</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for row in trip_context.orders %}
+                    <tr>
+                      <td>{{ row.route_position|default:"-" }}</td>
+                      <td>{{ row.display_number }}</td>
+                      <td>{{ row.agency_name }}</td>
+                      <td class="trip-destination">{{ row.destination_label }}</td>
+                      <td>{{ row.slot_date_label }}</td>
+                      <td>{{ row.pallet_count }}</td>
+                      <td>{{ row.box_count }}</td>
+                      <td>{{ row.status_label }}</td>
+                      <td class="trip-comment">{{ row.comment }}</td>
+                    </tr>
+                  {% empty %}
+                    <tr><td colspan="9" class="muted">В рейс пока не включены заявки.</td></tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          {% elif order_context %}
             <h3>Состав поставки</h3>
             <div class="table-scroll">
               <table>
@@ -297,8 +380,41 @@
             </table>
           {% endif %}
         </div>
+
+        {% if trip_context %}
+          <div class="card">
+            <div class="item-head">
+              <h3>Комментарии</h3>
+              <div class="pill">Паллет: {{ trip_context.total_pallets }} · Коробов: {{ trip_context.total_boxes }}</div>
+            </div>
+            <form class="chat-form" method="post">
+              {% csrf_token %}
+              {{ comment_form.body }}
+              <button class="tab primary" type="submit" name="action" value="comment">Добавить</button>
+              {% if can_edit and task.status == "done" %}
+                <button class="tab" type="submit" name="action" value="rework">Вернуть на доработку</button>
+              {% endif %}
+            </form>
+            <div class="chat">
+              {% if comments %}
+                {% for comment in comments %}
+                  <div class="chat-item">
+                    <div class="chat-meta">
+                      <span>{{ comment.author|default:"Система" }}</span>
+                      <span>{{ comment.created_at|date:'d.m.y H:i' }}</span>
+                    </div>
+                    <div class="chat-text">{{ comment.body }}</div>
+                  </div>
+                {% endfor %}
+              {% else %}
+                <div class="muted">Пока нет комментариев.</div>
+              {% endif %}
+            </div>
+          </div>
+        {% endif %}
       </main>
 
+      {% if not trip_context %}
       <aside class="detail-chat">
         <div class="side-card">
           <h4 class="side-title">Информация</h4>
@@ -396,6 +512,7 @@
           </div>
         </div>
       </aside>
+      {% endif %}
     </div>
   </div>
 </body>

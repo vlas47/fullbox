@@ -3,6 +3,7 @@ import re
 from datetime import datetime
 
 from django.db.models import Q
+from django.urls import reverse
 from django.utils import timezone
 
 from employees.models import Employee
@@ -138,6 +139,22 @@ def _processing_status_label_from_entry(entry) -> str:
     return status_value or "-"
 
 
+def _existing_receiving_order_ids(order_ids) -> set[str]:
+    normalized_ids = [
+        str(order_id).strip()
+        for order_id in (order_ids or [])
+        if str(order_id or "").strip()
+    ]
+    if not normalized_ids:
+        return set()
+    return set(
+        OrderAuditEntry.objects.filter(
+            order_type="receiving",
+            order_id__in=normalized_ids,
+        ).values_list("order_id", flat=True)
+    )
+
+
 @register.inclusion_tag("todo/_task_panel.html", takes_context=True)
 def task_panel(context, role=None, limit=6, show_meta=True, include_created_by=True):
     role_key = _resolve_role(context, role)
@@ -215,6 +232,25 @@ def task_panel(context, role=None, limit=6, show_meta=True, include_created_by=T
         combined_tasks = (
             other_tasks + list(receiving_by_order.values()) + list(processing_by_order.values())
         )
+
+    receiving_order_ids = {
+        order_id
+        for order_id in (
+            _extract_receiving_order_id(task.route)
+            for task in combined_tasks
+        )
+        if order_id
+    }
+    if receiving_order_ids:
+        existing_receiving_ids = _existing_receiving_order_ids(receiving_order_ids)
+        combined_tasks = [
+            task
+            for task in combined_tasks
+            if (
+                not _extract_receiving_order_id(task.route)
+                or _extract_receiving_order_id(task.route) in existing_receiving_ids
+            )
+        ]
 
     processing_order_ids = {}
     for task in combined_tasks:
@@ -372,6 +408,11 @@ def task_panel(context, role=None, limit=6, show_meta=True, include_created_by=T
             task.order_status_label = receiving_status_by_order.get(order_id)
             task.order_client_label = receiving_client_by_order.get(order_id)
             task.executor_label = task.assigned_to.full_name if task.assigned_to else None
+            task.panel_url = task.route
+            if task.route and "/act/print/" in task.route:
+                task.panel_title = task.title
+            else:
+                task.panel_title = task.display_title
             if role_key == "processing_worker":
                 task.worker_title = task.title
             continue
@@ -390,10 +431,17 @@ def task_panel(context, role=None, limit=6, show_meta=True, include_created_by=T
                 task.executor_label = task.assigned_to.full_name if task.assigned_to else None
             if role_key == "processing_worker":
                 task.worker_title = f"Задача на раскоробовку товара по заявке №{order_id}"
+            task.panel_url = task.route
+            if role_key == "processing_worker" and task.worker_title:
+                task.panel_title = task.worker_title
+            else:
+                task.panel_title = task.display_title
             continue
         task.order_status_label = None
         task.order_client_label = None
         task.executor_label = task.assigned_to.full_name if task.assigned_to else None
+        task.panel_url = reverse("todo:detail", args=[task.id])
+        task.panel_title = task.display_title
         if role_key == "processing_worker":
             task.worker_title = task.title
     role_label = None

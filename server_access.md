@@ -1,48 +1,56 @@
 # Подключение к серверу
 
-- Сервер: `95.163.227.182`
-- Пользователь: `root`
-- SSH-ключ: приватный `~/.ssh/fullbox_root`, публичный `~/.ssh/fullbox_root.pub`
-- Резервный пароль (при необходимости): `UJr4TsiVpEOVnakW`
-- Путь развёрнутого проекта: `/opt/fullbox` (виртуальное окружение `/opt/fullbox/.venv`)
-- База данных: PostgreSQL, БД `fullbox`, пользователь `fullbox`
-- Фактический пароль на сервере (в `/opt/fullbox/.env`): `fullbox_db_pass`
+## Актуальный прод Fullbox.ru
 
-## Как подключиться по ключу
-1. Убедиться, что ключи на месте: `ls ~/.ssh/fullbox_root*`.
-2. Подключиться: `ssh -i ~/.ssh/fullbox_root root@95.163.227.182`.
+- Сервер: `93.123.255.241`
+- Пользователь: `user`
+- Пароль: `AxzCrM98zK`
+- SSH: `ssh user@93.123.255.241`
+- Путь проекта: `/opt/fullbox`
+- Виртуальное окружение: `/opt/fullbox/.venv`
+- env: `/opt/fullbox/.env`
+- systemd-сервис: `fullbox`
+- nginx site: `/etc/nginx/sites-available/fullbox_mirror`
 
-## Если нужно добавить ключ на новый клиент
-1. Скопировать приватный/публичный ключи из `~/.ssh/fullbox_root*` на новый компьютер (или сгенерировать новый).
-2. Добавить публичный ключ на сервер:
-   - Скопировать содержимое `fullbox_root.pub`.
-   - Подключиться на сервер по имеющемуся доступу и выполнить:
-     ```
-     mkdir -p ~/.ssh && chmod 700 ~/.ssh
-     echo "<PUBLIC_KEY>" >> ~/.ssh/authorized_keys
-     chmod 600 ~/.ssh/authorized_keys
-     ```
-3. Проверить вход: `ssh -i ~/.ssh/fullbox_root root@95.163.227.182`.
+## Параметры приложения на сервере
 
-## Быстрый запуск приложения на сервере
-```
-ssh -i ~/.ssh/fullbox_root root@95.163.227.182
-cd /opt/fullbox
-source .venv/bin/activate
-python fullbox/manage.py runserver 0.0.0.0:8000
-```
+Из актуального `/opt/fullbox/.env`:
 
-## Подключение PostgreSQL в приложении
-Переменные окружения (см. `.env.example`):
-```
-DJANGO_ALLOWED_HOSTS=95.163.227.182,127.0.0.1,localhost
+```env
+DJANGO_ALLOWED_HOSTS=127.0.0.1,localhost,93.123.255.241,fullbox.ru,www.fullbox.ru
+DJANGO_DEBUG=False
 DB_NAME=fullbox
 DB_USER=fullbox
-DB_PASSWORD=<Пароль_для_fullbox>
+DB_PASSWORD=fullbox_db_pass
 DB_HOST=127.0.0.1
 DB_PORT=5432
 ```
 
-## GitHub
-- Репозиторий: `git@github.com:vlas47/fullbox.git`, ветка `main`.
-- Ключ для пуша: `~/.ssh/id_ed25519` (добавлен в GitHub), при необходимости: `GIT_SSH_COMMAND="ssh -i ~/.ssh/id_ed25519"`.
+## Быстрый вход
+
+```bash
+ssh user@93.123.255.241
+cd /opt/fullbox
+source .venv/bin/activate
+python fullbox/manage.py check
+```
+
+## Проверка сервисов
+
+```bash
+sudo systemctl status fullbox
+sudo systemctl status nginx
+sudo systemctl status postgresql
+```
+
+## Legacy-контур
+
+- Старый сервер: `95.163.227.182`
+- Старый доступ по ключу: `~/.ssh/fullbox_root`
+- Использовать только если нужна сверка, миграция или разбор старого контура.
+
+См. также:
+
+- `FULLBOX_RU_RUNBOOK.md`
+- `MIRROR_SERVER_ACCESS.md`
+- `LEGACY_SERVER_REENABLE.md`

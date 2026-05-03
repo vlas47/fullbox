@@ -29,6 +29,8 @@ class SKUForm(forms.ModelForm):
 
         numeric_fields = {
             "weight_kg": "Вес",
+            "weight_net_kg": "Вес нетто",
+            "weight_gross_kg": "Вес брутто",
             "volume": "Объем",
             "length_mm": "Длина",
             "width_mm": "Ширина",
@@ -68,6 +70,8 @@ class SKUForm(forms.ModelForm):
             "vid_tovar",
             "type_tovar",
             "weight_kg",
+            "weight_net_kg",
+            "weight_gross_kg",
             "volume",
             "length_mm",
             "width_mm",

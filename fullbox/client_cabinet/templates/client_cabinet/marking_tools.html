@@ -4,9 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Честный знак | FULLBOX</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@500;600;700&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="/static/vendor/bricolage-manrope.css" rel="stylesheet">
   <style>
     :root {
       --bg: #f2efe8;
@@ -374,6 +372,7 @@
             <div class="tabs">
               <button class="tab-btn active" type="button" data-tab="summary">Таблица</button>
               <button class="tab-btn" type="button" data-tab="history">История</button>
+              <button class="tab-btn" type="button" data-tab="pallets">По палетам</button>
             </div>
             <div class="tabs-actions">
               <input class="cz-import-input" type="file" accept=".xlsx" data-cz-import-input>
@@ -445,6 +444,37 @@
                   {% else %}
                     <tr>
                       <td colspan="4" class="empty">История ЧЗ пока пуста.</td>
+                    </tr>
+                  {% endif %}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="tab-panel" data-tab-panel="pallets">
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Заявка</th>
+                    <th>Палета</th>
+                    <th>Коробов</th>
+                    <th>ЧЗ</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% if pallet_rows %}
+                    {% for row in pallet_rows %}
+                      <tr>
+                        <td>{{ row.order_id }}</td>
+                        <td>{{ row.pallet_code }}</td>
+                        <td>{{ row.boxes_count }}</td>
+                        <td>{{ row.cz_count }}</td>
+                      </tr>
+                    {% endfor %}
+                  {% else %}
+                    <tr>
+                      <td colspan="4" class="empty">Палеты с ЧЗ пока не найдены.</td>
                     </tr>
                   {% endif %}
                 </tbody>

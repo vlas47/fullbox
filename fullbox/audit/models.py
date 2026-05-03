@@ -100,6 +100,7 @@ def agency_snapshot(agency):
     return {
         "id": agency.id,
         "agn_name": agency.agn_name,
+        "short_name": getattr(agency, "short_name", None),
         "pref": agency.pref,
         "inn": agency.inn,
         "kpp": agency.kpp,

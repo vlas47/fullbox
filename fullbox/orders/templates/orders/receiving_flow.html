@@ -1,9 +1,10 @@
+{% load order_display %}
 <!doctype html>
 <html lang="ru">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Приемка потоком · заявка № {{ order_id }}</title>
+  <title>Приемка потоком · заявка № {{ order_id|display_order_number:"receiving" }}</title>
   <style>
     :root {
       --bg: #f6f4ed;
@@ -35,6 +36,7 @@
     .side-title { font-weight: 600; margin: 0 0 8px; }
     .side-actions { display: grid; gap: 8px; }
     .side-actions .tab { width: 100%; display: inline-flex; justify-content: center; align-items: center; }
+    .side-actions form { margin: 0; }
     .tab {
       padding: 10px 14px;
       border-radius: 10px;
@@ -46,12 +48,31 @@
     }
     .tab:hover { background: rgba(15,23,42,0.1); }
     .tab.primary { border-color: var(--gold); background: linear-gradient(120deg, var(--gold), var(--gold-soft)); }
+    .tab[disabled] { opacity: 0.6; cursor: not-allowed; }
     .info-list { display: grid; gap: 10px; }
     .info-item { display: grid; gap: 4px; }
     .info-label { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); }
     .info-value { font-weight: 600; word-break: break-word; }
     .muted { color: var(--muted); }
     .error { border: 1px solid rgba(209,67,67,0.35); background: rgba(209,67,67,0.12); color: #7f1d1d; border-radius: 12px; padding: 10px 12px; margin-bottom: 12px; }
+    .notice {
+      border-radius: 12px;
+      padding: 10px 12px;
+      margin-bottom: 12px;
+      border: 1px solid var(--stroke);
+      background: rgba(15,23,42,0.04);
+      color: var(--text);
+    }
+    .notice.success {
+      border-color: rgba(31,157,85,0.35);
+      background: rgba(31,157,85,0.12);
+      color: #0f5c30;
+    }
+    .notice.warn {
+      border-color: rgba(199,154,28,0.45);
+      background: rgba(199,154,28,0.14);
+      color: #7a4c00;
+    }
     .action-bar { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; align-items: center; }
     .action-left { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
     .action-right { display: flex; gap: 10px; flex-wrap: wrap; }
@@ -135,6 +156,7 @@
     .row-actions { display: flex; gap: 6px; align-items: center; }
     .row-actions .btn { padding: 6px 10px; font-size: 12px; }
     .row-negative { color: var(--danger); font-weight: 600; }
+    .remaining-item-row td { cursor: context-menu; }
     .row-done td { background: rgba(31,157,85,0.12); }
     .row-done td:first-child { box-shadow: inset 3px 0 0 rgba(31,157,85,0.55); }
     .row-scan td { background: rgba(242,212,140,0.45); }
@@ -195,9 +217,47 @@
     .pallet-board { display: grid; gap: 12px; }
     .pallet-card { border: 1px solid var(--stroke); border-radius: 16px; padding: 12px; background: #fff; }
     .pallet-card.is-open { border-color: var(--gold); box-shadow: 0 12px 26px rgba(199,154,32,0.2); }
+    .pallet-card.is-weight-warning {
+      border-color: rgba(199,154,28,0.75);
+      box-shadow: 0 12px 26px rgba(199,154,32,0.24);
+    }
+    .pallet-card.is-overweight {
+      border-color: rgba(209,67,67,0.78);
+      box-shadow: 0 0 0 2px rgba(209,67,67,0.16), 0 12px 26px rgba(209,67,67,0.16);
+    }
     .pallet-header { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 8px; }
     .pallet-code { font-weight: 600; }
     .pallet-status { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); }
+    .pallet-meta { display: grid; gap: 6px; margin-bottom: 8px; }
+    .pallet-stats { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+    .pallet-weight-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 8px;
+      border-radius: 999px;
+      border: 1px solid var(--stroke);
+      background: rgba(15,23,42,0.04);
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--text);
+    }
+    .pallet-weight-pill.warn {
+      border-color: rgba(199,154,28,0.55);
+      background: rgba(199,154,28,0.16);
+      color: #7a4c00;
+    }
+    .pallet-weight-pill.danger {
+      border-color: rgba(209,67,67,0.55);
+      background: rgba(209,67,67,0.12);
+      color: #8d1b1b;
+    }
+    .pallet-weight-note {
+      font-size: 12px;
+      font-weight: 600;
+      color: #7a4c00;
+    }
+    .pallet-weight-note.danger { color: #8d1b1b; }
     .box-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(28px, 1fr)); gap: 6px; }
     .box-chip {
       width: 28px;
@@ -210,9 +270,20 @@
       border: 1px solid var(--stroke);
       background: #f1f0ec;
       color: #555;
+      cursor: default;
+      user-select: none;
+      transition: transform 0.16s ease, box-shadow 0.16s ease, border-color 0.16s ease;
     }
+    .box-chip.is-selectable { cursor: pointer; }
+    .box-chip.is-selectable:hover { transform: translateY(-1px); box-shadow: 0 6px 14px rgba(15,23,42,0.12); }
     .box-chip.open { background: #f9e7b8; border-color: #d2a52a; color: #7a4c00; }
     .box-chip.closed { background: #d8f2e1; border-color: #1f9d55; color: #0f5c30; }
+    .box-chip.is-selected {
+      border-color: #d14343;
+      background: #ffe0db;
+      color: #8d1b1b;
+      box-shadow: 0 0 0 2px rgba(209,67,67,0.18);
+    }
     .pallet-closed-title {
       grid-column: 1 / -1;
       font-size: 11px;
@@ -238,6 +309,17 @@
       background: #f1f0ec;
       color: #555;
     }
+    .pallet-chip.warn {
+      border-color: rgba(199,154,28,0.6);
+      background: rgba(199,154,28,0.14);
+      color: #7a4c00;
+    }
+    .pallet-chip.danger {
+      border-color: rgba(209,67,67,0.62);
+      background: rgba(209,67,67,0.12);
+      color: #8d1b1b;
+      box-shadow: 0 0 0 2px rgba(209,67,67,0.12);
+    }
     .closed-boxes {
       display: grid;
       gap: 8px;
@@ -245,8 +327,44 @@
       overflow: auto;
       padding-right: 4px;
     }
-    .closed-box { display: flex; justify-content: space-between; gap: 8px; padding: 8px 10px; border-radius: 10px; border: 1px solid var(--stroke); background: #fff; font-size: 13px; }
+    .closed-box {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 8px 10px;
+      border-radius: 10px;
+      border: 1px solid var(--stroke);
+      background: #fff;
+      font-size: 13px;
+      cursor: pointer;
+      transition: border-color 0.16s ease, box-shadow 0.16s ease, transform 0.16s ease;
+    }
+    .closed-box:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 8px 18px rgba(15,23,42,0.1);
+    }
+    .closed-box.is-selected {
+      border-color: rgba(209,67,67,0.55);
+      background: #fff0ed;
+      box-shadow: 0 0 0 2px rgba(209,67,67,0.14);
+    }
     .summary-line { font-weight: 600; }
+    .selection-strip {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      align-items: center;
+      padding: 10px 12px;
+      margin-bottom: 10px;
+      border-radius: 12px;
+      border: 1px solid rgba(209,67,67,0.22);
+      background: rgba(209,67,67,0.08);
+    }
+    .selection-summary {
+      font-size: 13px;
+      font-weight: 600;
+      color: #8d1b1b;
+    }
     .context-menu {
       position: fixed;
       z-index: 3000;
@@ -285,6 +403,46 @@
       white-space: nowrap;
       border: 0;
     }
+    .scanner-panel { display: grid; gap: 12px; }
+    .scanner-test { display: grid; gap: 6px; }
+    .scanner-test-line { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; }
+    .scanner-test-value { font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; word-break: break-all; text-align: right; }
+    .agent-indicator { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; }
+    .agent-indicator .dot { width: 8px; height: 8px; border-radius: 999px; background: var(--muted); box-shadow: 0 0 0 2px rgba(31,35,40,0.08); }
+    .agent-indicator.ok .dot { background: var(--success); }
+    .agent-indicator.warn .dot { background: var(--gold); }
+    .agent-indicator.error .dot { background: var(--danger); }
+    .agent-indicator.muted .dot { background: var(--muted); }
+    .scanner-test-actions { display: flex; justify-content: flex-end; margin-top: 6px; }
+    .serial-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+    .serial-field {
+      display: grid;
+      gap: 6px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .serial-field select {
+      width: 100%;
+      padding: 6px 8px;
+      border-radius: 8px;
+      border: 1px solid var(--stroke);
+      background: #fff;
+      font-size: 13px;
+      color: var(--text);
+    }
+    .serial-field input {
+      width: 100%;
+      padding: 6px 8px;
+      border-radius: 8px;
+      border: 1px solid var(--stroke);
+      background: #fff;
+      font-size: 13px;
+      color: var(--text);
+    }
     .box-modal {
       position: fixed;
       inset: 0;
@@ -313,6 +471,10 @@
       align-items: center;
     }
     .box-modal-title { font-weight: 700; }
+    .box-modal-meta {
+      font-size: 13px;
+      color: var(--muted);
+    }
     .box-modal-list { display: grid; gap: 8px; }
     .box-modal-row {
       display: flex;
@@ -351,6 +513,21 @@
       gap: 8px;
       margin-top: 12px;
     }
+    .warehouse-move-card { width: min(1040px, 94vw); }
+    .warehouse-move-table { width: 100%; border-collapse: collapse; }
+    .warehouse-move-table th,
+    .warehouse-move-table td { padding: 10px 8px; border-bottom: 1px solid var(--stroke); vertical-align: top; text-align: left; }
+    .warehouse-move-destination { display: grid; gap: 8px; }
+    .warehouse-move-controls { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; }
+    .warehouse-move-controls select,
+    .warehouse-move-controls input { width: 100%; min-width: 0; }
+    .warehouse-move-meta { display: flex; gap: 10px; flex-wrap: wrap; font-size: 12px; color: var(--muted); }
+    .warehouse-move-alert { margin-top: 12px; }
+    .warehouse-row-status.done { color: #1f9d55; font-weight: 600; }
+    .warehouse-row-status.in_progress { color: #a56600; font-weight: 600; }
+    .warehouse-row-status.created { color: #0b63c9; font-weight: 600; }
+    .warehouse-row-status.canceled { color: #b23b3b; font-weight: 600; }
+    .warehouse-row-status.pending { color: var(--muted); }
     @media (max-width: 1100px) {
       .detail-layout { grid-template-columns: 1fr; }
       .split-grid { grid-template-columns: 1fr; }
@@ -358,6 +535,7 @@
       .current-box-qr { justify-items: center; }
       .qr-preview { width: 140px; height: 140px; }
       .btn.box-close { min-height: 64px; }
+      .warehouse-move-controls { grid-template-columns: 1fr 1fr; }
     }
   </style>
 </head>
@@ -367,23 +545,107 @@
       <aside class="detail-side">
         <div class="side-card">
           <div class="muted">FULLBOX · {% include "partials/current_user.html" %}</div>
-          <h3>Приемка потоком · заявка № {{ order_id }}</h3>
+          <h3>Приемка потоком · заявка № {{ order_id|display_order_number:"receiving" }}</h3>
           <div class="muted">Статус: {{ status_label }}</div>
           <div class="muted">Тип поставки: {{ goods_type_label|default:"-" }}</div>
+          <div class="muted">Режим: {{ receiving_mode_label }}</div>
         </div>
 
         <div class="side-card">
           <h4 class="side-title">Действия</h4>
           <div class="side-actions">
             <a class="tab" href="/orders/receiving/{{ order_id }}/">К заявке</a>
+            <a class="tab" href="/labels/settings/?return={{ request.get_full_path|urlencode }}">Настройка оборудования</a>
             {% if act_print_url %}
               <a class="tab" href="{{ act_print_url }}">Акт приемки (печатная форма)</a>
+            {% endif %}
+            {% if flow_locked %}
+              <button
+                class="tab{% if can_send_to_warehouse_action %} primary{% endif %}"
+                type="button"
+                id="open-warehouse-move-btn"
+                {% if not can_send_to_warehouse_action %}disabled{% endif %}
+              >
+                Отвезти на склад
+              </button>
+              <div class="muted">Ричтракер: доставлено {{ warehouse_done_pallets }} из {{ warehouse_total_pallets }} палет.</div>
             {% endif %}
             <a class="tab" href="{{ cabinet_url }}">В кабинет</a>
             <a class="tab" href="/logout/">Выход</a>
           </div>
         </div>
 
+        <div class="side-card">
+          <h4 class="side-title">Сканер</h4>
+          <div class="scanner-block" aria-hidden="true">
+            <div class="section-title">Сканер</div>
+            <div class="box-card">
+              <div class="box-meta">
+                <div class="box-code">Сканирование</div>
+                <div class="box-status">Ожидание</div>
+              </div>
+              {% if receiving_mode == "cz" %}
+                <label class="location-field" style="margin-bottom:8px;">
+                  <span>Позиция с ЧЗ</span>
+                  <select id="cz-item-select">
+                    <option value="">Выберите SKU и размер</option>
+                    {% for item in marked_items %}
+                      <option value="{{ item.sku_code }}|{{ item.size }}">{{ item.sku_code }} · {{ item.name }}{% if item.size %} · {{ item.size }}{% endif %}</option>
+                    {% endfor %}
+                  </select>
+                </label>
+              {% endif %}
+              <input type="text" id="barcode-input" class="qty-input" placeholder="{% if receiving_mode == 'cz' %}Сканируйте код ЧЗ{% else %}Сканируйте ШК{% endif %}" inputmode="numeric" autocomplete="off">
+              <div class="muted" style="margin-top:6px;">{% if receiving_mode == "cz" %}Сначала выберите позицию, затем сканируйте каждый код ЧЗ поштучно.{% else %}Сканер вводит и отправляет Enter. Фокус держится в поле.{% endif %}</div>
+            </div>
+          </div>
+          <div class="box-card scanner-panel" style="margin-top: 10px;">
+            <div class="serial-grid">
+              <label class="serial-field">
+                <span>Подключение</span>
+                <select id="scanner-mode">
+                  <option value="agent">Агент</option>
+                </select>
+              </label>
+              <div class="serial-field">
+                <span>Сканирование</span>
+                <div class="scanner-test-value" id="scanner-status">Ожидаю штрихкод</div>
+              </div>
+            </div>
+            <div class="scanner-test">
+              <div class="scanner-test-line">
+                <span class="muted">Агент</span>
+                <select class="qty-input" id="agent-select" style="max-width: 220px;">
+                  <option value="">Выберите агент</option>
+                </select>
+              </div>
+              <div class="scanner-test-line">
+                <span class="muted">Статус агента</span>
+                <span class="scanner-test-value" id="agent-status">не выбран</span>
+              </div>
+              <div class="scanner-test-line">
+                <span class="muted">Контекст</span>
+                <span class="scanner-test-value" id="agent-context-status">-</span>
+              </div>
+              <div class="scanner-test-line">
+                <span class="muted">Индикатор</span>
+                <span class="scanner-test-value agent-indicator" id="agent-indicator">
+                  <span class="dot"></span>
+                  <span class="text">не выбран</span>
+                </span>
+              </div>
+              <div class="scanner-test-line">
+                <span class="muted">Последний скан</span>
+                <span class="scanner-test-value" id="agent-last">-</span>
+              </div>
+            </div>
+            <div class="scanner-test-actions" style="justify-content: flex-start; gap: 8px; flex-wrap: wrap;">
+              <button class="btn" type="button" id="agent-claim-force">Перехватить сканер</button>
+              <a class="btn" href="/labels/scanners/agent/download/" target="_blank" rel="noopener">Скачать агента</a>
+            </div>
+            <div class="muted" id="agent-hint">Слушаю события агента.</div>
+          </div>
+        </div>
         <div class="side-card">
           <h4 class="side-title">Информация</h4>
           <div class="info-list">
@@ -404,11 +666,44 @@
           {% if error %}
             <div class="error">Не удалось завершить приемку. Проверьте данные.</div>
           {% endif %}
+          {% if warehouse_move_status == "ok" %}
+            <div class="notice success">
+              Задание ричтракеру на склад отправлено.
+              {% if warehouse_move_created_count %}Создано: {{ warehouse_move_created_count }}.{% endif %}
+              {% if warehouse_move_skipped_count %} Уже существовало: {{ warehouse_move_skipped_count }}.{% endif %}
+              {% if warehouse_move_missing_count %} Без подтвержденного места хранения: {{ warehouse_move_missing_count }}.{% endif %}
+            </div>
+          {% elif warehouse_move_status == "exists" %}
+            <div class="notice warn">
+              Новые задания не созданы: по палетам уже есть активные или выполненные задания.
+              {% if warehouse_move_skipped_count %}Пропущено: {{ warehouse_move_skipped_count }}.{% endif %}
+            </div>
+          {% elif warehouse_move_status == "missing_destination" %}
+            <div class="notice warn">
+              Новые задания не созданы: для палет не выбрано место хранения.
+              {% if warehouse_move_missing_count %}Требуют подтверждения: {{ warehouse_move_missing_count }}.{% endif %}
+            </div>
+          {% elif warehouse_move_status == "blocked" %}
+            <div class="notice warn">
+              Новые задания не созданы: часть палет уже имеет задания, для остальных не подтверждено место хранения.
+              {% if warehouse_move_skipped_count %} Уже существовало: {{ warehouse_move_skipped_count }}.{% endif %}
+              {% if warehouse_move_missing_count %} Без места хранения: {{ warehouse_move_missing_count }}.{% endif %}
+            </div>
+          {% elif warehouse_move_status == "invalid_destination" %}
+            <div class="notice warn">
+              {{ warehouse_move_error|default:"Некорректно выбраны места хранения для палет." }}
+            </div>
+          {% elif warehouse_move_status == "not_ready" %}
+            <div class="notice warn">Сначала завершите приемку (закройте поток), затем отправляйте на склад.</div>
+          {% elif warehouse_move_status == "none" %}
+            <div class="notice warn">Нет палет для отправки на склад.</div>
+          {% endif %}
 
           <form method="post" id="flow-form">
             {% csrf_token %}
             <input type="hidden" name="boxes_json" id="boxes-json">
             <input type="hidden" name="pallets_json" id="pallets-json">
+            <input type="hidden" name="agent_id" id="agent-id-hidden">
           </form>
 
           <div class="split-grid">
@@ -458,18 +753,6 @@
             </div>
 
             <div class="split-col">
-              <div class="scanner-block" aria-hidden="true">
-                <div class="section-title">Сканер</div>
-                <div class="box-card">
-                  <div class="box-meta">
-                    <div class="box-code">Сканирование</div>
-                    <div class="box-status" id="scanner-status">Ожидаю штрихкод</div>
-                  </div>
-                  <input type="text" id="barcode-input" class="qty-input" placeholder="Сканируйте ШК" inputmode="numeric" autocomplete="off">
-                  <div class="muted" style="margin-top:6px;">Сканер вводит и отправляет Enter. Фокус держится в поле.</div>
-                </div>
-              </div>
-
               <div class="section-title">Палеты</div>
               {% if flow_locked %}
                 <form method="post" id="flow-reopen-form">
@@ -484,6 +767,10 @@
                 {% else %}
                   <button class="btn primary" type="submit" id="finish-btn" form="flow-form">Завершить приемку</button>
                 {% endif %}
+              </div>
+              <div class="selection-strip is-hidden" id="box-selection-strip">
+                <div class="selection-summary" id="box-selection-summary">-</div>
+                <button class="btn" type="button" id="box-selection-clear">Снять выделение</button>
               </div>
               <div class="pallet-board" id="pallet-board"></div>
 
@@ -506,9 +793,52 @@
   </div>
   <div class="context-menu" id="pallet-context-menu" aria-hidden="true">
     <button type="button" data-action="open">Открыть палету</button>
-    <button type="button" data-action="print">Печать QR (75*120)</button>
+    <button type="button" data-action="print">Печать QR (58x60)</button>
     <button type="button" data-action="location">Указать место хранения</button>
   </div>
+  <div class="context-menu" id="group-box-context-menu" aria-hidden="true">
+    <button type="button" data-action="print-selected">Печать QR выделенных коробов</button>
+    <button type="button" data-action="move-new">Разместить на новой палете</button>
+    <button type="button" data-action="move-other">Переместить на другую палету</button>
+    <button type="button" data-action="clear-selection">Снять выделение</button>
+    <button type="button" data-action="delete-selected" class="danger">Удалить выделенные короба</button>
+  </div>
+  <div class="context-menu" id="item-context-menu" aria-hidden="true">
+    <button type="button" data-action="set-weight">Установить вес за единицу товара</button>
+  </div>
+
+    <div class="box-modal" id="item-weight-modal" aria-hidden="true">
+      <div class="box-modal-card">
+        <div class="box-modal-header">
+          <div class="box-modal-title">Вес за единицу товара</div>
+          <button type="button" class="btn" id="item-weight-close">Закрыть</button>
+        </div>
+        <div class="box-modal-meta" id="item-weight-item-label">-</div>
+        <form id="item-weight-form">
+          <div class="location-grid">
+            <label class="location-field">
+              Вес, кг
+              <input
+                type="number"
+                id="item-weight-value"
+                name="weight_kg"
+                min="0.001"
+                step="0.001"
+                inputmode="decimal"
+                placeholder="Например, 0.250"
+                required
+              >
+            </label>
+          </div>
+          <div class="box-modal-meta">Вес сохраняется в номенклатуру клиента и сразу участвует в расчёте веса палет.</div>
+          <div class="notice warn is-hidden" id="item-weight-error"></div>
+          <div class="location-actions">
+            <button type="button" class="btn" id="item-weight-cancel">Отмена</button>
+            <button type="submit" class="btn primary" id="item-weight-submit">Сохранить</button>
+          </div>
+        </form>
+      </div>
+    </div>
 
     <div class="box-modal" id="box-view-modal" aria-hidden="true">
       <div class="box-modal-card">
@@ -516,6 +846,7 @@
         <div class="box-modal-title">Короб <span id="box-view-code">-</span></div>
         <button type="button" class="btn" id="box-view-close">Закрыть</button>
       </div>
+      <div class="box-modal-meta" id="box-view-meta">-</div>
       <div class="box-modal-list" id="box-view-body"></div>
       </div>
     </div>
@@ -583,10 +914,99 @@
       </div>
     </div>
 
+    <div class="box-modal" id="group-move-modal" aria-hidden="true">
+      <div class="box-modal-card">
+        <div class="box-modal-header">
+          <div class="box-modal-title">Переместить <span id="group-move-count">-</span> коробов</div>
+          <button type="button" class="btn" id="group-move-close">Закрыть</button>
+        </div>
+        <form id="group-move-form">
+          <label class="location-field">
+            Палета назначения
+            <select id="group-move-target" name="group_move_target"></select>
+          </label>
+          <div class="location-actions">
+            <button type="button" class="btn" id="group-move-cancel">Отмена</button>
+            <button type="submit" class="btn primary">Переместить</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <div class="box-modal" id="warehouse-move-modal" aria-hidden="true">
+      <div class="box-modal-card warehouse-move-card">
+        <div class="box-modal-header">
+          <div class="box-modal-title">Отвезти на склад</div>
+          <button type="button" class="btn" id="warehouse-move-close">Закрыть</button>
+        </div>
+        <form id="warehouse-move-form" method="post">
+          {% csrf_token %}
+          <input type="hidden" name="flow_action" value="send_to_warehouse">
+          <input type="hidden" name="warehouse_destinations_json" id="warehouse-destinations-json">
+          <div class="table-wrap">
+            <table class="warehouse-move-table">
+              <thead>
+                <tr>
+                  <th style="width: 90px;">В задание</th>
+                  <th style="width: 220px;">Паллета</th>
+                  <th style="width: 180px;">Откуда</th>
+                  <th>Место назначения</th>
+                  <th style="width: 240px;">Статус</th>
+                </tr>
+              </thead>
+              <tbody id="warehouse-move-rows"></tbody>
+            </table>
+          </div>
+          <div class="muted" style="margin-top: 10px;">
+            Сервис предлагает место хранения по свободным ячейкам. Перед отправкой можно вручную изменить место для каждой палеты.
+          </div>
+          <div class="notice warn warehouse-move-alert" id="warehouse-move-alert" style="display:none;"></div>
+          <div class="location-actions">
+            <button type="button" class="btn" id="warehouse-move-open-map">Карта склада</button>
+            <button type="button" class="btn" id="warehouse-move-cancel">Отмена</button>
+            <button type="submit" class="btn primary">Отправить задания</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+  <div id="receiving-box-label-template" hidden aria-hidden="true">
+    <div
+      class="label-preview"
+      data-label-root
+      data-label-type="box"
+      data-label-width="58"
+      data-label-height="60"
+    >
+      {% include "labels/_label_box.html" %}
+    </div>
+  </div>
+  <div id="receiving-pallet-label-template" hidden aria-hidden="true">
+    <div
+      class="label-preview"
+      data-label-root
+      data-label-type="pallet"
+      data-label-width="58"
+      data-label-height="60"
+    >
+      {% include "labels/_label_pallet.html" %}
+    </div>
+  </div>
+  <style>
+{% include "labels/_label_styles.css" %}
+  </style>
+
   {{ items|json_script:"items-data" }}
   {{ barcode_map|json_script:"barcode-map" }}
   {{ catalog_items|json_script:"catalog-items" }}
+  {{ marked_items|json_script:"marked-items-data" }}
   {{ flow_state|json_script:"flow-state" }}
+  {{ scanner_agents|json_script:"scanner-agents-data" }}
+  {{ preferred_agent_id|json_script:"preferred-agent-id-data" }}
+  {{ preferred_agent_locked|json_script:"preferred-agent-locked-data" }}
+  {{ label_settings|json_script:"label-settings-data" }}
+  {{ warehouse_move_rows|json_script:"warehouse-move-rows-data" }}
+  <script src="/static/vendor/html2canvas.min.js"></script>
   <script src="/static/vendor/qrcode.min.js"></script>
   <script>window.__flowLocked = {{ flow_locked|yesno:"true,false" }};</script>
 
@@ -595,10 +1015,23 @@
       const itemsData = JSON.parse(document.getElementById('items-data').textContent || '[]');
       const barcodeMap = JSON.parse(document.getElementById('barcode-map').textContent || '{}');
       const catalogItems = JSON.parse(document.getElementById('catalog-items')?.textContent || '[]');
+      const markedItemsData = JSON.parse(document.getElementById('marked-items-data')?.textContent || '[]');
       const flowStateEl = document.getElementById('flow-state');
       const flowState = flowStateEl ? JSON.parse(flowStateEl.textContent || '{}') : {};
+      const scannerAgentsDataEl = document.getElementById('scanner-agents-data');
+      const scannerAgentsData = scannerAgentsDataEl ? JSON.parse(scannerAgentsDataEl.textContent || '[]') : [];
+      const preferredAgentIdEl = document.getElementById('preferred-agent-id-data');
+      const preferredAgentId = preferredAgentIdEl ? String(JSON.parse(preferredAgentIdEl.textContent || '""') || '').trim() : '';
+      const preferredAgentLockedEl = document.getElementById('preferred-agent-locked-data');
+      const preferredAgentLocked = preferredAgentLockedEl ? Boolean(JSON.parse(preferredAgentLockedEl.textContent || 'false')) : false;
+      const localAgentBridgeState = { detected: null };
+      const labelSettingsDataEl = document.getElementById('label-settings-data');
+      const labelSettingsData = labelSettingsDataEl ? JSON.parse(labelSettingsDataEl.textContent || '{}') : {};
       const flowLocked = Boolean(window.__flowLocked);
       const goodsType = String("{{ goods_type|escapejs }}").trim().toLowerCase();
+      const receivingMode = String("{{ receiving_mode|escapejs }}").trim().toLowerCase() || 'standard';
+      const isCzMode = receivingMode === 'cz';
+      const markingScanUrl = String("{{ marking_scan_url|escapejs }}").trim();
       const goodsTypeSuffix = goodsType ? `-${goodsType}` : '';
       const clientPrefixRaw = String("{{ client_prefix|escapejs }}").trim();
 
@@ -620,17 +1053,47 @@
       const closePalletBtn = document.getElementById('close-pallet-btn');
       const finishBtn = document.getElementById('finish-btn');
       const barcodeInput = document.getElementById('barcode-input');
+      const czItemSelect = document.getElementById('cz-item-select');
       const scannerStatus = document.getElementById('scanner-status');
+      const scannerHint = document.getElementById('agent-hint');
+      const scannerMode = document.getElementById('scanner-mode');
+      const agentPanel = document.getElementById('agent-panel');
+      const agentSelect = document.getElementById('agent-select');
+      const scannerModeOptions = scannerMode
+        ? Array.from(scannerMode.options || []).map((opt) => String(opt.value || '').toLowerCase())
+        : [];
+      const supportsKeyboardMode = scannerModeOptions.includes('keyboard');
+      const agentStatus = document.getElementById('agent-status');
+      const agentContextStatus = document.getElementById('agent-context-status');
+      const agentIndicator = document.getElementById('agent-indicator');
+      const agentLast = document.getElementById('agent-last');
+      const agentClaimForce = document.getElementById('agent-claim-force');
+      const agentIdHidden = document.getElementById('agent-id-hidden');
       const boxesInput = document.getElementById('boxes-json');
       const palletsInput = document.getElementById('pallets-json');
       const formEl = document.getElementById('flow-form');
       const orderId = String("{{ order_id|escapejs }}").trim();
+      const itemWeightUrl = orderId ? `/orders/receiving/${orderId}/flow/item-weight/` : '';
       const csrfToken =
         document.querySelector('input[name="csrfmiddlewaretoken"]')?.value || '';
       const contextMenu = document.getElementById('box-context-menu');
       const palletContextMenu = document.getElementById('pallet-context-menu');
+      const groupContextMenu = document.getElementById('group-box-context-menu');
+      const itemContextMenu = document.getElementById('item-context-menu');
+      const boxSelectionStrip = document.getElementById('box-selection-strip');
+      const boxSelectionSummary = document.getElementById('box-selection-summary');
+      const boxSelectionClear = document.getElementById('box-selection-clear');
+        const itemWeightModal = document.getElementById('item-weight-modal');
+        const itemWeightForm = document.getElementById('item-weight-form');
+        const itemWeightClose = document.getElementById('item-weight-close');
+        const itemWeightCancel = document.getElementById('item-weight-cancel');
+        const itemWeightSubmit = document.getElementById('item-weight-submit');
+        const itemWeightValue = document.getElementById('item-weight-value');
+        const itemWeightItemLabel = document.getElementById('item-weight-item-label');
+        const itemWeightError = document.getElementById('item-weight-error');
         const boxViewModal = document.getElementById('box-view-modal');
         const boxViewCode = document.getElementById('box-view-code');
+        const boxViewMeta = document.getElementById('box-view-meta');
         const boxViewBody = document.getElementById('box-view-body');
         const boxViewClose = document.getElementById('box-view-close');
         const boxCopyModal = document.getElementById('box-copy-modal');
@@ -649,6 +1112,23 @@
         const palletLocationSection = document.getElementById('pallet-location-section');
         const palletLocationTier = document.getElementById('pallet-location-tier');
         const palletLocationCell = document.getElementById('pallet-location-cell');
+        const groupMoveModal = document.getElementById('group-move-modal');
+        const groupMoveForm = document.getElementById('group-move-form');
+        const groupMoveTarget = document.getElementById('group-move-target');
+        const groupMoveCount = document.getElementById('group-move-count');
+        const groupMoveClose = document.getElementById('group-move-close');
+        const groupMoveCancel = document.getElementById('group-move-cancel');
+        const openWarehouseMoveBtn = document.getElementById('open-warehouse-move-btn');
+        const warehouseMoveModal = document.getElementById('warehouse-move-modal');
+        const warehouseMoveRows = document.getElementById('warehouse-move-rows');
+        const warehouseMoveForm = document.getElementById('warehouse-move-form');
+        const warehouseMoveClose = document.getElementById('warehouse-move-close');
+        const warehouseMoveCancel = document.getElementById('warehouse-move-cancel');
+        const warehouseMoveOpenMap = document.getElementById('warehouse-move-open-map');
+        const warehouseMoveAlert = document.getElementById('warehouse-move-alert');
+        const warehouseDestinationsJson = document.getElementById('warehouse-destinations-json');
+        const warehouseMoveRowsDataEl = document.getElementById('warehouse-move-rows-data');
+        const warehouseMoveRowsData = warehouseMoveRowsDataEl ? JSON.parse(warehouseMoveRowsDataEl.textContent || '[]') : [];
 
       const state = {
         pallets: [],
@@ -656,6 +1136,18 @@
         activePallet: '',
         activeBox: '',
       };
+      let selectedBoxCodes = [];
+      let groupContextBoxCodes = [];
+      let groupMoveBoxCodes = [];
+      let warehouseMoveStateRows = Array.isArray(warehouseMoveRowsData)
+        ? warehouseMoveRowsData.map((row) => ({
+            ...row,
+            destination: row && typeof row.destination === 'object'
+              ? { ...row.destination }
+              : { zone: 'PR', row: '', section: '', tier: '', cell: '' },
+          }))
+        : [];
+      let warehouseMovePickerTargetRow = null;
 
       const applyFlowState = (rawState) => {
         if (!rawState || typeof rawState !== 'object') {
@@ -678,6 +1170,466 @@
       applyFlowState(flowState);
 
       const normalizeText = (value) => String(value || '').trim();
+      const PALLET_WARNING_WEIGHT_KG = 400;
+      const PALLET_WEIGHT_EPSILON = 0.001;
+      const parseWeightKg = (value) => {
+        if (value == null) {
+          return 0;
+        }
+        if (typeof value === 'number') {
+          return Number.isFinite(value) && value > 0 ? value : 0;
+        }
+        const text = String(value || '').trim().replace(',', '.');
+        if (!text) {
+          return 0;
+        }
+        const match = text.match(/-?\d+(?:\.\d+)?/);
+        if (!match) {
+          return 0;
+        }
+        const parsed = Number.parseFloat(match[0]);
+        return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+      };
+      const formatWeightNumber = (value) => {
+        const normalized = Number.isFinite(value) ? Math.round(value * 100) / 100 : 0;
+        const fraction = Math.abs(normalized - Math.round(normalized));
+        const oneDecimal = Math.abs(normalized * 10 - Math.round(normalized * 10));
+        return normalized.toLocaleString('ru-RU', {
+          minimumFractionDigits: fraction < PALLET_WEIGHT_EPSILON ? 0 : (oneDecimal < PALLET_WEIGHT_EPSILON ? 1 : 2),
+          maximumFractionDigits: 2,
+        });
+      };
+      const formatWeightText = (totalKg, hasMissingWeight = false) => {
+        if (totalKg > 0) {
+          return `${formatWeightNumber(totalKg)}${hasMissingWeight ? '+' : ''} кг`;
+        }
+        return hasMissingWeight ? 'н/д' : '0 кг';
+      };
+      const localAgentBridgeUrls = [
+        'http://127.0.0.1:17841/whoami',
+        'http://localhost:17841/whoami',
+      ];
+      const fetchLocalAgentBridgePayload = async (url) => {
+        const controller = new AbortController();
+        const timer = window.setTimeout(() => controller.abort(), 1200);
+        try {
+          const resp = await fetch(url, {
+            method: 'GET',
+            mode: 'cors',
+            cache: 'no-store',
+            signal: controller.signal,
+          });
+          if (!resp.ok) {
+            return null;
+          }
+          const data = await resp.json().catch(() => null);
+          if (!data || data.ok === false || !data.agentId) {
+            return null;
+          }
+          return {
+            agentId: String(data.agentId || '').trim(),
+            name: String(data.name || '').trim(),
+            host: String(data.host || '').trim(),
+            defaultPrinter: String(data.defaultPrinter || '').trim(),
+            printers: Array.isArray(data.printers)
+              ? data.printers.map((value) => String(value || '').trim()).filter(Boolean)
+              : [],
+          };
+        } catch (err) {
+          return null;
+        } finally {
+          window.clearTimeout(timer);
+        }
+      };
+      const detectLocalAgentBridge = async () => {
+        for (const url of localAgentBridgeUrls) {
+          const payload = await fetchLocalAgentBridgePayload(url);
+          if (payload && payload.agentId) {
+            localAgentBridgeState.detected = payload;
+            return payload;
+          }
+        }
+        return null;
+      };
+      const toPositiveInt = (value) => {
+        const parsed = Number.parseInt(String(value ?? '').trim(), 10);
+        if (!Number.isFinite(parsed) || parsed <= 0) {
+          return 0;
+        }
+        return parsed;
+      };
+      const normalizeWarehouseZone = (value) => {
+        const zone = String(value || '').trim().toUpperCase();
+        if (zone === 'MR' || zone === 'OS') {
+          return zone;
+        }
+        return 'PR';
+      };
+      const warehouseLocationLabel = (destination) => {
+        const zone = normalizeWarehouseZone(destination?.zone);
+        const row = toPositiveInt(destination?.row);
+        const section = toPositiveInt(destination?.section);
+        const tier = toPositiveInt(destination?.tier);
+        const cell = toPositiveInt(destination?.cell);
+        if (zone === 'MR') {
+          return row > 0 ? `MR · Между рядами · Ряд ${row}` : 'MR · Между рядами';
+        }
+        if (zone === 'OS') {
+          if (row > 0 && section > 0 && tier > 0 && cell > 0) {
+            return `OS · Ряд ${row} · Секция ${section} · Ярус ${tier} · Ячейка ${cell}`;
+          }
+          if (row > 0) {
+            return `OS · Ряд ${row}`;
+          }
+          return 'OS · Основной склад';
+        }
+        return 'PR · Зона приемки';
+      };
+      const warehouseDestinationKey = (destination) => {
+        const zone = normalizeWarehouseZone(destination?.zone);
+        const row = toPositiveInt(destination?.row);
+        const section = toPositiveInt(destination?.section);
+        const tier = toPositiveInt(destination?.tier);
+        const cell = toPositiveInt(destination?.cell);
+        if (zone === 'MR') {
+          return row > 0 ? `MR:${row}` : '';
+        }
+        if (zone === 'OS') {
+          return row > 0 && section > 0 && tier > 0 && cell > 0
+            ? `OS:${row}:${section}:${tier}:${cell}`
+            : '';
+        }
+        return '';
+      };
+      const getWarehouseSelectedRowsPlan = (targetRow = null) => {
+        if (!warehouseMoveRows) {
+          return [];
+        }
+        return warehouseMoveStateRows.map((row, index) => {
+          const tr = warehouseMoveRows.children[index];
+          const check = tr ? tr.querySelector('.warehouse-row-check') : null;
+          if (!tr || !check || check.disabled || !check.checked) {
+            return null;
+          }
+          if (targetRow && tr === targetRow) {
+            return null;
+          }
+          const destination = {
+            zone: normalizeWarehouseZone(tr.querySelector('.warehouse-zone')?.value || row.destination?.zone || 'PR'),
+            row: tr.querySelector('.warehouse-row')?.value || '',
+            section: tr.querySelector('.warehouse-section')?.value || '',
+            tier: tr.querySelector('.warehouse-tier')?.value || '',
+            cell: tr.querySelector('.warehouse-cell')?.value || '',
+          };
+          const key = warehouseDestinationKey(destination);
+          return {
+            tr,
+            palletCode: String(check.dataset.code || '').trim(),
+            destination,
+            key,
+          };
+        }).filter(Boolean);
+      };
+      const getWarehouseDefaultTargetRow = () => {
+        if (!warehouseMoveRows) {
+          return null;
+        }
+        const rows = Array.from(warehouseMoveRows.children || []);
+        const selected = rows.find((tr) => {
+          const check = tr.querySelector('.warehouse-row-check');
+          return check && !check.disabled && check.checked;
+        });
+        if (selected) {
+          return selected;
+        }
+        return rows.find((tr) => {
+          const check = tr.querySelector('.warehouse-row-check');
+          return check && !check.disabled;
+        }) || rows[0] || null;
+      };
+      const openWarehouseStockMapPicker = (targetRow = null) => {
+        renderWarehouseMoveModal();
+        setWarehouseMoveAlert('');
+        warehouseMovePickerTargetRow = targetRow || getWarehouseDefaultTargetRow();
+        if (!warehouseMovePickerTargetRow) {
+          return;
+        }
+        const activePalletCode = String(
+          warehouseMovePickerTargetRow.querySelector('.warehouse-row-check')?.dataset.code || ''
+        ).trim();
+        const draftRows = warehouseMoveStateRows.map((row, index) => {
+          const tr = warehouseMoveRows ? warehouseMoveRows.children[index] : null;
+          const check = tr ? tr.querySelector('.warehouse-row-check') : null;
+          const zone = normalizeWarehouseZone(tr?.querySelector('.warehouse-zone')?.value || row.destination?.zone || 'PR');
+          return {
+            pallet_code: String(row?.pallet_code || '').trim(),
+            selected: Boolean(check && !check.disabled && check.checked),
+            selectable: Boolean(check && !check.disabled),
+            status_label: String(row?.status_label || '').trim(),
+            status_class: String(row?.status_class || '').trim(),
+            destination: {
+              zone,
+              row: tr?.querySelector('.warehouse-row')?.value || '',
+              section: tr?.querySelector('.warehouse-section')?.value || '',
+              tier: tr?.querySelector('.warehouse-tier')?.value || '',
+              cell: tr?.querySelector('.warehouse-cell')?.value || '',
+            },
+          };
+        }).filter((row) => row.pallet_code);
+        const draftToken = `receiving-putaway:${orderId || 'order'}:${Date.now()}`;
+        try {
+          localStorage.setItem(
+            `stockmap_picker_draft:${draftToken}`,
+            JSON.stringify({
+              source: 'receiving_putaway',
+              order_id: orderId || '',
+              active_pallet_code: activePalletCode,
+              rows: draftRows,
+              ts: Date.now(),
+            }),
+          );
+        } catch (err) {}
+        const draftPayload = {
+          source: 'receiving_putaway',
+          order_id: orderId || '',
+          active_pallet_code: activePalletCode,
+          rows: draftRows,
+        };
+        try {
+          localStorage.setItem('stockmap_picker_current_draft', JSON.stringify(draftPayload));
+        } catch (err) {}
+        try {
+          window.__stockmapPickerDraft = draftPayload;
+        } catch (err) {}
+        const reservedKeys = getWarehouseSelectedRowsPlan(warehouseMovePickerTargetRow)
+          .map((entry) => entry.key)
+          .filter(Boolean);
+        const currentRowValue = toPositiveInt(
+          warehouseMovePickerTargetRow.querySelector('.warehouse-row')?.value || ''
+        );
+        const nearRow = currentRowValue > 0 ? currentRowValue : 0;
+        const baseUrl = '/stockmap/visual/?picker=1';
+        const url = new URL(baseUrl, window.location.origin);
+        reservedKeys.forEach((value) => {
+          url.searchParams.append('reserved', value);
+        });
+        const zoneValue = normalizeWarehouseZone(
+          warehouseMovePickerTargetRow.querySelector('.warehouse-zone')?.value || 'OS'
+        );
+        const rowValue = toPositiveInt(warehouseMovePickerTargetRow.querySelector('.warehouse-row')?.value || '');
+        const sectionValue = toPositiveInt(warehouseMovePickerTargetRow.querySelector('.warehouse-section')?.value || '');
+        const tierValue = toPositiveInt(warehouseMovePickerTargetRow.querySelector('.warehouse-tier')?.value || '');
+        const cellValue = toPositiveInt(warehouseMovePickerTargetRow.querySelector('.warehouse-cell')?.value || '');
+        if (zoneValue) {
+          url.searchParams.set('near_zone', zoneValue);
+        }
+        if (rowValue > 0) {
+          url.searchParams.set('near_row', String(rowValue));
+        }
+        if (sectionValue > 0) {
+          url.searchParams.set('near_section', String(sectionValue));
+        }
+        if (tierValue > 0) {
+          url.searchParams.set('near_tier', String(tierValue));
+        }
+        if (cellValue > 0) {
+          url.searchParams.set('near_cell', String(cellValue));
+        }
+        url.searchParams.set('draft_token', draftToken);
+        if (activePalletCode) {
+          url.searchParams.set('active_pallet', activePalletCode);
+        }
+        url.searchParams.set('draft_rows', encodeURIComponent(JSON.stringify(draftPayload)));
+        const popupWidth = Math.max(window.screen?.availWidth || 1680, 1680);
+        const popupHeight = Math.max(window.screen?.availHeight || 980, 980);
+        const pickerWindow = window.open(
+          url.toString(),
+          'stockmap_picker',
+          `width=${popupWidth},height=${popupHeight},left=0,top=0,resizable=yes,scrollbars=yes`,
+        );
+        if (pickerWindow) {
+          try {
+            pickerWindow.moveTo(0, 0);
+            pickerWindow.resizeTo(popupWidth, popupHeight);
+            pickerWindow.focus();
+          } catch (err) {}
+        }
+      };
+      const handleWarehousePickedLocation = (payload) => {
+        const targetCode = String(payload?.pallet_code || '').trim();
+        let targetRow = null;
+        if (targetCode && warehouseMoveRows) {
+          targetRow = Array.from(warehouseMoveRows.children || []).find((tr) => {
+            const check = tr.querySelector('.warehouse-row-check');
+            return String(check?.dataset.code || '').trim() === targetCode;
+          }) || null;
+        }
+        if (!targetRow) {
+          targetRow = warehouseMovePickerTargetRow;
+        }
+        if (!targetRow) {
+          return;
+        }
+        warehouseMovePickerTargetRow = targetRow;
+        const location = payload?.location && typeof payload.location === 'object' ? payload.location : {};
+        const pickedDestination = {
+          zone: location.zone || 'PR',
+          row: location.row || 0,
+          section: location.section || 0,
+          tier: location.tier || 0,
+          cell: location.cell || 0,
+        };
+        const pickedKey = warehouseDestinationKey(pickedDestination);
+        if (pickedKey) {
+          const conflict = getWarehouseSelectedRowsPlan(targetRow).find((entry) => entry.key === pickedKey);
+          if (conflict) {
+            setWarehouseMoveAlert(`Место уже выбрано для палеты ${conflict.palletCode}. Выберите другое.`);
+            return;
+          }
+        }
+        const zoneInput = targetRow.querySelector('.warehouse-zone');
+        const rowInput = targetRow.querySelector('.warehouse-row');
+        const sectionInput = targetRow.querySelector('.warehouse-section');
+        const tierInput = targetRow.querySelector('.warehouse-tier');
+        const cellInput = targetRow.querySelector('.warehouse-cell');
+        if (zoneInput) {
+          zoneInput.value = normalizeWarehouseZone(pickedDestination.zone);
+        }
+        if (rowInput) {
+          rowInput.value = toPositiveInt(pickedDestination.row) > 0 ? String(toPositiveInt(pickedDestination.row)) : '';
+        }
+        if (sectionInput) {
+          sectionInput.value = toPositiveInt(pickedDestination.section) > 0 ? String(toPositiveInt(pickedDestination.section)) : '';
+        }
+        if (tierInput) {
+          tierInput.value = toPositiveInt(pickedDestination.tier) > 0 ? String(toPositiveInt(pickedDestination.tier)) : '';
+        }
+        if (cellInput) {
+          cellInput.value = toPositiveInt(pickedDestination.cell) > 0 ? String(toPositiveInt(pickedDestination.cell)) : '';
+        }
+        [zoneInput, rowInput, sectionInput, tierInput, cellInput]
+          .filter(Boolean)
+          .forEach((field) => field.dispatchEvent(new Event('change', { bubbles: true })));
+        setWarehouseMoveAlert('');
+      };
+      const applyWarehouseDestinationToRow = (targetRow, destination) => {
+        if (!targetRow) {
+          return;
+        }
+        const nextDestination = destination && typeof destination === 'object' ? destination : {};
+        const zoneInput = targetRow.querySelector('.warehouse-zone');
+        const rowInput = targetRow.querySelector('.warehouse-row');
+        const sectionInput = targetRow.querySelector('.warehouse-section');
+        const tierInput = targetRow.querySelector('.warehouse-tier');
+        const cellInput = targetRow.querySelector('.warehouse-cell');
+        if (zoneInput) {
+          zoneInput.value = normalizeWarehouseZone(nextDestination.zone);
+        }
+        if (rowInput) {
+          rowInput.value = toPositiveInt(nextDestination.row) > 0 ? String(toPositiveInt(nextDestination.row)) : '';
+        }
+        if (sectionInput) {
+          sectionInput.value = toPositiveInt(nextDestination.section) > 0 ? String(toPositiveInt(nextDestination.section)) : '';
+        }
+        if (tierInput) {
+          tierInput.value = toPositiveInt(nextDestination.tier) > 0 ? String(toPositiveInt(nextDestination.tier)) : '';
+        }
+        if (cellInput) {
+          cellInput.value = toPositiveInt(nextDestination.cell) > 0 ? String(toPositiveInt(nextDestination.cell)) : '';
+        }
+        [zoneInput, rowInput, sectionInput, tierInput, cellInput]
+          .filter(Boolean)
+          .forEach((field) => field.dispatchEvent(new Event('change', { bubbles: true })));
+      };
+      const applyWarehousePickerRows = (rowsPayload) => {
+        if (!warehouseMoveRows || !Array.isArray(rowsPayload) || !rowsPayload.length) {
+          return;
+        }
+        const rowByCode = new Map(
+          Array.from(warehouseMoveRows.children || []).map((tr) => {
+            const check = tr.querySelector('.warehouse-row-check');
+            return [String(check?.dataset.code || '').trim(), tr];
+          }).filter(([code]) => code)
+        );
+        rowsPayload.forEach((row) => {
+          const code = String(row?.pallet_code || '').trim();
+          const targetRow = rowByCode.get(code);
+          if (!targetRow) {
+            return;
+          }
+          applyWarehouseDestinationToRow(targetRow, row.destination || {});
+        });
+        setWarehouseMoveAlert('');
+      };
+      const buildWarehouseMoveSelectedRows = () => warehouseMoveStateRows
+        .map((row, index) => {
+          const tr = warehouseMoveRows ? warehouseMoveRows.children[index] : null;
+          const check = tr ? tr.querySelector('.warehouse-row-check') : null;
+          if (!tr || !check || check.disabled || !check.checked) {
+            return null;
+          }
+          const zone = normalizeWarehouseZone(tr.querySelector('.warehouse-zone')?.value || row.destination?.zone || 'PR');
+          const destination = {
+            zone,
+            row: tr.querySelector('.warehouse-row')?.value || '',
+            section: tr.querySelector('.warehouse-section')?.value || '',
+            tier: tr.querySelector('.warehouse-tier')?.value || '',
+            cell: tr.querySelector('.warehouse-cell')?.value || '',
+          };
+          return {
+            pallet_code: row.pallet_code,
+            destination,
+          };
+        })
+        .filter(Boolean);
+      const prepareWarehouseMoveSubmission = () => {
+        const selectedRows = buildWarehouseMoveSelectedRows();
+        if (!selectedRows.length) {
+          setWarehouseMoveAlert('Выберите хотя бы одну палету для задания.');
+          return null;
+        }
+        const seenOs = new Set();
+        for (const row of selectedRows) {
+          const zone = normalizeWarehouseZone(row.destination.zone);
+          if (zone === 'MR' && !toPositiveInt(row.destination.row)) {
+            setWarehouseMoveAlert(`Паллета ${row.pallet_code}: для зоны MR укажите ряд.`);
+            return null;
+          }
+          if (zone === 'OS') {
+            const rowNo = toPositiveInt(row.destination.row);
+            const sectionNo = toPositiveInt(row.destination.section);
+            const tierNo = toPositiveInt(row.destination.tier);
+            const cellNo = toPositiveInt(row.destination.cell);
+            if (!(rowNo && sectionNo && tierNo && cellNo)) {
+              setWarehouseMoveAlert(`Паллета ${row.pallet_code}: для зоны OS укажите ряд, секцию, ярус и ячейку.`);
+              return null;
+            }
+            const key = `${rowNo}|${sectionNo}|${tierNo}|${cellNo}`;
+            if (seenOs.has(key)) {
+              setWarehouseMoveAlert(`Паллета ${row.pallet_code}: место OS уже выбрано для другой палеты.`);
+              return null;
+            }
+            seenOs.add(key);
+          }
+        }
+        if (warehouseDestinationsJson) {
+          warehouseDestinationsJson.value = JSON.stringify(selectedRows);
+        }
+        setWarehouseMoveAlert('');
+        return selectedRows;
+      };
+      const submitWarehouseMoveFromPicker = (rowsPayload = []) => {
+        applyWarehousePickerRows(rowsPayload);
+        if (!warehouseMoveForm) {
+          return false;
+        }
+        const selectedRows = prepareWarehouseMoveSubmission();
+        if (!selectedRows) {
+          return false;
+        }
+        warehouseMoveForm.requestSubmit();
+        return true;
+      };
       const makeKey = (item) => {
         const sku = normalizeText(item.sku_code || item.sku || '');
         const name = normalizeText(item.name || '');
@@ -690,23 +1642,173 @@
         name: normalizeText(item.name),
         size: normalizeText(item.size),
         qty: Number(item.qty || 0),
+        weight_kg: parseWeightKg(item.weight_kg),
       }));
+      const markedItemBySelectValue = new Map(
+        (markedItemsData || []).map((item) => [
+          `${normalizeText(item.sku_code)}|${normalizeText(item.size)}`,
+          {
+            sku_code: normalizeText(item.sku_code),
+            name: normalizeText(item.name),
+            size: normalizeText(item.size),
+            barcode: normalizeText(item.barcode),
+          },
+        ])
+      );
+      const markedKeys = new Set((markedItemsData || []).map((item) => makeKey(item)));
       const plannedKeys = new Set(plannedItems.map((item) => makeKey(item)));
       const extraItems = [];
       const extraKeys = new Set();
       const plannedByKey = new Map(plannedItems.map((item) => [makeKey(item), item]));
       const plannedBySku = new Map();
+      const itemWeightByKey = new Map();
+      const itemWeightBySku = new Map();
+      const registerItemWeight = (item) => {
+        const weightKg = parseWeightKg(item?.weight_kg);
+        if (!(weightKg > 0)) {
+          return;
+        }
+        const itemKey = makeKey(item || {});
+        if (itemKey && !itemWeightByKey.has(itemKey)) {
+          itemWeightByKey.set(itemKey, weightKg);
+        }
+        const skuKey = normalizeText(item?.sku_code || item?.sku || '').toLowerCase();
+        if (skuKey && !itemWeightBySku.has(skuKey)) {
+          itemWeightBySku.set(skuKey, weightKg);
+        }
+      };
+      const getItemWeightKg = (item) => {
+        const direct = parseWeightKg(item?.weight_kg);
+        if (direct > 0) {
+          return direct;
+        }
+        const itemKey = makeKey(item || {});
+        if (itemKey && itemWeightByKey.has(itemKey)) {
+          return itemWeightByKey.get(itemKey) || 0;
+        }
+        const skuKey = normalizeText(item?.sku_code || item?.sku || '').toLowerCase();
+        if (skuKey && itemWeightBySku.has(skuKey)) {
+          return itemWeightBySku.get(skuKey) || 0;
+        }
+        return 0;
+      };
+      const summarizeItemsWeight = (items) => {
+        let totalKg = 0;
+        let hasMissingWeight = false;
+        (items || []).forEach((item) => {
+          const qty = Number(item?.qty || 0);
+          if (!(qty > 0)) {
+            return;
+          }
+          const itemWeightKg = getItemWeightKg(item);
+          if (itemWeightKg > 0) {
+            totalKg += itemWeightKg * qty;
+          } else {
+            hasMissingWeight = true;
+          }
+        });
+        return { totalKg, hasMissingWeight };
+      };
+      const getPalletWeightInfo = (pallet) => {
+        const summary = summarizeItemsWeight(pallet?.items || []);
+        (pallet?.boxes || []).forEach((boxCode) => {
+          const box = getBox(boxCode);
+          if (!box) {
+            return;
+          }
+          const boxSummary = summarizeItemsWeight(box.items || []);
+          summary.totalKg += boxSummary.totalKg;
+          summary.hasMissingWeight = summary.hasMissingWeight || boxSummary.hasMissingWeight;
+        });
+        return summary;
+      };
+      const formatEditableWeightValue = (value) => {
+        const normalized = parseWeightKg(value);
+        if (!(normalized > 0)) {
+          return '';
+        }
+        return normalized.toFixed(3);
+      };
+      const getFlowItemByKey = (itemKey) => {
+        const normalizedKey = String(itemKey || '').trim().toLowerCase();
+        if (!normalizedKey) {
+          return null;
+        }
+        const remainingItem = getRemaining().find((item) => item.key === normalizedKey);
+        if (remainingItem) {
+          return remainingItem;
+        }
+        return plannedByKey.get(normalizedKey) || null;
+      };
+      const formatFlowItemLabel = (item) => {
+        if (!item) {
+          return '-';
+        }
+        const parts = [];
+        if (item.sku_code) {
+          parts.push(item.sku_code);
+        }
+        if (item.name) {
+          parts.push(item.name);
+        }
+        if (item.size) {
+          parts.push(`размер ${item.size}`);
+        }
+        return parts.join(' · ') || '-';
+      };
+      const formatWeightHintText = (item) => {
+        const weightKg = getItemWeightKg(item);
+        return weightKg > 0 ? `Вес: ${weightKg.toFixed(3)} кг/шт` : 'Вес не задан';
+      };
+      const applyWeightToSku = (skuCode, weightKg) => {
+        const normalizedSku = normalizeText(skuCode).toLowerCase();
+        if (!normalizedSku || !(weightKg > 0)) {
+          return;
+        }
+        const applyToItem = (item) => {
+          if (!item) {
+            return;
+          }
+          const itemSku = normalizeText(item.sku_code || item.sku || '').toLowerCase();
+          if (itemSku !== normalizedSku) {
+            return;
+          }
+          item.weight_kg = weightKg;
+          const itemKey = makeKey(item);
+          if (itemKey) {
+            itemWeightByKey.set(itemKey, weightKg);
+          }
+        };
+        itemWeightBySku.set(normalizedSku, weightKg);
+        plannedItems.forEach(applyToItem);
+        extraItems.forEach(applyToItem);
+        catalogOptions.forEach(applyToItem);
+        Object.values(barcodeMap || {}).forEach(applyToItem);
+        state.boxes.forEach((box) => (box.items || []).forEach(applyToItem));
+        state.pallets.forEach((pallet) => {
+          (pallet.items || []).forEach(applyToItem);
+          (pallet.boxes || []).forEach((boxCode) => {
+            const box = getBox(boxCode);
+            if (!box) {
+              return;
+            }
+            (box.items || []).forEach(applyToItem);
+          });
+        });
+      };
       plannedItems.forEach((item) => {
         if (!item.sku_code) {
           return;
         }
         plannedBySku.set(item.sku_code.toLowerCase(), item);
+        registerItemWeight(item);
       });
       const normalizeMappedItem = (mapped) => ({
         sku_code: normalizeText(mapped.sku_code || mapped.sku || ''),
         name: normalizeText(mapped.name || ''),
         size: normalizeText(mapped.size || ''),
         qty: 0,
+        weight_kg: parseWeightKg(mapped.weight_kg),
       });
       const ensurePlannedItem = (mapped) => {
         const normalized = normalizeMappedItem(mapped);
@@ -800,6 +1902,7 @@
         addToCatalogIndex(catalogBySku, item.sku_code, item);
         addToCatalogIndex(catalogByName, item.name, item);
         addToCatalogIndex(catalogBySize, item.size, item);
+        registerItemWeight(item);
       });
       const fillCatalogList = (el, values) => {
         if (!el) {
@@ -1242,7 +2345,7 @@
         }
       };
 
-      const closePallet = (autoNext = true) => {
+      const closePallet = (autoNext = true, printAfterClose = false) => {
         if (flowLocked) {
           return;
         }
@@ -1296,9 +2399,13 @@
           }
         }
         pallet.sealed = true;
+        const closedPalletCode = String(pallet.code || '').trim();
         markDraftDirty();
         if (autoNext && hasRemaining()) {
           openNewPallet();
+        }
+        if (printAfterClose && closedPalletCode) {
+          enqueueReceivingPalletLabel(closedPalletCode);
         }
       };
 
@@ -1609,6 +2716,7 @@
           const row = document.createElement('tr');
           const remainingValue = item.remaining;
           const factValue = item.placed || 0;
+          const itemIsMarked = isCzMode && markedKeys.has(item.key);
           row.innerHTML = `
             <td>${item.sku_code || '-'}</td>
             <td>${item.name || '-'}</td>
@@ -1618,6 +2726,8 @@
             <td></td>
           `;
           row.dataset.key = item.key;
+          row.classList.add('remaining-item-row');
+          row.title = formatWeightHintText(item);
           if (Number(item.qty || 0) === Number(factValue || 0)) {
             row.classList.add('row-done');
           }
@@ -1632,8 +2742,11 @@
           input.min = '0';
           input.step = '1';
           input.className = 'qty-input';
-          if (flowLocked) {
+          if (flowLocked || itemIsMarked) {
             input.disabled = true;
+          }
+          if (itemIsMarked) {
+            input.placeholder = 'ЧЗ';
           }
           const manualValue = manualInputByKey.get(item.key) || '';
           input.value = manualValue;
@@ -1782,6 +2895,22 @@
           currentBoxItems.appendChild(row);
         });
       };
+      const renderSelectionState = () => {
+        const codes = getSelectedBoxCodes();
+        if (!boxSelectionStrip || !boxSelectionSummary) {
+          return;
+        }
+        if (!codes.length) {
+          boxSelectionStrip.classList.add('is-hidden');
+          boxSelectionSummary.textContent = '';
+          return;
+        }
+        const info = findBoxPalletInfo(codes[0]);
+        const palletLabel = info.palletIndex ? `палеты ${info.palletIndex}` : 'палеты';
+        const totalQty = codes.reduce((sum, boxCode) => sum + getBoxItemsCount(getBox(boxCode)), 0);
+        boxSelectionSummary.textContent = `Выделено ${codes.length} коробов ${palletLabel}. Всего товара: ${totalQty} шт.`;
+        boxSelectionStrip.classList.remove('is-hidden');
+      };
 
       const renderPallets = () => {
         if (!palletBoard) {
@@ -1809,8 +2938,16 @@
           openPallets.length = 0;
         }
         openPallets.forEach(({ pallet, palletNumber }) => {
+          const weightInfo = getPalletWeightInfo(pallet);
+          const reachedWeightLimit = weightInfo.totalKg >= (PALLET_WARNING_WEIGHT_KG - PALLET_WEIGHT_EPSILON);
+          const overweight = weightInfo.totalKg > (PALLET_WARNING_WEIGHT_KG + PALLET_WEIGHT_EPSILON);
           const card = document.createElement('div');
           card.className = `pallet-card${pallet.sealed ? '' : ' is-open'}`;
+          if (overweight) {
+            card.classList.add('is-overweight');
+          } else if (reachedWeightLimit) {
+            card.classList.add('is-weight-warning');
+          }
           const header = document.createElement('div');
           header.className = 'pallet-header';
           const palletLabel = `${palletNumber}.${pallet.code || '-'}`;
@@ -1819,6 +2956,29 @@
             <div class="pallet-status">${pallet.sealed ? 'Закрыта' : 'Открыта'}</div>
           `;
           card.appendChild(header);
+          const meta = document.createElement('div');
+          meta.className = 'pallet-meta';
+          const stats = document.createElement('div');
+          stats.className = 'pallet-stats';
+          const weightPill = document.createElement('div');
+          weightPill.className = 'pallet-weight-pill';
+          if (overweight) {
+            weightPill.classList.add('danger');
+          } else if (reachedWeightLimit) {
+            weightPill.classList.add('warn');
+          }
+          weightPill.textContent = `Вес: ${formatWeightText(weightInfo.totalKg, weightInfo.hasMissingWeight)}`;
+          stats.appendChild(weightPill);
+          meta.appendChild(stats);
+          if (reachedWeightLimit) {
+            const warning = document.createElement('div');
+            warning.className = `pallet-weight-note${overweight ? ' danger' : ''}`;
+            warning.textContent = overweight
+              ? 'Палета перегружена: вес больше 400 кг.'
+              : 'Вес палеты достиг 400 кг. Лучше закрыть палету.';
+            meta.appendChild(warning);
+          }
+          card.appendChild(meta);
           const grid = document.createElement('div');
           grid.className = 'box-grid';
           (pallet.boxes || []).forEach((code, index) => {
@@ -1826,8 +2986,15 @@
             const chip = document.createElement('div');
             const label = index + 1;
             chip.className = `box-chip ${box && box.sealed ? 'closed' : 'open'}`;
+            if (box && box.sealed) {
+              chip.classList.add('is-selectable');
+            }
+            if (isBoxSelected(code)) {
+              chip.classList.add('is-selected');
+            }
             chip.textContent = label;
             chip.dataset.boxCode = code;
+            chip.dataset.boxSelectable = box && box.sealed ? '1' : '0';
             chip.title = code;
             grid.appendChild(chip);
           });
@@ -1842,11 +3009,22 @@
           const grid = document.createElement('div');
           grid.className = 'pallet-closed-grid';
             closedPallets.forEach(({ pallet, palletNumber }) => {
+              const weightInfo = getPalletWeightInfo(pallet);
+              const reachedWeightLimit = weightInfo.totalKg >= (PALLET_WARNING_WEIGHT_KG - PALLET_WEIGHT_EPSILON);
+              const overweight = weightInfo.totalKg > (PALLET_WARNING_WEIGHT_KG + PALLET_WEIGHT_EPSILON);
               const chip = document.createElement('div');
               chip.className = 'pallet-chip';
+              if (overweight) {
+                chip.classList.add('danger');
+              } else if (reachedWeightLimit) {
+                chip.classList.add('warn');
+              }
               chip.textContent = palletNumber;
               const locationLabel = formatLocationLabel(pallet.location);
-              chip.title = locationLabel ? `${pallet.code || ''} · ${locationLabel}` : (pallet.code || '');
+              const weightLabel = `Вес: ${formatWeightText(weightInfo.totalKg, weightInfo.hasMissingWeight)}`;
+              chip.title = locationLabel
+                ? `${pallet.code || ''} · ${locationLabel} · ${weightLabel}`
+                : `${pallet.code || ''} · ${weightLabel}`;
               chip.dataset.palletCode = pallet.code || '';
               grid.appendChild(chip);
             });
@@ -1875,7 +3053,11 @@
           const label = `${palletNumber}.${boxNumber}.${box.code}`;
           const row = document.createElement('div');
           row.className = 'closed-box';
+          if (isBoxSelected(box.code)) {
+            row.classList.add('is-selected');
+          }
           row.dataset.boxCode = box.code;
+          row.dataset.boxSelectable = '1';
           row.title = box.code;
           row.innerHTML = `<span>${label}</span><span>${total} шт.</span>`;
           closedBoxesEl.appendChild(row);
@@ -1890,6 +3072,7 @@
         renderCurrentBox();
         renderPallets();
         renderClosedBoxes();
+        renderSelectionState();
         updateSummary();
         updateButtons();
         updateHidden();
@@ -1990,6 +3173,404 @@
         }
         scannerStatus.textContent = text;
         scannerStatus.style.color = isError ? 'var(--danger)' : '';
+      };
+      const setScannerHint = (text, isError) => {
+        if (!scannerHint) {
+          return;
+        }
+        scannerHint.textContent = text || '';
+        scannerHint.style.color = isError ? 'var(--danger)' : '';
+      };
+      const agentEventsUrl = '/agent/events/poll/';
+      const agentContextUrl = '/agent/contexts/claim/';
+      const agentStatusUrl = '/agent/status/';
+      const scannerModeStorageKey = `fullbox_receiving_scanner_mode_${orderId}`;
+      const scannerAgentStorageKey = `fullbox_receiving_agent_id_${orderId}`;
+      let scannerModeValue = supportsKeyboardMode ? 'keyboard' : 'agent';
+      let agentId = '';
+      let agentContextId = '';
+      let agentSinceId = 0;
+      let agentPollTimer = null;
+      let agentStatusTimer = null;
+      let agentContextTimer = null;
+      const postJson = async (url, payload) => {
+        return fetch(url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': csrfToken,
+          },
+          credentials: 'same-origin',
+          body: JSON.stringify(payload || {}),
+        });
+      };
+      const setAgentStatusText = (text, isError) => {
+        if (!agentStatus) {
+          return;
+        }
+        agentStatus.textContent = text || '';
+        agentStatus.style.color = isError ? 'var(--danger)' : '';
+      };
+      const setAgentContextText = (text, isError) => {
+        if (!agentContextStatus) {
+          return;
+        }
+        agentContextStatus.textContent = text || '';
+        agentContextStatus.style.color = isError ? 'var(--danger)' : '';
+      };
+      const setAgentIndicator = (state, text) => {
+        if (!agentIndicator) {
+          return;
+        }
+        const label = text || '—';
+        const dotText = agentIndicator.querySelector('.text');
+        if (dotText) {
+          dotText.textContent = label;
+        }
+        agentIndicator.classList.remove('ok', 'warn', 'error', 'muted');
+        agentIndicator.classList.add(state || 'muted');
+      };
+      const setAgentLast = (value, eventAgentId) => {
+        if (!agentLast) {
+          return;
+        }
+        const stamp = new Date().toLocaleTimeString('ru-RU');
+        const shortValue = value && value.length > 36 ? `${value.slice(0, 36)}...` : value;
+        const suffix = eventAgentId ? ` · ${eventAgentId}` : '';
+        agentLast.textContent = `${stamp} · ${shortValue || '-'}${suffix}`;
+      };
+      const clearTimer = (timerRef) => {
+        if (timerRef) {
+          clearTimeout(timerRef);
+        }
+      };
+      const scheduleAgentPoll = (delay) => {
+        clearTimer(agentPollTimer);
+        agentPollTimer = setTimeout(pollAgentEvents, delay);
+      };
+      const scheduleAgentStatusPoll = (delay) => {
+        clearTimer(agentStatusTimer);
+        agentStatusTimer = setTimeout(pollAgentStatus, delay);
+      };
+      const scheduleAgentContextKeepalive = (delay) => {
+        clearTimer(agentContextTimer);
+        agentContextTimer = setTimeout(() => {
+          claimAgentContext(false).catch(() => {});
+        }, delay);
+      };
+      const normalizeScannerMode = (value) => {
+        const normalized = String(value || '').toLowerCase() === 'agent' ? 'agent' : 'keyboard';
+        if (!supportsKeyboardMode && normalized !== 'agent') {
+          return 'agent';
+        }
+        return normalized;
+      };
+      const isAgentMode = () => scannerModeValue === 'agent';
+      const applyScannerMode = (value) => {
+        scannerModeValue = normalizeScannerMode(value);
+        if (scannerMode) {
+          scannerMode.value = scannerModeValue;
+        }
+        localStorage.setItem(scannerModeStorageKey, scannerModeValue);
+        if (agentPanel) {
+          agentPanel.classList.toggle('is-hidden', scannerModeValue !== 'agent');
+        }
+        if (scannerModeValue === 'agent') {
+          setScannerHint('Сканирование через агент.', false);
+          if (agentId) {
+            claimAgentContext(false).catch(() => {});
+          }
+          scheduleAgentPoll(300);
+          scheduleAgentStatusPoll(600);
+          return scannerModeValue;
+        }
+                setScannerHint('Сканер вводит и отправляет Enter. Фокус держится в поле.', false);
+        setAgentContextText('—', false);
+        clearTimer(agentContextTimer);
+        if (barcodeInput && !isAgentMode()) {
+          setTimeout(() => barcodeInput.focus(), 0);
+        }
+        return scannerModeValue;
+      };
+      const populateAgentSelect = () => {
+        if (!agentSelect || !Array.isArray(scannerAgentsData)) {
+          return;
+        }
+        const hasOptions = Array.from(agentSelect.options || []).some((opt) => opt.value);
+        if (hasOptions) {
+          return;
+        }
+        scannerAgentsData.forEach((agent) => {
+          if (!agent || !agent.agent_id) {
+            return;
+          }
+          const option = document.createElement('option');
+          option.value = String(agent.agent_id);
+          option.textContent = `${agent.title || agent.agent_id} · ${agent.agent_id}`;
+          option.dataset.status = String(agent.status || '');
+          option.dataset.online = agent.is_online ? '1' : '0';
+          agentSelect.appendChild(option);
+        });
+      };
+      const upsertScannerAgentOption = (agentInfo) => {
+        if (!agentInfo || !agentInfo.agentId) {
+          return;
+        }
+        const normalized = {
+          agent_id: String(agentInfo.agentId || '').trim(),
+          title: String(agentInfo.name || agentInfo.host || agentInfo.agentId || '').trim(),
+          status: 'онлайн',
+          is_online: true,
+          last_seen: '',
+        };
+        const existing = (scannerAgentsData || []).find(
+          (agent) => agent && String(agent.agent_id || '').trim() === normalized.agent_id,
+        );
+        if (existing) {
+          Object.assign(existing, normalized);
+        } else if (Array.isArray(scannerAgentsData)) {
+          scannerAgentsData.unshift(normalized);
+        }
+        if (!agentSelect) {
+          return;
+        }
+        let option = Array.from(agentSelect.options || []).find((opt) => opt.value === normalized.agent_id);
+        if (!option) {
+          option = document.createElement('option');
+          agentSelect.appendChild(option);
+        }
+        option.value = normalized.agent_id;
+        option.textContent = `${normalized.title || normalized.agent_id} · ${normalized.agent_id}`;
+        option.dataset.status = normalized.status;
+        option.dataset.online = '1';
+      };
+      const ensureLocalAgentSelection = async () => {
+        const payload = await detectLocalAgentBridge();
+        if (!payload || !payload.agentId) {
+          return false;
+        }
+        upsertScannerAgentOption(payload);
+        applyAgentId(payload.agentId);
+        if (scannerHint) {
+          const label = payload.name || payload.host || payload.agentId;
+          setScannerHint(`Локальный агент: ${label}.`, false);
+        }
+        return true;
+      };
+      const chooseDefaultAgentId = () => {
+        if (preferredAgentLocked && preferredAgentId) {
+          return preferredAgentId;
+        }
+        if (preferredAgentId) {
+          return preferredAgentId;
+        }
+        const online = (scannerAgentsData || []).find((agent) => agent && agent.agent_id && agent.is_online);
+        if (online && online.agent_id) {
+          return String(online.agent_id);
+        }
+        const first = (scannerAgentsData || []).find((agent) => agent && agent.agent_id);
+        return first && first.agent_id ? String(first.agent_id) : '';
+      };
+      const applyAgentId = (value) => {
+        agentId = String(value || '').trim();
+        if (agentId) {
+          localStorage.setItem(scannerAgentStorageKey, agentId);
+        } else {
+          localStorage.removeItem(scannerAgentStorageKey);
+        }
+        if (agentIdHidden) {
+          agentIdHidden.value = agentId;
+        }
+        if (agentSelect) {
+          const has = Array.from(agentSelect.options).some((opt) => opt.value === agentId);
+          agentSelect.value = has ? agentId : '';
+        }
+        agentSinceId = 0;
+        if (!agentId) {
+          setAgentStatusText('не выбран', true);
+          setAgentContextText('не назначен', true);
+          setAgentIndicator('muted', 'не выбран');
+          return;
+        }
+        const selected = agentSelect ? agentSelect.selectedOptions[0] : null;
+        const selectedData = !selected
+          ? (scannerAgentsData || []).find((agent) => agent && String(agent.agent_id || '').trim() === agentId)
+          : null;
+        const statusText = selected
+          ? String(selected.dataset.status || '')
+          : String((selectedData && selectedData.status) || '');
+        setAgentStatusText(statusText || `ID: ${agentId}`, false);
+        setAgentContextText('ожидаю', false);
+        const isOnline = selected ? selected.dataset.online === '1' : !!(selectedData && selectedData.is_online);
+        if (isOnline) {
+          setAgentIndicator('ok', 'онлайн');
+        } else {
+          setAgentIndicator('warn', 'проверяю');
+        }
+        if (isAgentMode()) {
+          claimAgentContext(false).catch(() => {});
+          scheduleAgentPoll(300);
+          scheduleAgentStatusPoll(600);
+        }
+      };
+      const claimAgentContext = async (force) => {
+        if (!agentId || !isAgentMode()) {
+          return false;
+        }
+        const orderValue = Number.parseInt(orderId || '', 10);
+        const payload = {
+          agent_id: agentId,
+          order_id: Number.isFinite(orderValue) ? orderValue : null,
+          box_id: state.activeBox || '',
+          force: !!force,
+        };
+        if (agentContextId) {
+          payload.context_id = agentContextId;
+        }
+        try {
+          const prevContextId = agentContextId;
+          const resp = await postJson(agentContextUrl, payload);
+          const data = await resp.json().catch(() => ({}));
+          if (!resp.ok || data.ok === false) {
+            if (data && data.error === 'busy') {
+              const owner = data.owner || {};
+              const ownerLabel = owner.user ? `Занят: ${owner.user}` : 'Занят другим пользователем';
+              setAgentStatusText('занят', true);
+              setAgentContextText(ownerLabel, true);
+              setAgentIndicator('warn', 'занят');
+              setScannerHint(ownerLabel, true);
+            } else {
+              setAgentStatusText('ошибка', true);
+              setAgentContextText('ошибка', true);
+              setAgentIndicator('error', 'ошибка');
+              setScannerHint('Ошибка подключения к агенту.', true);
+            }
+            agentContextId = '';
+            scheduleAgentContextKeepalive(5000);
+            return false;
+          }
+          agentContextId = data.context_id || agentContextId;
+          const lastScanEventId = Number(data && data.last_scan_event_id) || 0;
+          if (agentContextId && agentContextId !== prevContextId) {
+            agentSinceId = 0;
+          }
+          if (lastScanEventId > agentSinceId) {
+            agentSinceId = lastScanEventId;
+          }
+          setAgentContextText('активен', false);
+          const online = data && data.agent_online !== undefined ? !!data.agent_online : true;
+          setAgentIndicator(online ? 'ok' : 'warn', online ? 'активен' : 'офлайн');
+          setAgentStatusText(online ? `активен: ${agentId}` : `нет связи: ${agentId}`, !online);
+          setScannerHint(online ? 'Слушаю события агента.' : 'Агент не в сети.', !online);
+          scheduleAgentContextKeepalive(10000);
+          return true;
+        } catch (err) {
+          setAgentStatusText('ошибка', true);
+          setAgentContextText('ошибка', true);
+          setAgentIndicator('error', 'ошибка');
+          setScannerHint('Ошибка соединения с агентом.', true);
+          agentContextId = '';
+          scheduleAgentContextKeepalive(5000);
+          return false;
+        }
+      };
+      const pollAgentStatus = async () => {
+        if (!isAgentMode() || !agentId) {
+          scheduleAgentStatusPoll(3000);
+          return;
+        }
+        try {
+          const resp = await fetch(`${agentStatusUrl}?agent_id=${encodeURIComponent(agentId)}`, {
+            credentials: 'same-origin',
+          });
+          if (resp.ok) {
+            const data = await resp.json().catch(() => ({}));
+            const online = data && data.agent_online !== undefined ? !!data.agent_online : true;
+            setAgentStatusText(online ? `активен: ${agentId}` : `нет связи: ${agentId}`, !online);
+            if (!online) {
+              setAgentIndicator('error', 'офлайн');
+              setScannerHint('Агент не в сети.', true);
+            }
+          }
+        } catch (err) {
+          // ignore status poll errors
+        } finally {
+          scheduleAgentStatusPoll(5000);
+        }
+      };
+      const pollAgentEvents = async () => {
+        if (!isAgentMode()) {
+          scheduleAgentPoll(1500);
+          return;
+        }
+        if (document.hidden) {
+          scheduleAgentPoll(1500);
+          return;
+        }
+        if (!agentId || !agentContextId) {
+          scheduleAgentPoll(1200);
+          return;
+        }
+        const params = new URLSearchParams();
+        params.set('since', String(agentSinceId || 0));
+        params.set('type', 'scan');
+        params.set('context_id', agentContextId);
+        try {
+          const resp = await fetch(`${agentEventsUrl}?${params.toString()}`, {
+            credentials: 'same-origin',
+          });
+          if (resp.ok) {
+            const data = await resp.json().catch(() => ({}));
+            if (data && Array.isArray(data.events) && data.events.length) {
+              data.events.forEach((evt) => {
+                if (evt && evt.id) {
+                  agentSinceId = Math.max(agentSinceId, Number(evt.id) || 0);
+                }
+                const eventAgentId = evt && evt.agent_id ? String(evt.agent_id).trim() : '';
+                const value = evt && evt.payload ? String(evt.payload.value || '').trim() : '';
+                if (!value) {
+                  return;
+                }
+                handleBarcode(value);
+                setAgentStatusText(eventAgentId ? `активен: ${eventAgentId}` : 'активен', false);
+                setAgentIndicator('ok', 'скан');
+                setAgentLast(value, eventAgentId);
+              });
+            }
+          }
+        } catch (err) {
+          // ignore poll errors
+        } finally {
+          scheduleAgentPoll(1000);
+        }
+      };
+      const initAgentScanner = () => {
+        populateAgentSelect();
+        if (agentSelect) {
+          agentSelect.addEventListener('change', () => {
+            applyAgentId(agentSelect.value || '');
+          });
+        }
+        if (agentClaimForce) {
+          agentClaimForce.addEventListener('click', async () => {
+            const ok = window.confirm('Перехватить сканер у другого пользователя?');
+            if (!ok) {
+              return;
+            }
+            await claimAgentContext(true);
+          });
+        }
+        if (scannerMode) {
+          scannerMode.addEventListener('change', () => {
+            applyScannerMode(scannerMode.value || 'agent');
+          });
+        }
+        const defaultMode = supportsKeyboardMode ? 'keyboard' : 'agent';
+        const savedMode = normalizeScannerMode(localStorage.getItem(scannerModeStorageKey) || defaultMode);
+        applyScannerMode(savedMode);
+        const defaultAgentId = chooseDefaultAgentId();
+        applyAgentId(defaultAgentId);
+        ensureLocalAgentSelection().catch(() => {});
       };
 
       const escapeHtml = (value) =>
@@ -2244,6 +3825,428 @@
         }
       };
 
+      const getStoredLabelPrinter = () => {
+        const stored = (
+          localStorage.getItem('processing_label_printer')
+          || localStorage.getItem('label_printer')
+          || ''
+        ).trim();
+        const localAgent = localAgentBridgeState.detected;
+        if (!localAgent) {
+          return stored;
+        }
+        if (stored && (!localAgent.printers.length || localAgent.printers.includes(stored))) {
+          return stored;
+        }
+        return localAgent.defaultPrinter || stored;
+      };
+
+      const shortenClientLabel = (value) => {
+        const normalized = String(value || '')
+          .replace(/\u00a0/g, ' ')
+          .replace(/^клиент\s*:\s*/i, '')
+          .replace(/\s+/g, ' ')
+          .trim();
+        if (!normalized) {
+          return '';
+        }
+        const ipMatch = normalized.match(/^(?:ип|индивидуальный\s+предприниматель)\s+(.+)$/i);
+        if (!ipMatch) {
+          return normalized;
+        }
+        const parts = String(ipMatch[1] || '').trim().split(/\s+/).filter(Boolean);
+        if (!parts.length) {
+          return 'ИП';
+        }
+        const surname = parts[0];
+        const initials = parts.slice(1, 3).map((part) => `${part.charAt(0).toUpperCase()}.`).join('');
+        return initials ? `ИП ${surname} ${initials}` : `ИП ${surname}`;
+      };
+
+      const setReceivingLabelHeader = (target, prefix, barcode) => {
+        if (!target) {
+          return;
+        }
+        const normalizedPrefix = String(prefix || '').trim();
+        const normalizedBarcode = String(barcode || '').trim();
+        target.replaceChildren();
+        const strong = document.createElement('span');
+        strong.className = 'label-box-header-prefix';
+        strong.textContent = normalizedPrefix;
+        target.appendChild(strong);
+        target.appendChild(document.createTextNode(normalizedBarcode ? ` - ${normalizedBarcode}` : ' -'));
+      };
+
+      const parseLabelFont = (value, fallback) => {
+        const parsed = Number.parseFloat(String(value ?? '').replace(',', '.'));
+        return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+      };
+
+      const buildReceivingContainerLabelSettings = (key) => {
+        const source = labelSettingsData && typeof labelSettingsData === 'object'
+          ? labelSettingsData
+          : {};
+        const entry = source && typeof source[key] === 'object' ? source[key] : {};
+        const text = entry && typeof entry.text === 'object' ? entry.text : {};
+        const fonts = entry && typeof entry.fonts === 'object' ? entry.fonts : {};
+        const enabled = entry && typeof entry.enabled === 'object' ? entry.enabled : {};
+        return {
+          text,
+          fonts: {
+            barcode: parseLabelFont(fonts.barcode, 3),
+            box_client: parseLabelFont(fonts.box_client, 2.1),
+            box_basis: parseLabelFont(fonts.box_basis, 1),
+            box_pallet_number: parseLabelFont(fonts.box_pallet_number, 4),
+          },
+          enabled: {
+            barcode: enabled.barcode !== false,
+            box_client: enabled.box_client !== false,
+            box_basis: enabled.box_basis !== false,
+            box_pallet_number: enabled.box_pallet_number !== false,
+          },
+        };
+      };
+
+      const buildReceivingBoxLabelSettings = () => buildReceivingContainerLabelSettings('box');
+
+      const buildReceivingPalletLabelSettings = () => buildReceivingContainerLabelSettings('pallet');
+
+      const buildReceivingBoxLabelData = (boxCode) => {
+        const box = getBox(boxCode);
+        if (!box || !box.code) {
+          return null;
+        }
+        const settings = buildReceivingBoxLabelSettings();
+        const info = findBoxPalletInfo(box.code);
+        const fallbackClientLabel = shortenClientLabel(String("{{ client_label|escapejs }}").trim());
+        const templateClientLabel = shortenClientLabel(String(settings.text.box_client || '').trim());
+        const clientLabel = templateClientLabel || fallbackClientLabel;
+        const fixedLabel = String(box.fixed_label || '').trim();
+        const numberLabel = fixedLabel || (info.index ? String(info.index) : '');
+        const clientFont = templateClientLabel
+          ? settings.fonts.box_client
+          : (clientLabel.length > 14 ? Math.min(settings.fonts.box_client, 2.1) : settings.fonts.box_client);
+        const basisText = settings.enabled.box_basis ? String(settings.text.box_basis || '').trim() : '';
+        const basisFont = settings.fonts.box_basis;
+        return {
+          barcode: settings.enabled.barcode ? String(box.code) : '',
+          box_client: settings.enabled.box_client ? clientLabel : '',
+          box_basis: basisText,
+          box_pallet_number: settings.enabled.box_pallet_number ? numberLabel : '',
+          fonts: {
+            ...settings.fonts,
+            box_client: clientFont,
+            box_basis: basisFont,
+          },
+        };
+      };
+
+      const buildReceivingPalletLabelData = (palletCode) => {
+        const pallet = getPallet(palletCode);
+        if (!pallet || !pallet.code) {
+          return null;
+        }
+        const settings = buildReceivingPalletLabelSettings();
+        const palletIndex = state.pallets.findIndex((entry) => entry && entry.code === pallet.code);
+        const fallbackClientLabel = shortenClientLabel(String("{{ client_label|escapejs }}").trim());
+        const templateClientLabel = shortenClientLabel(String(settings.text.box_client || '').trim());
+        const clientLabel = templateClientLabel || fallbackClientLabel;
+        const clientFont = templateClientLabel
+          ? settings.fonts.box_client
+          : (clientLabel.length > 14 ? Math.min(settings.fonts.box_client, 2.1) : settings.fonts.box_client);
+        const basisText = settings.enabled.box_basis ? String(settings.text.box_basis || '').trim() : '';
+        return {
+          barcode: settings.enabled.barcode ? String(pallet.code) : '',
+          box_client: settings.enabled.box_client ? clientLabel : '',
+          box_basis: basisText,
+          box_pallet_number: settings.enabled.box_pallet_number
+            ? (palletIndex >= 0 ? String(palletIndex + 1) : '')
+            : '',
+          fonts: {
+            ...settings.fonts,
+            box_client: clientFont,
+          },
+        };
+      };
+
+      const applyReceivingLabelDimensions = (target, dims) => {
+        if (!target || !dims) {
+          return;
+        }
+        target.style.setProperty('--label-width', `${dims.width}mm`);
+        target.style.setProperty('--label-height', `${dims.height}mm`);
+        target.style.setProperty('--label-scale', '1');
+      };
+
+      const applyReceivingLabelFontVar = (root, name, value) => {
+        if (!root) {
+          return;
+        }
+        const parsed = Number.parseFloat(String(value ?? '').replace(',', '.'));
+        if (Number.isFinite(parsed) && parsed > 0) {
+          root.style.setProperty(name, `${parsed}mm`);
+        } else {
+          root.style.removeProperty(name);
+        }
+      };
+
+      const setReceivingLabelField = (root, field, value, prefix = null) => {
+        if (!root) {
+          return;
+        }
+        const target = root.querySelector(`[data-info="${field}"]`);
+        if (!target) {
+          return;
+        }
+        const normalized = String(value || '').trim();
+        target.textContent = normalized ? `${prefix || ''}${normalized}` : '';
+        const wrapper = target.closest('.label-box-cell, .label-box-number');
+        if (wrapper) {
+          wrapper.style.display = normalized ? '' : 'none';
+        }
+      };
+
+      const buildReceivingBoxLabelImage = async (boxCode) => {
+        if (!window.html2canvas || !window.QRCode) {
+          return '';
+        }
+        const data = buildReceivingBoxLabelData(boxCode);
+        if (!data || !data.barcode) {
+          return '';
+        }
+        const templateRoot = document.querySelector('#receiving-box-label-template .label-preview');
+        if (!templateRoot) {
+          return '';
+        }
+        const dims = { width: 58, height: 60 };
+        const clone = templateRoot.cloneNode(true);
+        clone.dataset.renderMode = 'print';
+        applyReceivingLabelDimensions(clone, dims);
+        applyReceivingLabelFontVar(clone, '--font-barcode', data.fonts.barcode);
+        applyReceivingLabelFontVar(clone, '--font-box-client', data.fonts.box_client);
+        applyReceivingLabelFontVar(clone, '--font-box-basis', data.fonts.box_basis);
+        applyReceivingLabelFontVar(clone, '--font-box-pallet-number', data.fonts.box_pallet_number);
+        const holder = document.createElement('div');
+        holder.style.position = 'fixed';
+        holder.style.left = '-9999px';
+        holder.style.top = '0';
+        holder.style.background = '#ffffff';
+        holder.style.padding = '0';
+        holder.style.margin = '0';
+        holder.appendChild(clone);
+        document.body.appendChild(holder);
+        try {
+          const boxHeader = clone.querySelector('[data-box-header]');
+          if (boxHeader) {
+            setReceivingLabelHeader(boxHeader, 'Короб', data.barcode);
+          }
+          setReceivingLabelField(clone, 'box_client', data.box_client, null);
+          setReceivingLabelField(clone, 'box_basis', data.box_basis, 'Основание: ');
+          setReceivingLabelField(clone, 'box_pallet_number', data.box_pallet_number, null);
+          const qrBox = clone.querySelector('[data-qr-box]');
+          if (!qrBox) {
+            return '';
+          }
+          qrBox.innerHTML = '';
+          const qrHost = qrBox.parentElement || qrBox;
+          const rawSize = Math.min(qrHost.clientWidth || 0, qrHost.clientHeight || 0);
+          const size = Math.floor(rawSize * 1.0) || 64;
+          qrBox.style.width = `${size}px`;
+          qrBox.style.height = `${size}px`;
+          new QRCode(qrBox, {
+            text: data.barcode,
+            width: size,
+            height: size,
+            correctLevel: QRCode.CorrectLevel.M,
+          });
+          await new Promise((resolve) => requestAnimationFrame(() => resolve()));
+          const canvas = await window.html2canvas(clone, {
+            backgroundColor: '#ffffff',
+            scale: 2.12,
+            logging: false,
+            useCORS: true,
+          });
+          return canvas.toDataURL('image/png');
+        } catch (err) {
+          return '';
+        } finally {
+          holder.remove();
+        }
+      };
+
+      const buildReceivingPalletLabelImage = async (palletCode) => {
+        if (!window.html2canvas || !window.QRCode) {
+          return '';
+        }
+        const data = buildReceivingPalletLabelData(palletCode);
+        if (!data || !data.barcode) {
+          return '';
+        }
+        const templateRoot = document.querySelector('#receiving-pallet-label-template .label-preview');
+        if (!templateRoot) {
+          return '';
+        }
+        const dims = { width: 58, height: 60 };
+        const clone = templateRoot.cloneNode(true);
+        clone.dataset.renderMode = 'print';
+        applyReceivingLabelDimensions(clone, dims);
+        applyReceivingLabelFontVar(clone, '--font-barcode', data.fonts.barcode);
+        applyReceivingLabelFontVar(clone, '--font-box-client', data.fonts.box_client);
+        applyReceivingLabelFontVar(clone, '--font-box-basis', data.fonts.box_basis);
+        applyReceivingLabelFontVar(clone, '--font-box-pallet-number', data.fonts.box_pallet_number);
+        const holder = document.createElement('div');
+        holder.style.position = 'fixed';
+        holder.style.left = '-9999px';
+        holder.style.top = '0';
+        holder.style.background = '#ffffff';
+        holder.style.padding = '0';
+        holder.style.margin = '0';
+        holder.appendChild(clone);
+        document.body.appendChild(holder);
+        try {
+          const boxHeader = clone.querySelector('[data-box-header]');
+          if (boxHeader) {
+            setReceivingLabelHeader(boxHeader, 'Паллет', data.barcode);
+          }
+          setReceivingLabelField(clone, 'box_client', data.box_client, null);
+          setReceivingLabelField(clone, 'box_basis', data.box_basis, 'Основание: ');
+          setReceivingLabelField(clone, 'box_pallet_number', data.box_pallet_number, null);
+          const qrBox = clone.querySelector('[data-qr-box]');
+          if (!qrBox) {
+            return '';
+          }
+          qrBox.innerHTML = '';
+          const qrHost = qrBox.parentElement || qrBox;
+          const rawSize = Math.min(qrHost.clientWidth || 0, qrHost.clientHeight || 0);
+          const size = Math.floor(rawSize * 1.0) || 64;
+          qrBox.style.width = `${size}px`;
+          qrBox.style.height = `${size}px`;
+          new QRCode(qrBox, {
+            text: data.barcode,
+            width: size,
+            height: size,
+            correctLevel: QRCode.CorrectLevel.M,
+          });
+          await new Promise((resolve) => requestAnimationFrame(() => resolve()));
+          const canvas = await window.html2canvas(clone, {
+            backgroundColor: '#ffffff',
+            scale: 2.12,
+            logging: false,
+            useCORS: true,
+          });
+          return canvas.toDataURL('image/png');
+        } catch (err) {
+          return '';
+        } finally {
+          holder.remove();
+        }
+      };
+
+      const enqueueReceivingBoxLabels = async (boxCodes) => {
+        const codes = Array.isArray(boxCodes)
+          ? boxCodes.map((value) => String(value || '').trim()).filter(Boolean)
+          : [];
+        if (!codes.length) {
+          alert('Короба не найдены.');
+          return false;
+        }
+        const printer = getStoredLabelPrinter();
+        if (!printer) {
+          alert('Выберите принтер этикеток на странице /labels/settings/.');
+          return false;
+        }
+        if (!agentId) {
+          alert('Выберите агент сканера для этой приемки.');
+          return false;
+        }
+        for (let index = 0; index < codes.length; index += 1) {
+          const boxCode = codes[index];
+          const image = await buildReceivingBoxLabelImage(boxCode);
+          const base64 = image.split(',')[1] || '';
+          if (!base64) {
+            alert(`Не удалось сформировать этикетку для короба ${boxCode}.`);
+            return false;
+          }
+          const resp = await fetch('/orders/processing/print-jobs/', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-CSRFToken': getCsrfToken(),
+            },
+            credentials: 'same-origin',
+            body: JSON.stringify({
+              order_id: orderId || '',
+              card_id: '',
+              article: '',
+              barcode: boxCode,
+              size: '',
+              printer_name: printer,
+              agent_id: agentId,
+              label_png_base64: base64,
+              label_width_mm: 60,
+              label_height_mm: 58,
+            }),
+          });
+          if (!resp.ok) {
+            const message = await resp.text();
+            alert(`Ошибка очереди печати: ${message || resp.status}`);
+            return false;
+          }
+        }
+        setScannerStatus(codes.length > 1 ? `Этикетки отправлены: ${codes.length}` : 'Этикетка отправлена на печать', false);
+        return true;
+      };
+
+      const enqueueReceivingPalletLabel = async (palletCode) => {
+        const code = String(palletCode || '').trim();
+        if (!code) {
+          alert('Паллета не найдена.');
+          return false;
+        }
+        const printer = getStoredLabelPrinter();
+        if (!printer) {
+          alert('Выберите принтер этикеток на странице /labels/settings/.');
+          return false;
+        }
+        if (!agentId) {
+          alert('Выберите агент сканера для этой приемки.');
+          return false;
+        }
+        const image = await buildReceivingPalletLabelImage(code);
+        const base64 = image.split(',')[1] || '';
+        if (!base64) {
+          alert(`Не удалось сформировать этикетку для палеты ${code}.`);
+          return false;
+        }
+        const resp = await fetch('/orders/processing/print-jobs/', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCsrfToken(),
+          },
+          credentials: 'same-origin',
+          body: JSON.stringify({
+            order_id: orderId || '',
+            card_id: '',
+            article: '',
+            barcode: code,
+            size: '',
+            printer_name: printer,
+            agent_id: agentId,
+            label_png_base64: base64,
+            label_width_mm: 60,
+            label_height_mm: 58,
+          }),
+        });
+        if (!resp.ok) {
+          const message = await resp.text();
+          alert(`Ошибка очереди печати: ${message || resp.status}`);
+          return false;
+        }
+        setScannerStatus('Этикетка палеты отправлена на печать', false);
+        return true;
+      };
+
       const findBoxPalletInfo = (boxCode) => {
         for (let palletIndex = 0; palletIndex < state.pallets.length; palletIndex += 1) {
           const pallet = state.pallets[palletIndex];
@@ -2265,6 +4268,68 @@
       let contextMenuPalletCode = '';
       let locationModalPalletCode = '';
       let copyModalBoxCode = '';
+      let itemContextKey = '';
+      let itemWeightModalKey = '';
+      const normalizeSelectedBoxCodes = () => {
+        const normalized = [];
+        const seen = new Set();
+        let sourcePalletCode = '';
+        selectedBoxCodes.forEach((boxCode) => {
+          const code = String(boxCode || '').trim();
+          if (!code || seen.has(code)) {
+            return;
+          }
+          const box = getBox(code);
+          const info = findBoxPalletInfo(code);
+          if (!box || !box.sealed || !info.palletCode) {
+            return;
+          }
+          if (!sourcePalletCode) {
+            sourcePalletCode = info.palletCode;
+          }
+          if (info.palletCode !== sourcePalletCode) {
+            return;
+          }
+          seen.add(code);
+          normalized.push(code);
+        });
+        selectedBoxCodes = normalized;
+        return normalized;
+      };
+      const getSelectedBoxCodes = () => normalizeSelectedBoxCodes().slice();
+      const clearSelectedBoxes = () => {
+        selectedBoxCodes = [];
+      };
+      const isBoxSelectable = (boxCode) => {
+        const box = getBox(boxCode);
+        const info = findBoxPalletInfo(boxCode);
+        return !!(box && box.sealed && info.palletCode);
+      };
+      const isBoxSelected = (boxCode) => getSelectedBoxCodes().includes(boxCode);
+      const toggleBoxSelection = (boxCode) => {
+        if (!isBoxSelectable(boxCode)) {
+          return;
+        }
+        const current = getSelectedBoxCodes();
+        const info = findBoxPalletInfo(boxCode);
+        if (!current.length) {
+          selectedBoxCodes = [boxCode];
+          renderAll();
+          return;
+        }
+        const sourcePalletCode = findBoxPalletInfo(current[0]).palletCode;
+        if (sourcePalletCode && info.palletCode !== sourcePalletCode) {
+          selectedBoxCodes = [boxCode];
+          renderAll();
+          return;
+        }
+        if (current.includes(boxCode)) {
+          selectedBoxCodes = current.filter((value) => value !== boxCode);
+        } else {
+          selectedBoxCodes = [...current, boxCode];
+        }
+        renderAll();
+      };
       const closeContextMenu = () => {
         if (!contextMenu) {
           return;
@@ -2273,6 +4338,14 @@
         contextMenu.setAttribute('aria-hidden', 'true');
         contextMenuBoxCode = '';
       };
+      const closeGroupContextMenu = () => {
+        if (!groupContextMenu) {
+          return;
+        }
+        groupContextMenu.classList.remove('is-open');
+        groupContextMenu.setAttribute('aria-hidden', 'true');
+        groupContextBoxCodes = [];
+      };
       const closePalletContextMenu = () => {
         if (!palletContextMenu) {
           return;
@@ -2280,6 +4353,88 @@
         palletContextMenu.classList.remove('is-open');
         palletContextMenu.setAttribute('aria-hidden', 'true');
         contextMenuPalletCode = '';
+      };
+      const closeItemContextMenu = () => {
+        if (!itemContextMenu) {
+          return;
+        }
+        itemContextMenu.classList.remove('is-open');
+        itemContextMenu.setAttribute('aria-hidden', 'true');
+        itemContextKey = '';
+      };
+      const openItemContextMenu = (event, itemKey) => {
+        if (!itemContextMenu || !itemKey) {
+          return;
+        }
+        closeContextMenu();
+        closeGroupContextMenu();
+        closePalletContextMenu();
+        const item = getFlowItemByKey(itemKey);
+        if (!item || !item.sku_code) {
+          return;
+        }
+        itemContextKey = item.key || itemKey;
+        const setWeightBtn = itemContextMenu.querySelector('[data-action="set-weight"]');
+        if (setWeightBtn) {
+          setWeightBtn.disabled = !item.sku_code;
+        }
+        const menuWidth = itemContextMenu.offsetWidth || 260;
+        const menuHeight = itemContextMenu.offsetHeight || 64;
+        let left = event.clientX;
+        let top = event.clientY;
+        if (left + menuWidth > window.innerWidth - 8) {
+          left = Math.max(8, window.innerWidth - menuWidth - 8);
+        }
+        if (top + menuHeight > window.innerHeight - 8) {
+          top = Math.max(8, window.innerHeight - menuHeight - 8);
+        }
+        itemContextMenu.style.left = `${left}px`;
+        itemContextMenu.style.top = `${top}px`;
+        itemContextMenu.classList.add('is-open');
+        itemContextMenu.setAttribute('aria-hidden', 'false');
+      };
+      const setItemWeightErrorText = (text) => {
+        if (!itemWeightError) {
+          return;
+        }
+        const normalized = String(text || '').trim();
+        itemWeightError.textContent = normalized;
+        itemWeightError.classList.toggle('is-hidden', !normalized);
+      };
+      const closeItemWeightModal = () => {
+        if (!itemWeightModal) {
+          return;
+        }
+        itemWeightModal.classList.remove('is-open');
+        itemWeightModal.setAttribute('aria-hidden', 'true');
+        itemWeightModalKey = '';
+        setItemWeightErrorText('');
+      };
+      const openItemWeightModal = (itemKey) => {
+        if (!itemWeightModal) {
+          return;
+        }
+        const item = getFlowItemByKey(itemKey);
+        if (!item || !item.sku_code) {
+          return;
+        }
+        itemWeightModalKey = item.key || itemKey;
+        if (itemWeightItemLabel) {
+          itemWeightItemLabel.textContent = formatFlowItemLabel(item);
+        }
+        if (itemWeightValue) {
+          itemWeightValue.value = formatEditableWeightValue(getItemWeightKg(item));
+        }
+        setItemWeightErrorText('');
+        itemWeightModal.classList.add('is-open');
+        itemWeightModal.setAttribute('aria-hidden', 'false');
+        window.setTimeout(() => {
+          if (!itemWeightValue) {
+            return;
+          }
+          itemWeightValue.focus();
+          itemWeightValue.select();
+        }, 0);
       };
 
       const formatLocationLabel = (location) => {
@@ -2314,6 +4469,8 @@
         if (!contextMenu || !boxCode) {
           return;
         }
+        closeItemContextMenu();
+        closeGroupContextMenu();
         contextMenuBoxCode = boxCode;
         const box = getBox(boxCode);
         const info = findBoxPalletInfo(boxCode);
@@ -2355,10 +4512,58 @@
         contextMenu.classList.add('is-open');
         contextMenu.setAttribute('aria-hidden', 'false');
       };
+      const openGroupContextMenu = (event, boxCodes) => {
+        if (!groupContextMenu) {
+          return;
+        }
+        const codes = Array.isArray(boxCodes) ? boxCodes.filter((boxCode) => isBoxSelectable(boxCode)) : [];
+        if (codes.length < 2) {
+          return;
+        }
+        closeItemContextMenu();
+        closeContextMenu();
+        closePalletContextMenu();
+        groupContextBoxCodes = codes;
+        const moveNewBtn = groupContextMenu.querySelector('[data-action="move-new"]');
+        const moveOtherBtn = groupContextMenu.querySelector('[data-action="move-other"]');
+        const deleteBtn = groupContextMenu.querySelector('[data-action="delete-selected"]');
+        const printBtn = groupContextMenu.querySelector('[data-action="print-selected"]');
+        const sourcePalletCode = findBoxPalletInfo(codes[0]).palletCode || '';
+        const hasOtherTargets = state.pallets.some((pallet) => pallet && pallet.code && pallet.code !== sourcePalletCode);
+        if (moveNewBtn) {
+          moveNewBtn.disabled = flowLocked;
+        }
+        if (moveOtherBtn) {
+          moveOtherBtn.disabled = flowLocked || !hasOtherTargets;
+        }
+        if (deleteBtn) {
+          deleteBtn.disabled = flowLocked;
+        }
+        if (printBtn) {
+          printBtn.disabled = !codes.length;
+        }
+        const menuWidth = groupContextMenu.offsetWidth || 240;
+        const menuHeight = groupContextMenu.offsetHeight || 140;
+        let left = event.clientX;
+        let top = event.clientY;
+        if (left + menuWidth > window.innerWidth - 8) {
+          left = Math.max(8, window.innerWidth - menuWidth - 8);
+        }
+        if (top + menuHeight > window.innerHeight - 8) {
+          top = Math.max(8, window.innerHeight - menuHeight - 8);
+        }
+        groupContextMenu.style.left = `${left}px`;
+        groupContextMenu.style.top = `${top}px`;
+        groupContextMenu.classList.add('is-open');
+        groupContextMenu.setAttribute('aria-hidden', 'false');
+      };
       const openPalletContextMenu = (event, palletCode) => {
         if (!palletContextMenu || !palletCode) {
           return;
         }
+        closeItemContextMenu();
+        closeContextMenu();
+        closeGroupContextMenu();
         contextMenuPalletCode = palletCode;
         const pallet = getPallet(palletCode);
         const openBtn = palletContextMenu.querySelector('[data-action="open"]');
@@ -2403,6 +4608,20 @@
           ...extra,
         };
       };
+      const buildBatchSnapshot = (boxCodes, extra = {}) => {
+        const codes = Array.isArray(boxCodes) ? boxCodes.filter((boxCode) => isBoxSelectable(boxCode)) : [];
+        const firstInfo = codes.length ? findBoxPalletInfo(codes[0]) : { palletCode: '', palletIndex: 0 };
+        return {
+          order_id: orderId,
+          box_codes: codes,
+          box_count: codes.length,
+          pallet_code: firstInfo.palletCode || '',
+          pallet_index: firstInfo.palletIndex || 0,
+          total_qty: codes.reduce((sum, boxCode) => sum + getBoxItemsCount(getBox(boxCode)), 0),
+          boxes: codes.map((boxCode) => buildBoxSnapshot(boxCode)),
+          ...extra,
+        };
+      };
 
       const logFlowBoxAction = (action, payload) => {
         if (!orderId || !csrfToken || !payload) {
@@ -2422,12 +4641,13 @@
       };
 
       const openBoxView = (boxCode) => {
-        if (!boxViewModal || !boxViewBody || !boxViewCode) {
+        if (!boxViewModal || !boxViewBody || !boxViewCode || !boxViewMeta) {
           return;
         }
         const box = getBox(boxCode);
         const info = findBoxPalletInfo(boxCode);
         boxViewCode.textContent = boxCode || '-';
+        boxViewMeta.textContent = '';
         boxViewBody.innerHTML = '';
         if (!box) {
           const row = document.createElement('div');
@@ -2435,13 +4655,10 @@
           row.textContent = 'Короб не найден.';
           boxViewBody.appendChild(row);
         } else {
-          const meta = document.createElement('div');
-          meta.className = 'muted';
           const palletLabel = info.palletIndex
             ? `Палета ${info.palletIndex}, короб ${info.index || '-'}`
             : 'Палета не задана';
-          meta.textContent = `${palletLabel} · ${getBoxItemsCount(box)} шт.`;
-          boxViewBody.appendChild(meta);
+          boxViewMeta.textContent = `${palletLabel} · всего ${getBoxItemsCount(box)} шт.`;
           if (!Array.isArray(box.items) || !box.items.length) {
             const empty = document.createElement('div');
             empty.className = 'muted';
@@ -2451,10 +4668,11 @@
             box.items.forEach((item) => {
               const row = document.createElement('div');
               row.className = 'box-modal-row';
-              const title = `${item.name || item.sku_code || '-'}`;
+              const article = item.sku_code || '-';
+              const name = item.name || '-';
               const size = item.size || '-';
               row.innerHTML = `
-                <span>${escapeHtml(title)} · ${escapeHtml(size)}</span>
+                <span>${escapeHtml(article)} · ${escapeHtml(name)} · ${escapeHtml(size)}</span>
                 <span>${Number(item.qty || 0)} шт.</span>
               `;
               boxViewBody.appendChild(row);
@@ -2480,6 +4698,29 @@
         palletLocationModal.classList.remove('is-open');
         palletLocationModal.setAttribute('aria-hidden', 'true');
         locationModalPalletCode = '';
+      };
+      const closeGroupMoveModal = () => {
+        if (!groupMoveModal) {
+          return;
+        }
+        groupMoveModal.classList.remove('is-open');
+        groupMoveModal.setAttribute('aria-hidden', 'true');
+        groupMoveBoxCodes = [];
+      };
+      const setWarehouseMoveAlert = (message) => {
+        if (!warehouseMoveAlert) {
+          return;
+        }
+        warehouseMoveAlert.textContent = message || '';
+        warehouseMoveAlert.style.display = message ? '' : 'none';
+      };
+      const closeWarehouseMoveModal = () => {
+        if (!warehouseMoveModal) {
+          return;
+        }
+        warehouseMoveModal.classList.remove('is-open');
+        warehouseMoveModal.setAttribute('aria-hidden', 'true');
+        setWarehouseMoveAlert('');
       };
 
       const closeBoxCopyModal = () => {
@@ -2544,6 +4785,151 @@
         }
         palletLocationModal.classList.add('is-open');
         palletLocationModal.setAttribute('aria-hidden', 'false');
+      };
+      const openGroupMoveModal = (boxCodes) => {
+        if (!groupMoveModal || !groupMoveTarget) {
+          return;
+        }
+        const codes = Array.isArray(boxCodes) ? boxCodes.filter((boxCode) => isBoxSelectable(boxCode)) : [];
+        if (!codes.length) {
+          return;
+        }
+        const sourceInfo = findBoxPalletInfo(codes[0]);
+        const options = state.pallets.filter((pallet) => pallet && pallet.code && pallet.code !== sourceInfo.palletCode);
+        if (!options.length) {
+          alert('Нет другой палеты для переноса. Используйте перенос на новую палету.');
+          return;
+        }
+        groupMoveBoxCodes = codes;
+        if (groupMoveCount) {
+          groupMoveCount.textContent = String(codes.length);
+        }
+        groupMoveTarget.innerHTML = '';
+        options.forEach((pallet) => {
+          const option = document.createElement('option');
+          const palletIndex = state.pallets.findIndex((entry) => entry && entry.code === pallet.code);
+          const palletNumber = palletIndex >= 0 ? palletIndex + 1 : '-';
+          const locationLabel = formatLocationLabel(pallet.location);
+          option.value = pallet.code;
+          option.textContent = `${palletNumber}.${pallet.code}${locationLabel ? ` · ${locationLabel}` : ''}`;
+          groupMoveTarget.appendChild(option);
+        });
+        groupMoveModal.classList.add('is-open');
+        groupMoveModal.setAttribute('aria-hidden', 'false');
+        setTimeout(() => {
+          groupMoveTarget.focus();
+        }, 0);
+      };
+      const renderWarehouseMoveModal = () => {
+        if (!warehouseMoveRows) {
+          return;
+        }
+        warehouseMoveRows.innerHTML = '';
+        warehouseMoveStateRows.forEach((row) => {
+          const tr = document.createElement('tr');
+          const destination = row && typeof row.destination === 'object'
+            ? row.destination
+            : { zone: 'PR', row: '', section: '', tier: '', cell: '' };
+          const checked = row.selectable ? 'checked' : '';
+          const disabled = row.selectable ? '' : 'disabled';
+          const zone = normalizeWarehouseZone(destination.zone);
+          tr.innerHTML = `
+            <td><input type="checkbox" class="warehouse-row-check" data-code="${escapeHtml(row.pallet_code || '')}" ${checked} ${disabled}></td>
+            <td>${escapeHtml(row.pallet_code || '-')}</td>
+            <td>${escapeHtml(row.from_label || 'PR · Зона приемки')}</td>
+            <td>
+              <div class="warehouse-move-destination">
+                <div class="warehouse-move-controls">
+                  <select class="warehouse-zone">
+                    <option value="PR"${zone === 'PR' ? ' selected' : ''}>PR</option>
+                    <option value="MR"${zone === 'MR' ? ' selected' : ''}>MR</option>
+                    <option value="OS"${zone === 'OS' ? ' selected' : ''}>OS</option>
+                  </select>
+                  <input type="number" class="warehouse-row" min="1" step="1" placeholder="Ряд" value="${escapeHtml(destination.row || '')}">
+                  <input type="number" class="warehouse-section" min="1" step="1" placeholder="Секция" value="${escapeHtml(destination.section || '')}">
+                  <input type="number" class="warehouse-tier" min="1" step="1" placeholder="Ярус" value="${escapeHtml(destination.tier || '')}">
+                  <input type="number" class="warehouse-cell" min="1" step="1" placeholder="Ячейка" value="${escapeHtml(destination.cell || '')}">
+                </div>
+                <div class="warehouse-move-meta">
+                  <span class="warehouse-destination-label">${escapeHtml(warehouseLocationLabel(destination))}</span>
+                  <span>PR: без адреса</span>
+                  <span>MR: только ряд</span>
+                  <span>OS: ряд / секция / ярус / ячейка</span>
+                </div>
+              </div>
+            </td>
+            <td><span class="warehouse-row-status ${escapeHtml(row.status_class || 'pending')}">${escapeHtml(row.status_label || 'Задание не создано')}</span></td>
+          `;
+          const check = tr.querySelector('.warehouse-row-check');
+          const zoneInput = tr.querySelector('.warehouse-zone');
+          const rowInput = tr.querySelector('.warehouse-row');
+          const sectionInput = tr.querySelector('.warehouse-section');
+          const tierInput = tr.querySelector('.warehouse-tier');
+          const cellInput = tr.querySelector('.warehouse-cell');
+          const labelEl = tr.querySelector('.warehouse-destination-label');
+          const syncVisibility = () => {
+            const currentZone = normalizeWarehouseZone(zoneInput?.value || 'PR');
+            const editable = !!(check && !check.disabled);
+            if (zoneInput) {
+              zoneInput.disabled = !editable;
+            }
+            if (rowInput) {
+              rowInput.disabled = !editable || !(currentZone === 'MR' || currentZone === 'OS');
+              if (currentZone !== 'MR' && currentZone !== 'OS') {
+                rowInput.value = '';
+              }
+            }
+            if (sectionInput) {
+              sectionInput.disabled = !editable || currentZone !== 'OS';
+              if (currentZone !== 'OS') {
+                sectionInput.value = '';
+              }
+            }
+            if (tierInput) {
+              tierInput.disabled = !editable || currentZone !== 'OS';
+              if (currentZone !== 'OS') {
+                tierInput.value = '';
+              }
+            }
+            if (cellInput) {
+              cellInput.disabled = !editable || currentZone !== 'OS';
+              if (currentZone !== 'OS') {
+                cellInput.value = '';
+              }
+            }
+            row.destination = {
+              zone: currentZone,
+              row: rowInput ? rowInput.value : '',
+              section: sectionInput ? sectionInput.value : '',
+              tier: tierInput ? tierInput.value : '',
+              cell: cellInput ? cellInput.value : '',
+            };
+            if (labelEl) {
+              labelEl.textContent = warehouseLocationLabel(row.destination);
+            }
+          };
+          [zoneInput, rowInput, sectionInput, tierInput, cellInput].forEach((field) => {
+            if (!field) {
+              return;
+            }
+            field.addEventListener('input', syncVisibility);
+            field.addEventListener('change', syncVisibility);
+          });
+          if (check) {
+            check.addEventListener('change', syncVisibility);
+          }
+          syncVisibility();
+          warehouseMoveRows.appendChild(tr);
+        });
+      };
+      const openWarehouseMoveModal = () => {
+        if (!warehouseMoveModal) {
+          return;
+        }
+        renderWarehouseMoveModal();
+        setWarehouseMoveAlert('');
+        warehouseMoveModal.classList.add('is-open');
+        warehouseMoveModal.setAttribute('aria-hidden', 'false');
       };
 
       const editBoxFromContext = (boxCode) => {
@@ -2675,6 +5061,110 @@
         renderAll();
         return true;
       };
+      const sortPalletBoxes = (pallet) => {
+        if (!pallet) {
+          return;
+        }
+        const closedCodes = [];
+        const openCodes = [];
+        (pallet.boxes || []).forEach((boxCode) => {
+          const box = getBox(boxCode);
+          if (!box || !box.code) {
+            return;
+          }
+          if (box.sealed) {
+            closedCodes.push(box.code);
+          } else {
+            openCodes.push(box.code);
+          }
+        });
+        pallet.boxes = [...closedCodes, ...openCodes];
+      };
+      const moveBoxesToPallet = (boxCodes, targetPalletCode) => {
+        if (flowLocked) {
+          return false;
+        }
+        const codes = Array.isArray(boxCodes) ? boxCodes.filter((boxCode) => isBoxSelectable(boxCode)) : [];
+        if (!codes.length) {
+          return false;
+        }
+        const sourceInfo = findBoxPalletInfo(codes[0]);
+        const sourcePallet = sourceInfo.palletCode ? getPallet(sourceInfo.palletCode) : null;
+        const targetPallet = targetPalletCode ? getPallet(targetPalletCode) : null;
+        if (!sourcePallet || !targetPallet || sourcePallet.code === targetPallet.code) {
+          return false;
+        }
+        const moveSet = new Set(codes);
+        const orderedCodes = (sourcePallet.boxes || []).filter((boxCode) => moveSet.has(boxCode));
+        if (!orderedCodes.length) {
+          return false;
+        }
+        sourcePallet.boxes = (sourcePallet.boxes || []).filter((boxCode) => !moveSet.has(boxCode));
+        const targetOrder = Array.isArray(targetPallet.boxes) ? [...targetPallet.boxes] : [];
+        orderedCodes.forEach((boxCode) => {
+          if (!targetOrder.includes(boxCode)) {
+            targetOrder.push(boxCode);
+          }
+        });
+        targetPallet.boxes = targetOrder;
+        sortPalletBoxes(targetPallet);
+        cleanupEmpty();
+        markDraftDirty();
+        clearSelectedBoxes();
+        renderAll();
+        logFlowBoxAction('move_batch', buildBatchSnapshot(orderedCodes, {
+          source_pallet_code: sourcePallet.code,
+          source_pallet_index: sourceInfo.palletIndex || 0,
+          target_pallet_code: targetPallet.code,
+          target_pallet_index: state.pallets.findIndex((entry) => entry && entry.code === targetPallet.code) + 1,
+        }));
+        return true;
+      };
+      const moveBoxesToNewPallet = (boxCodes) => {
+        if (flowLocked) {
+          return false;
+        }
+        const codes = Array.isArray(boxCodes) ? boxCodes.filter((boxCode) => isBoxSelectable(boxCode)) : [];
+        if (!codes.length) {
+          return false;
+        }
+        const sourceInfo = findBoxPalletInfo(codes[0]);
+        const sourcePallet = sourceInfo.palletCode ? getPallet(sourceInfo.palletCode) : null;
+        if (!sourcePallet) {
+          return false;
+        }
+        const moveSet = new Set(codes);
+        const orderedCodes = (sourcePallet.boxes || []).filter((boxCode) => moveSet.has(boxCode));
+        if (!orderedCodes.length) {
+          return false;
+        }
+        sourcePallet.boxes = (sourcePallet.boxes || []).filter((boxCode) => !moveSet.has(boxCode));
+        const newPallet = {
+          code: makeCode(),
+          boxes: orderedCodes.slice(),
+          items: [],
+          sealed: true,
+          location: { zone: 'PR', row: '', section: '', tier: '', cell: '' },
+        };
+        const sourceIndex = state.pallets.findIndex((entry) => entry && entry.code === sourcePallet.code);
+        if (sourceIndex >= 0) {
+          state.pallets.splice(sourceIndex + 1, 0, newPallet);
+        } else {
+          state.pallets.push(newPallet);
+        }
+        cleanupEmpty();
+        markDraftDirty();
+        clearSelectedBoxes();
+        renderAll();
+        logFlowBoxAction('move_batch', buildBatchSnapshot(orderedCodes, {
+          source_pallet_code: sourcePallet.code,
+          source_pallet_index: sourceInfo.palletIndex || 0,
+          target_pallet_code: newPallet.code,
+          target_pallet_index: state.pallets.findIndex((entry) => entry && entry.code === newPallet.code) + 1,
+          create_new_pallet: true,
+        }));
+        return true;
+      };
 
       const deleteBoxFromContext = (boxCode) => {
         if (flowLocked) {
@@ -2702,6 +5192,34 @@
         markDraftDirty();
         renderAll();
       };
+      const deleteSelectedBoxes = (boxCodes) => {
+        if (flowLocked) {
+          return;
+        }
+        const codes = Array.isArray(boxCodes) ? boxCodes.filter((boxCode) => isBoxSelectable(boxCode)) : [];
+        if (!codes.length) {
+          return;
+        }
+        const shouldDelete = window.confirm(
+          `Удалить ${codes.length} коробов и вернуть товар в неразмещенные?`,
+        );
+        if (!shouldDelete) {
+          return;
+        }
+        logFlowBoxAction('delete_batch', buildBatchSnapshot(codes));
+        const removeSet = new Set(codes);
+        state.boxes = state.boxes.filter((entry) => !removeSet.has(entry.code));
+        state.pallets.forEach((pallet) => {
+          pallet.boxes = (pallet.boxes || []).filter((boxCode) => !removeSet.has(boxCode));
+        });
+        if (removeSet.has(state.activeBox)) {
+          state.activeBox = '';
+        }
+        clearSelectedBoxes();
+        cleanupEmpty();
+        markDraftDirty();
+        renderAll();
+      };
 
       const openPalletPrintPreview = (palletCode, previewWindow, onReady) => {
         const pallet = getPallet(palletCode);
@@ -2717,7 +5235,7 @@
         const palletIndex = state.pallets.findIndex((entry) => entry && entry.code === pallet.code);
         const palletNumber = palletIndex >= 0 ? String(palletIndex + 1) : '-';
         const qrPayload = pallet.code;
-        const doc = previewWindow || window.open('', '_blank', 'width=520,height=720');
+        const doc = previewWindow || window.open('', '_blank', 'width=560,height=640');
         if (!doc) {
           return;
         }
@@ -2728,32 +5246,33 @@
   <meta charset="utf-8">
   <title>Этикетка палеты</title>
   <style>
-    @page { size: 75mm 120mm; margin: 0; }
-    html, body { width: 75mm; height: 120mm; margin: 0; padding: 0; }
+    @page { size: 58mm 60mm; margin: 0; }
+    html, body { width: 58mm; height: 60mm; margin: 0; padding: 0; }
     body { font-family: Arial, sans-serif; color: #111; }
     .label {
-      width: 75mm;
-      height: 120mm;
+      width: 58mm;
+      height: 60mm;
       box-sizing: border-box;
-      padding: 6mm 6mm 6mm 8mm;
+      padding: 4mm 4mm 4mm 6mm;
       position: relative;
     }
-    .code-label { font-size: 10pt; text-transform: uppercase; letter-spacing: 0.6px; }
+    .code-label { font-size: 8pt; text-transform: uppercase; letter-spacing: 0.5px; }
     .code {
-      margin-top: 2mm;
-      font-size: 13pt;
+      margin-top: 1mm;
+      font-size: 10pt;
       font-weight: 700;
       word-break: normal;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
+      max-width: 40mm;
     }
     .qr {
       position: absolute;
       left: 50%;
       top: 50%;
-      width: 60mm;
-      height: 60mm;
+      width: 38mm;
+      height: 38mm;
       transform: translate(-50%, -50%);
       z-index: 2;
     }
@@ -2780,19 +5299,22 @@
     }
     .client {
       position: absolute;
-      left: 3mm;
-      bottom: 4mm;
+      left: 2mm;
+      bottom: 3mm;
       transform: rotate(-90deg);
       transform-origin: left bottom;
-      font-size: 11pt;
+      font-size: 8pt;
       font-weight: 600;
       white-space: nowrap;
+      max-width: 52mm;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
     .pallet-number {
       position: absolute;
-      right: 4mm;
-      bottom: 4mm;
-      font-size: 14pt;
+      right: 3mm;
+      bottom: 3mm;
+      font-size: 11pt;
       font-weight: 700;
     }
   </style>
@@ -3056,14 +5578,191 @@ ${labels}
         doc.document.close();
         loadQrBatchInPreview(doc, boxes.map((box) => box.code));
       };
+      const openSelectedBoxesPrintPreview = (boxCodes, previewWindow) => {
+        const codes = Array.isArray(boxCodes) ? boxCodes : [];
+        const boxes = codes.map((code) => getBox(code)).filter((box) => box && box.code);
+        const doc = previewWindow || window.open('', '_blank', 'width=520,height=620');
+        if (!doc) {
+          return;
+        }
+        if (!boxes.length) {
+          doc.document.open();
+          doc.document.write(`<!doctype html><html lang="ru"><head><meta charset="utf-8"><title>Этикетки коробов</title></head><body style="font-family: Arial, sans-serif; padding: 16px;">Короба не найдены.</body></html>`);
+          doc.document.close();
+          return;
+        }
+        const clientLabel = String("{{ client_label|escapejs }}").trim();
+        const labels = boxes.map((box, index) => {
+          const info = findBoxPalletInfo(box.code);
+          const boxNumber = info.index ? String(info.index) : String(index + 1);
+          return `
+  <div class="label">
+    <div class="code-label">Короб</div>
+    <div class="code">${escapeHtml(box.code)}</div>
+    <div class="qr">
+      <div class="qr-placeholder" id="qr-placeholder-${index}">QR...</div>
+      <div class="qr-box" id="qr-box-${index}"></div>
+    </div>
+    <div class="client">${escapeHtml(clientLabel)}</div>
+    <div class="box-number">${escapeHtml(boxNumber)}</div>
+  </div>`;
+        }).join('');
+        const html = `
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <title>Этикетки коробов</title>
+  <style>
+    @page { size: 58mm 60mm; margin: 0; }
+    html, body { width: 58mm; margin: 0; padding: 0; }
+    body { font-family: Arial, sans-serif; color: #111; }
+    .label {
+      width: 58mm;
+      height: 60mm;
+      box-sizing: border-box;
+      padding: 4mm 4mm 4mm 8mm;
+      position: relative;
+      page-break-after: always;
+    }
+    .label:last-child { page-break-after: auto; }
+    .code-label { font-size: 10pt; text-transform: uppercase; letter-spacing: 0.6px; }
+    .code {
+      margin-top: 1.5mm;
+      font-size: 12pt;
+      font-weight: 700;
+      word-break: normal;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .qr {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: 30mm;
+      height: 30mm;
+      transform: translate(-50%, -40%);
+      z-index: 2;
+    }
+    .qr-box {
+      position: absolute;
+      inset: 0;
+    }
+    .qr img,
+    .qr canvas,
+    .qr svg {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+    .qr-placeholder {
+      position: absolute;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      font-size: 9pt;
+      color: #6b7280;
+      border: 1px dashed rgba(17, 17, 17, 0.2);
+      border-radius: 6px;
+    }
+    .client {
+      position: absolute;
+      left: 3mm;
+      bottom: 3mm;
+      transform: rotate(-90deg);
+      transform-origin: left bottom;
+      font-size: 10pt;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+    .box-number {
+      position: absolute;
+      right: 3mm;
+      bottom: 3mm;
+      font-size: 12pt;
+      font-weight: 700;
+    }
+  </style>
+</head>
+<body>
+${labels}
+</body>
+</html>`;
+        doc.document.open();
+        doc.document.write(html);
+        doc.document.close();
+        loadQrBatchInPreview(doc, boxes.map((box) => box.code));
+      };
 
-      const handleBarcode = (rawValue) => {
+      const handleBarcode = async (rawValue) => {
         if (flowLocked) {
           setScannerStatus('Приемка закрыта', true);
           return;
         }
         const value = String(rawValue || '').trim();
         if (!value) {
+          return;
+        }
+        if (isCzMode) {
+          const selectedValue = String(czItemSelect?.value || '').trim();
+          const selected = markedItemBySelectValue.get(selectedValue);
+          if (!selected) {
+            setScannerStatus('Сначала выберите позицию с ЧЗ', true);
+            return;
+          }
+          ensureOpenContainers(true);
+          const box = getBox(state.activeBox);
+          if (!box || box.sealed) {
+            setScannerStatus('Нет открытого короба', true);
+            return;
+          }
+          try {
+            const response = await fetch(markingScanUrl, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                ...(csrfToken ? { 'X-CSRFToken': csrfToken } : {}),
+              },
+              credentials: 'same-origin',
+              body: JSON.stringify({
+                code: value,
+                sku_code: selected.sku_code,
+                size: selected.size,
+                barcode: selected.barcode,
+                box_barcode: box.code,
+              }),
+            });
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok || !data.ok) {
+              setScannerStatus(data.error || 'Не удалось учесть код ЧЗ', true);
+              return;
+            }
+          } catch (error) {
+            setScannerStatus('Не удалось связаться с модулем ЧЗ', true);
+            return;
+          }
+          let planned = plannedByKey.get(makeKey(selected));
+          if (!planned) {
+            planned = ensurePlannedItem(selected);
+          }
+          if (!planned) {
+            setScannerStatus('Позиция с ЧЗ не найдена в заявке', true);
+            return;
+          }
+          const plannedKey = makeKey(planned);
+          const added = addToBox({ ...planned, key: plannedKey }, 1);
+          if (!added) {
+            setScannerStatus('Нет открытого короба', true);
+            return;
+          }
+          const title = planned.name || planned.sku_code || value;
+          setScannerStatus(`ЧЗ принят: ${title}`, false);
+          flashScan(plannedKey);
+          manualInputByKey.set(plannedKey, '');
+          suppressBlurApply = true;
+          pendingFocusKey = plannedKey;
+          renderAll();
           return;
         }
         const mapped = barcodeMap[value];
@@ -3102,11 +5801,15 @@ ${labels}
         pendingFocusKey = plannedKey;
         renderAll();
       };
+      initAgentScanner();
 
       if (barcodeInput) {
         let barcodeInputTimer = null;
         let lastHandled = '';
         const triggerHandle = (value) => {
+          if (isAgentMode()) {
+            return;
+          }
           const trimmed = String(value || '').trim();
           if (!trimmed) {
             return;
@@ -3116,6 +5819,9 @@ ${labels}
           barcodeInput.value = '';
         };
         barcodeInput.addEventListener('keydown', (event) => {
+          if (isAgentMode()) {
+            return;
+          }
           if (event.key === 'Enter') {
             event.preventDefault();
             if (barcodeInputTimer) {
@@ -3126,6 +5832,9 @@ ${labels}
           }
         });
         barcodeInput.addEventListener('input', () => {
+          if (isAgentMode()) {
+            return;
+          }
           const value = String(barcodeInput.value || '').trim();
           if (!value) {
             return;
@@ -3145,6 +5854,9 @@ ${labels}
           }, 120);
         });
         barcodeInput.addEventListener('blur', () => {
+          if (isAgentMode()) {
+            return;
+          }
           setTimeout(() => {
             const active = document.activeElement;
             if (!active || active === document.body) {
@@ -3161,7 +5873,9 @@ ${labels}
             barcodeInput.focus();
           }, 0);
         });
-        setTimeout(() => barcodeInput.focus(), 0);
+        if (!isAgentMode()) {
+          setTimeout(() => barcodeInput.focus(), 0);
+        }
       }
 
       const scanConfig = {
@@ -3257,6 +5971,10 @@ ${labels}
       document.addEventListener(
         'keydown',
         (event) => {
+          if (isAgentMode()) {
+            resetScanBuffer();
+            return;
+          }
           if (event.defaultPrevented) {
             resetScanBuffer();
             return;
@@ -3331,7 +6049,13 @@ ${labels}
           return;
         }
         event.preventDefault();
-        openContextMenu(event, target.dataset.boxCode || '');
+        const boxCode = target.dataset.boxCode || '';
+        const selected = getSelectedBoxCodes();
+        if (selected.length > 1 && selected.includes(boxCode)) {
+          openGroupContextMenu(event, selected);
+          return;
+        }
+        openContextMenu(event, boxCode);
       };
       const handlePalletContextMenu = (event) => {
         const target = event.target.closest('[data-pallet-code]');
@@ -3342,11 +6066,37 @@ ${labels}
         openPalletContextMenu(event, target.dataset.palletCode || '');
       };
       if (palletBoard) {
+        palletBoard.addEventListener('click', (event) => {
+          const target = event.target.closest('[data-box-code]');
+          if (!target || target.dataset.boxSelectable !== '1') {
+            return;
+          }
+          event.preventDefault();
+          toggleBoxSelection(target.dataset.boxCode || '');
+        });
         palletBoard.addEventListener('contextmenu', handleBoxContextMenu);
         palletBoard.addEventListener('contextmenu', handlePalletContextMenu);
       }
       if (closedBoxesEl) {
+        closedBoxesEl.addEventListener('click', (event) => {
+          const target = event.target.closest('[data-box-code]');
+          if (!target || target.dataset.boxSelectable !== '1') {
+            return;
+          }
+          event.preventDefault();
+          toggleBoxSelection(target.dataset.boxCode || '');
+        });
         closedBoxesEl.addEventListener('contextmenu', handleBoxContextMenu);
+      }
+      if (remainingBody) {
+        remainingBody.addEventListener('contextmenu', (event) => {
+          const row = event.target.closest('tr[data-key]');
+          if (!row) {
+            return;
+          }
+          event.preventDefault();
+          openItemContextMenu(event, row.dataset.key || '');
+        });
       }
       if (contextMenu) {
         contextMenu.addEventListener('click', (event) => {
@@ -3362,30 +6112,56 @@ ${labels}
           } else if (action === 'edit') {
             editBoxFromContext(contextMenuBoxCode);
           } else if (action === 'print-box') {
-            const previewWindow = window.open('', '_blank', 'width=520,height=620');
-            if (!previewWindow) {
-              alert('Разрешите всплывающие окна для печати.');
-              return;
-            }
-            openBoxPrintPreviewForCode(contextMenuBoxCode, previewWindow, ({ doc, qrPayload }) => {
-              loadQrInPreview(doc, qrPayload);
-            });
+            enqueueReceivingBoxLabels([contextMenuBoxCode]);
           } else if (action === 'print-pallet') {
             const info = findBoxPalletInfo(contextMenuBoxCode);
             if (!info.palletCode) {
               alert('Короб не привязан к палете.');
               return;
             }
-            const previewWindow = window.open('', '_blank', 'width=520,height=620');
-            if (!previewWindow) {
-              alert('Разрешите всплывающие окна для печати.');
-              return;
-            }
-            openPalletBoxesPrintPreview(info.palletCode, previewWindow);
+            const pallet = getPallet(info.palletCode);
+            const boxCodes = pallet && Array.isArray(pallet.boxes) ? pallet.boxes.slice() : [];
+            enqueueReceivingBoxLabels(boxCodes);
           } else if (action === 'delete') {
             deleteBoxFromContext(contextMenuBoxCode);
           }
           closeContextMenu();
+        });
+      }
+      if (itemContextMenu) {
+        itemContextMenu.addEventListener('click', (event) => {
+          const button = event.target.closest('button[data-action]');
+          if (!button || !itemContextKey) {
+            return;
+          }
+          if (button.dataset.action === 'set-weight') {
+            openItemWeightModal(itemContextKey);
+          }
+          closeItemContextMenu();
+        });
+      }
+      if (groupContextMenu) {
+        groupContextMenu.addEventListener('click', (event) => {
+          const button = event.target.closest('button[data-action]');
+          const codes = groupContextBoxCodes.slice();
+          if (!button || !codes.length) {
+            return;
+          }
+          const action = button.dataset.action;
+          if (action === 'print-selected') {
+            enqueueReceivingBoxLabels(codes);
+            logFlowBoxAction('print_batch', buildBatchSnapshot(codes));
+          } else if (action === 'move-new') {
+            moveBoxesToNewPallet(codes);
+          } else if (action === 'move-other') {
+            openGroupMoveModal(codes);
+          } else if (action === 'delete-selected') {
+            deleteSelectedBoxes(codes);
+          } else if (action === 'clear-selection') {
+            clearSelectedBoxes();
+            renderAll();
+          }
+          closeGroupContextMenu();
         });
       }
       if (palletContextMenu) {
@@ -3398,14 +6174,7 @@ ${labels}
             if (action === 'open') {
               openClosedPallet(contextMenuPalletCode);
             } else if (action === 'print') {
-              const previewWindow = window.open('', '_blank', 'width=520,height=720');
-              if (!previewWindow) {
-                alert('Разрешите всплывающие окна для печати.');
-                return;
-              }
-              openPalletPrintPreview(contextMenuPalletCode, previewWindow, ({ doc, qrPayload }) => {
-                loadQrInPreview(doc, qrPayload);
-              });
+              enqueueReceivingPalletLabel(contextMenuPalletCode);
             } else if (action === 'location') {
               openPalletLocationModal(contextMenuPalletCode);
             }
@@ -3416,6 +6185,12 @@ ${labels}
         if (contextMenu && contextMenu.classList.contains('is-open') && !contextMenu.contains(event.target)) {
           closeContextMenu();
         }
+        if (itemContextMenu && itemContextMenu.classList.contains('is-open') && !itemContextMenu.contains(event.target)) {
+          closeItemContextMenu();
+        }
+        if (groupContextMenu && groupContextMenu.classList.contains('is-open') && !groupContextMenu.contains(event.target)) {
+          closeGroupContextMenu();
+        }
         if (palletContextMenu && palletContextMenu.classList.contains('is-open') && !palletContextMenu.contains(event.target)) {
           closePalletContextMenu();
         }
@@ -3423,10 +6198,14 @@ ${labels}
         document.addEventListener('keydown', (event) => {
           if (event.key === 'Escape') {
             closeContextMenu();
+            closeItemContextMenu();
+            closeGroupContextMenu();
             closePalletContextMenu();
+            closeItemWeightModal();
             closeBoxView();
             closeBoxCopyModal();
             closePalletLocationModal();
+            closeGroupMoveModal();
           }
         });
       if (boxViewModal) {
@@ -3436,6 +6215,84 @@ ${labels}
           }
         });
       }
+        if (itemWeightModal) {
+          itemWeightModal.addEventListener('click', (event) => {
+            if (event.target === itemWeightModal) {
+              closeItemWeightModal();
+            }
+          });
+        }
+        if (itemWeightClose) {
+          itemWeightClose.addEventListener('click', closeItemWeightModal);
+        }
+        if (itemWeightCancel) {
+          itemWeightCancel.addEventListener('click', closeItemWeightModal);
+        }
+        if (itemWeightForm) {
+          itemWeightForm.addEventListener('submit', async (event) => {
+            event.preventDefault();
+            const item = getFlowItemByKey(itemWeightModalKey);
+            if (!item || !item.sku_code) {
+              setItemWeightErrorText('Позиция не найдена.');
+              return;
+            }
+            const rawValue = String(itemWeightValue?.value || '').trim().replace(',', '.');
+            const parsedWeight = Number.parseFloat(rawValue);
+            if (!Number.isFinite(parsedWeight) || parsedWeight <= 0) {
+              setItemWeightErrorText('Введите корректный вес больше нуля.');
+              return;
+            }
+            if (!itemWeightUrl) {
+              setItemWeightErrorText('Не удалось определить адрес сохранения.');
+              return;
+            }
+            if (itemWeightSubmit) {
+              itemWeightSubmit.disabled = true;
+            }
+            setItemWeightErrorText('');
+            try {
+              const response = await fetch(itemWeightUrl, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  ...(csrfToken ? { 'X-CSRFToken': csrfToken } : {}),
+                },
+                credentials: 'same-origin',
+                body: JSON.stringify({
+                  sku_code: item.sku_code,
+                  weight_kg: rawValue,
+                }),
+              });
+              const data = await response.json().catch(() => ({}));
+              if (!response.ok || !data.ok) {
+                const errorCode = String(data.error || '').trim();
+                const messageMap = {
+                  missing_sku_code: 'Не указан артикул.',
+                  missing_weight: 'Введите вес товара.',
+                  invalid_weight: 'Введите корректный вес больше нуля.',
+                  agency_not_found: 'Не найден клиент для этой приёмки.',
+                  sku_not_found: 'Товар не найден в номенклатуре клиента.',
+                };
+                setItemWeightErrorText(messageMap[errorCode] || 'Не удалось сохранить вес товара.');
+                return;
+              }
+              const savedWeightKg = parseWeightKg(data.weight_kg);
+              if (!(savedWeightKg > 0)) {
+                setItemWeightErrorText('Сервер вернул некорректный вес.');
+                return;
+              }
+              applyWeightToSku(data.sku_code || item.sku_code, savedWeightKg);
+              closeItemWeightModal();
+              renderAll();
+            } catch (error) {
+              setItemWeightErrorText('Не удалось связаться с сервером.');
+            } finally {
+              if (itemWeightSubmit) {
+                itemWeightSubmit.disabled = false;
+              }
+            }
+          });
+        }
         if (boxViewClose) {
           boxViewClose.addEventListener('click', closeBoxView);
         }
@@ -3476,11 +6333,46 @@ ${labels}
             }
           });
         }
+        if (groupMoveModal) {
+          groupMoveModal.addEventListener('click', (event) => {
+            if (event.target === groupMoveModal) {
+              closeGroupMoveModal();
+            }
+          });
+        }
+        if (warehouseMoveModal) {
+          warehouseMoveModal.addEventListener('click', (event) => {
+            if (event.target === warehouseMoveModal) {
+              closeWarehouseMoveModal();
+            }
+          });
+        }
         if (palletLocationClose) {
           palletLocationClose.addEventListener('click', closePalletLocationModal);
         }
+        if (groupMoveClose) {
+          groupMoveClose.addEventListener('click', closeGroupMoveModal);
+        }
+        if (warehouseMoveClose) {
+          warehouseMoveClose.addEventListener('click', closeWarehouseMoveModal);
+        }
         if (palletLocationCancel) {
           palletLocationCancel.addEventListener('click', closePalletLocationModal);
+        }
+        if (groupMoveCancel) {
+          groupMoveCancel.addEventListener('click', closeGroupMoveModal);
+        }
+      if (warehouseMoveCancel) {
+        warehouseMoveCancel.addEventListener('click', closeWarehouseMoveModal);
+      }
+      if (warehouseMoveOpenMap) {
+        warehouseMoveOpenMap.addEventListener('click', () => openWarehouseStockMapPicker());
+      }
+        if (boxSelectionClear) {
+          boxSelectionClear.addEventListener('click', () => {
+            clearSelectedBoxes();
+            renderAll();
+          });
         }
         if (palletLocationForm) {
           palletLocationForm.addEventListener('submit', (event) => {
@@ -3505,6 +6397,55 @@ ${labels}
             closePalletLocationModal();
           });
         }
+        if (openWarehouseMoveBtn) {
+          openWarehouseMoveBtn.addEventListener('click', () => openWarehouseStockMapPicker());
+        }
+        window.addEventListener('message', (event) => {
+          if (event.origin !== window.location.origin) {
+            return;
+          }
+          const payload = event.data || {};
+          if (payload?.type === 'stockmap-location-picked') {
+            handleWarehousePickedLocation(payload);
+            return;
+          }
+          if (payload?.type === 'stockmap-picker-submit') {
+            submitWarehouseMoveFromPicker(Array.isArray(payload.rows) ? payload.rows : []);
+          }
+        });
+        window.addEventListener('storage', (event) => {
+          if (event.key !== 'stockmap_location_pick' || !event.newValue) {
+            return;
+          }
+          try {
+            const payload = JSON.parse(event.newValue);
+            if (payload?.type !== 'stockmap-location-picked') {
+              return;
+            }
+            handleWarehousePickedLocation(payload);
+          } catch (err) {
+            return;
+          }
+        });
+        if (warehouseMoveForm) {
+          warehouseMoveForm.addEventListener('submit', (event) => {
+            if (!prepareWarehouseMoveSubmission()) {
+              event.preventDefault();
+            }
+          });
+        }
+        if (groupMoveForm) {
+          groupMoveForm.addEventListener('submit', (event) => {
+            event.preventDefault();
+            const targetPalletCode = String(groupMoveTarget?.value || '').trim();
+            if (!targetPalletCode || !groupMoveBoxCodes.length) {
+              return;
+            }
+            if (moveBoxesToPallet(groupMoveBoxCodes, targetPalletCode)) {
+              closeGroupMoveModal();
+            }
+          });
+        }
       if (closeBoxBtn) {
         closeBoxBtn.addEventListener('click', () => {
           if (lastFocusedRowKey) {
@@ -3517,7 +6458,7 @@ ${labels}
       }
       if (closePalletBtn) {
         closePalletBtn.addEventListener('click', () => {
-          closePallet();
+          closePallet(true, true);
           renderAll();
         });
       }
@@ -3558,3 +6499,15 @@ ${labels}
   </script>
 </body>
 </html>
+
+
+
+
+
+
+
+
+
+
+
+

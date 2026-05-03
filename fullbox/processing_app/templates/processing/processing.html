@@ -5,9 +5,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Заявка на обработку</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@500;600;700&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="/static/vendor/bricolage-manrope.css" rel="stylesheet">
   <style>
     :root {
       --bg: #f2efe8;
@@ -21,6 +19,9 @@
       --danger: #d4543c;
       --stroke: rgba(28,31,26,0.12);
       --shadow: 0 18px 45px rgba(15,23,42,0.12);
+    }
+    [hidden] {
+      display: none !important;
     }
     * { box-sizing: border-box; }
     body {
@@ -163,6 +164,16 @@
       background: linear-gradient(120deg, var(--sun), #ffd88a);
       border-color: transparent;
       color: #2a2110;
+    }
+    .btn.success {
+      background: linear-gradient(120deg, #4fbf7f, #9be7ba);
+      border-color: transparent;
+      color: #0f3a26;
+    }
+    .btn.cta {
+      padding: 14px 22px;
+      font-size: 16px;
+      border-radius: 14px;
     }
     .btn.ghost { background: transparent; }
     .alert {
@@ -445,6 +456,74 @@
       min-height: 0;
       height: auto;
     }
+    .processing-main-panel {
+      display: grid;
+      gap: 10px;
+      align-content: start;
+      min-width: 0;
+    }
+    .processing-cards-toolbar {
+      display: flex;
+      justify-content: flex-start;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .processing-wizard {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: min(62vh, 560px);
+      margin-bottom: 2px;
+    }
+    .wizard-actions {
+      display: flex;
+      justify-content: center;
+      width: 100%;
+    }
+    .wizard-market-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      justify-content: center;
+      width: 100%;
+      margin-top: 14px;
+    }
+    .wizard-market-btn {
+      border-radius: 999px;
+      background: rgba(28,31,26,0.03);
+      padding: 8px 12px;
+      font-size: 12px;
+    }
+    .btn.cta-round {
+      width: 260px;
+      height: 260px;
+      border-radius: 50%;
+      padding: 24px;
+      text-align: center;
+      white-space: normal;
+      line-height: 1.25;
+      font-size: 24px;
+      font-weight: 800;
+      letter-spacing: 0.2px;
+      box-shadow: 0 22px 36px rgba(16, 99, 66, 0.28);
+    }
+    .btn.cta-pulse {
+      animation: ctaPulse 1.8s ease-in-out infinite;
+    }
+    @keyframes ctaPulse {
+      0% {
+        transform: scale(1);
+        box-shadow: 0 22px 36px rgba(16, 99, 66, 0.28), 0 0 0 0 rgba(79, 191, 127, 0.48);
+      }
+      70% {
+        transform: scale(1.035);
+        box-shadow: 0 26px 40px rgba(16, 99, 66, 0.28), 0 0 0 24px rgba(79, 191, 127, 0);
+      }
+      100% {
+        transform: scale(1);
+        box-shadow: 0 22px 36px rgba(16, 99, 66, 0.28), 0 0 0 0 rgba(79, 191, 127, 0);
+      }
+    }
     .processing-cards {
       column-count: 2;
       column-gap: 18px;
@@ -591,6 +670,15 @@
       }
     }
     @media (max-width: 720px) {
+      .processing-wizard {
+        min-height: min(52vh, 420px);
+      }
+      .btn.cta-round {
+        width: 190px;
+        height: 190px;
+        font-size: 18px;
+        padding: 16px;
+      }
       .processing-header {
         grid-template-columns: 1fr;
         justify-items: start;
@@ -638,7 +726,6 @@
           {% if submitted %}
             <div class="alert success">Заявка на обработку отправлена.</div>
           {% endif %}
-          <button class="btn primary" type="button" id="add-product-btn" data-url="{% url 'processing_app:processing-stock-picker' %}">Выбрать товар</button>
           {% if client_view and draft_order_id %}
             <form method="post" action="{% url 'processing_app:processing-draft-delete' draft_order_id %}">
               {% csrf_token %}
@@ -676,8 +763,8 @@
             {% endif %}
           </nav>
         <div class="side-footer">
-          <button class="btn primary" type="submit" form="processing-form" name="submit_action" value="send">Отправить</button>
-          <button class="btn" type="submit" form="processing-form" name="submit_action" value="draft" formnovalidate>Сохранить черновик</button>
+          <button class="btn primary" id="submit-send-btn" type="submit" form="processing-form" name="submit_action" value="send">Отправить</button>
+          <button class="btn" id="submit-draft-btn" type="submit" form="processing-form" name="submit_action" value="draft" formnovalidate>Сохранить черновик</button>
           <a class="btn ghost" href="/logout/">Выход</a>
         </div>
       </aside>
@@ -697,10 +784,30 @@
             <input type="hidden" name="edit_order_id" value="{{ edit_order_id }}">
           {% endif %}
 
-          <div class="processing-grid">
-            <div class="processing-cards" id="processing-cards"></div>
+          <div class="processing-wizard">
+            <div class="wizard-actions">
+              <button class="btn success cta-round cta-pulse" type="button" id="add-product-btn" data-url="{% url 'processing_app:processing-stock-picker' %}">Выбери товар для обработки</button>
+              <button class="btn success cta-round cta-pulse" type="button" id="choose-marketplace-btn" hidden>Выбери маркетплейс</button>
+            </div>
+            <div class="wizard-market-list" id="marketplace-options" hidden></div>
+          </div>
 
-            <section class="panel processing-block processing-params">
+          <div class="processing-grid" id="processing-grid" hidden>
+            <div class="processing-main-panel">
+              <div class="processing-cards-toolbar">
+                <button
+                  class="btn"
+                  type="button"
+                  id="add-more-product-btn"
+                  data-url="{% url 'processing_app:processing-stock-picker' %}"
+                >
+                  Добавить еще товар
+                </button>
+              </div>
+              <div class="processing-cards" id="processing-cards"></div>
+            </div>
+
+            <section class="panel processing-block processing-params" id="processing-params-panel" hidden>
               <div class="block-header">
                 <h3 class="panel-title" style="font-size: 18px;">Параметры обработки</h3>
               </div>
@@ -996,15 +1103,60 @@
       const cardsInput = document.getElementById('cards-json');
       const template = document.getElementById('processing-card-template');
       const addBtn = document.getElementById('add-product-btn');
+      const addMoreBtn = document.getElementById('add-more-product-btn');
+      const chooseMarketplaceBtn = document.getElementById('choose-marketplace-btn');
       const form = document.getElementById('processing-form');
+      const processingWizard = document.querySelector('.processing-wizard');
+      const processingGrid = document.getElementById('processing-grid');
+      const paramsPanel = document.getElementById('processing-params-panel');
+      const marketplaceOptions = document.getElementById('marketplace-options');
+      const marketplaceSelect = form?.querySelector('select[name="marketplace"]') || null;
+      const sendBtn = document.getElementById('submit-send-btn');
+      const draftBtn = document.getElementById('submit-draft-btn');
       if (!cardsContainer || !template) {
         return;
       }
 
       let activeCardId = null;
       let cardCounter = 0;
+      const marketplaceLabels = new Map();
 
       const createCardId = () => `card_${Date.now()}_${cardCounter++}`;
+
+      const syncWizardState = () => {
+        const cardsReady = cardsContainer.querySelectorAll('.processing-card').length > 0;
+        const marketplaceReady = cardsReady && Boolean((marketplaceSelect?.value || '').trim());
+
+        if (processingWizard) {
+          processingWizard.hidden = cardsReady && marketplaceReady;
+        }
+        if (addBtn) {
+          addBtn.hidden = cardsReady;
+        }
+        if (chooseMarketplaceBtn) {
+          chooseMarketplaceBtn.hidden = !cardsReady || marketplaceReady;
+        }
+        if (marketplaceOptions) {
+          if (!cardsReady || marketplaceReady || marketplaceOptions.children.length === 0) {
+            marketplaceOptions.hidden = true;
+          }
+        }
+        if (processingGrid) {
+          processingGrid.hidden = !cardsReady;
+        }
+        if (addMoreBtn) {
+          addMoreBtn.hidden = !cardsReady;
+        }
+        if (paramsPanel) {
+          paramsPanel.hidden = !marketplaceReady;
+        }
+        if (sendBtn) {
+          sendBtn.disabled = !marketplaceReady;
+        }
+        if (draftBtn) {
+          draftBtn.disabled = !cardsReady;
+        }
+      };
 
       const setPhotoPreview = (photoBox, preview, url) => {
         if (!photoBox || !preview) {
@@ -1152,6 +1304,7 @@
         if (deleteBtn) {
           deleteBtn.addEventListener('click', () => {
             card.remove();
+            syncWizardState();
             window.processingMarkingScheduleCheck?.();
           });
         }
@@ -1162,6 +1315,7 @@
         } else {
           cardsContainer.append(card);
         }
+        syncWizardState();
         return card;
       };
 
@@ -1201,35 +1355,52 @@
         return cards;
       };
 
+      if (marketplaceSelect && marketplaceOptions) {
+        Array.from(marketplaceSelect.options).forEach((option) => {
+          const value = (option.value || '').trim();
+          if (!value) {
+            return;
+          }
+          const label = (option.textContent || value).trim();
+          marketplaceLabels.set(value, label);
+          const button = document.createElement('button');
+          button.type = 'button';
+          button.className = 'row-action wizard-market-btn';
+          button.dataset.marketplacePick = value;
+          button.textContent = label;
+          marketplaceOptions.appendChild(button);
+        });
+
+        marketplaceOptions.addEventListener('click', (event) => {
+          const button = event.target.closest('[data-marketplace-pick]');
+          if (!button) {
+            return;
+          }
+          const value = (button.dataset.marketplacePick || '').trim();
+          if (!value || !marketplaceSelect) {
+            return;
+          }
+          marketplaceSelect.value = value;
+          marketplaceSelect.dispatchEvent(new Event('change', { bubbles: true }));
+          marketplaceOptions.hidden = true;
+          syncWizardState();
+          window.processingMarkingScheduleCheck?.();
+        });
+      }
+
       const openStockPicker = () => {
-        const baseUrl = addBtn?.dataset?.url || '/orders/processing/stock/';
+        const baseUrl = addMoreBtn?.dataset?.url || addBtn?.dataset?.url || '/orders/processing/stock/';
         const agencyId = document.querySelector('input[name="agency_id"]')?.value;
         const editOrderId = document.querySelector('input[name="edit_order_id"]')?.value;
+        const orderIdFromPage = (document.body?.dataset?.orderId || '').trim();
+        const currentOrderId = (editOrderId || orderIdFromPage || '').trim();
         const params = new URLSearchParams();
         if (agencyId) {
           params.set('client', agencyId);
         }
-        if (editOrderId) {
-          params.set('order', editOrderId);
+        if (currentOrderId) {
+          params.set('order', currentOrderId);
         }
-        const selectedArticles = new Set();
-        cardsContainer.querySelectorAll('.processing-card').forEach((card) => {
-          const articleInput = card.querySelector('[data-field="article"]');
-          const raw = (articleInput?.value || '').trim();
-          if (raw) {
-            selectedArticles.add(raw.toLowerCase());
-          }
-        });
-        if (activeCardId) {
-          const activeCard = cardsContainer.querySelector(`[data-card-id="${activeCardId}"]`);
-          const activeArticle = (activeCard?.querySelector('[data-field="article"]')?.value || '').trim();
-          if (activeArticle) {
-            selectedArticles.delete(activeArticle.toLowerCase());
-          }
-        }
-        selectedArticles.forEach((article) => {
-          params.append('exclude', article);
-        });
         const url = params.toString() ? `${baseUrl}?${params}` : baseUrl;
         const popup = window.open(url, 'processing_stock_picker', 'width=1200,height=800');
         if (!popup) {
@@ -1265,9 +1436,17 @@
         } else {
           createCard(cardPayload, { prepend: true });
         }
+        syncWizardState();
         window.processingMarkingScheduleCheck?.();
         activeCardId = null;
       };
+
+      if (marketplaceSelect) {
+        marketplaceSelect.addEventListener('change', () => {
+          syncWizardState();
+          window.processingMarkingScheduleCheck?.();
+        });
+      }
 
       if (addBtn) {
         addBtn.addEventListener('click', () => {
@@ -1275,9 +1454,55 @@
           openStockPicker();
         });
       }
+      if (addMoreBtn) {
+        addMoreBtn.addEventListener('click', () => {
+          activeCardId = null;
+          openStockPicker();
+        });
+      }
+
+      if (chooseMarketplaceBtn) {
+        chooseMarketplaceBtn.addEventListener('click', () => {
+          const cardsReady = cardsContainer.querySelectorAll('.processing-card').length > 0;
+          if (!cardsReady) {
+            window.alert('Сначала выберите товар для обработки.');
+            return;
+          }
+          if (!marketplaceOptions || !marketplaceOptions.children.length) {
+            window.alert('Список маркетплейсов недоступен.');
+            return;
+          }
+          marketplaceOptions.hidden = !marketplaceOptions.hidden;
+        });
+      }
+
+      document.addEventListener('click', (event) => {
+        if (!marketplaceOptions || marketplaceOptions.hidden) {
+          return;
+        }
+        const onChooseButton = chooseMarketplaceBtn && chooseMarketplaceBtn.contains(event.target);
+        const inOptions = marketplaceOptions.contains(event.target);
+        if (!onChooseButton && !inOptions) {
+          marketplaceOptions.hidden = true;
+        }
+      });
 
       if (form && cardsInput) {
-        form.addEventListener('submit', () => {
+        form.addEventListener('submit', (event) => {
+          const cardsReady = cardsContainer.querySelectorAll('.processing-card').length > 0;
+          const marketplaceReady = cardsReady && Boolean((marketplaceSelect?.value || '').trim());
+          const action = event.submitter?.value || '';
+
+          if (!cardsReady) {
+            event.preventDefault();
+            window.alert('Шаг 1 не выполнен: сначала выберите товар для обработки.');
+            return;
+          }
+          if (action !== 'draft' && !marketplaceReady) {
+            event.preventDefault();
+            window.alert('Шаг 2 не выполнен: сначала выберите маркетплейс.');
+            return;
+          }
           cardsInput.value = JSON.stringify(collectCards());
         });
       }
@@ -1352,6 +1577,7 @@
           // ignore storage parse errors
         }
       }
+      syncWizardState();
       window.processingCollectCards = collectCards;
     })();
   </script>

@@ -1,13 +1,11 @@
-{% load static %}
+{% load static order_display %}
 <!doctype html>
 <html lang="ru">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Заявки</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600&display=swap" rel="stylesheet">
+  <link href="/static/vendor/space-grotesk.css" rel="stylesheet">
   <style>
     :root { --bg:#f6f4ed; --card:#ffffff; --card-soft:#f8f6f1; --gold:#c79a1c; --gold-soft:#f2d48c; --muted:#6b7280; --stroke: rgba(31,35,40,0.12); --text:#1f2328; --danger:#d14343; --success:#1f9d55; }
     * { box-sizing: border-box; }
@@ -111,9 +109,9 @@
       <div>
         <div class="muted">FULLBOX · {% include "partials/current_user.html" %}</div>
         {% if active_tab == 'receiving' %}
-          <h1>Заявка на приемку, статус: {{ status_label }}{% if order_number %} · № {{ order_number }}{% endif %}</h1>
+          <h1>Заявка на приемку, статус: {{ status_label }}{% if order_number %} · № {{ order_number|display_order_number:active_tab }}{% endif %}</h1>
         {% elif active_tab == 'packing' %}
-          <h1>Заявка на упаковку{% if order_number %} · № {{ order_number }}{% endif %}</h1>
+          <h1>Заявка на упаковку{% if order_number %} · № {{ order_number|display_order_number:active_tab }}{% endif %}</h1>
         {% else %}
           <h1>Журнал заявок</h1>
         {% endif %}
@@ -148,6 +146,7 @@
               <th>№ заявки</th>
               <th>Действие</th>
               <th>Статус</th>
+              <th>Следующий шаг</th>
               <th>Кол-во (факт)</th>
               <th>Клиент</th>
             </tr>
@@ -160,6 +159,7 @@
                 <td><a class="order-link" href="{{ entry.detail_url }}">{{ entry.order_id }}</a></td>
                 <td>{{ entry.action_label }}</td>
                 <td>{{ entry.status_label }}</td>
+                <td>{{ entry.next_step_label|default:"-" }}</td>
                 <td>
                   {% if entry.order_type == "receiving" %}
                     {{ entry.actual_qty|default:"-" }}
@@ -170,7 +170,7 @@
                 <td>{{ entry.client_label|default:"-" }}</td>
               </tr>
             {% empty %}
-              <tr><td colspan="7" class="muted">Нет данных</td></tr>
+              <tr><td colspan="8" class="muted">Нет данных</td></tr>
             {% endfor %}
           </tbody>
         </table>
@@ -183,7 +183,7 @@
             {% if agency %}
               <a class="ghost-btn" id="download-template" href="#">Скачать шаблон</a>
               <button class="ghost-btn" id="upload-template" type="button">Загрузить шаблон</button>
-              <a class="ghost-btn" href="/client/{{ agency.id }}/sku/?return_to={{ request.get_full_path|urlencode }}">Номенклатура клиента</a>
+              <a class="ghost-btn" href="/client/{{ agency.id }}/sku/?view=table&return_to={{ request.get_full_path|urlencode }}">Номенклатура клиента</a>
             {% else %}
               <span class="muted small">Клиент не выбран.</span>
             {% endif %}
@@ -278,7 +278,7 @@
                       value="{{ edit_payload.eta_at|default:'' }}"
                     >
                   </div>
-                  <div class="hint">Поставки только на следующий день. После 18:00 — не раньше 13:00 следующего дня.</div>
+                  <div class="hint">Можно выбрать любую будущую дату и время прибытия.</div>
                 </div>
                 <div class="field">
                   <label>Количество мест к приемке (план)</label>
@@ -1088,13 +1088,13 @@
             alert('Заполните плановую дату и время прибытия.');
             return;
           }
-          const minValue = etaHidden.dataset.minValue;
+            const minValue = etaHidden.dataset.minValue;
           if (minValue) {
             const selected = new Date(etaValue);
             const minDate = new Date(minValue);
             if (selected < minDate) {
               event.preventDefault();
-              alert('Плановая дата/время не может быть раньше допустимого минимума.');
+              alert('Плановая дата/время не может быть в прошлом.');
               return;
             }
           }
@@ -1192,15 +1192,14 @@
           const toInputValue = (date) => `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
           const toDateValue = (date) => `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 
-          const nextDay = new Date(now);
-          nextDay.setDate(nextDay.getDate() + 1);
-          nextDay.setHours(0, 0, 0, 0);
-          const isEvening = now.getHours() >= 18;
-          const minHour = isEvening ? 13 : 10;
-          const minDateTime = new Date(nextDay);
-          minDateTime.setHours(minHour, 0, 0, 0);
-          const minDateValue = toDateValue(nextDay);
-          const minTimeValue = `${pad(minHour)}:00`;
+          const minDateTime = new Date(now);
+          minDateTime.setSeconds(0, 0);
+          const remainder = minDateTime.getMinutes() % 5;
+          if (remainder !== 0) {
+            minDateTime.setMinutes(minDateTime.getMinutes() + (5 - remainder));
+          }
+          const minDateValue = toDateValue(minDateTime);
+          const minTimeValue = `${pad(minDateTime.getHours())}:${pad(minDateTime.getMinutes())}`;
 
           etaInput.dataset.minValue = toInputValue(minDateTime);
           etaDate.min = minDateValue;

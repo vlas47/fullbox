@@ -4,9 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Клиенты | FULLBOX</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="/static/vendor/space-grotesk.css" rel="stylesheet">
   <style>
     :root { --bg:#f6f4ed; --card:#ffffff; --gold:#c79a1c; --gold-soft:#f2d48c; --text:#1f2328; --muted:#6b7280; --stroke: rgba(31,35,40,0.12); }
     * { box-sizing: border-box; }
@@ -78,6 +76,7 @@
         <select name="filter_field" class="btn" style="padding:9px 12px; background:#fff; color:var(--text); border-radius:10px; border:1px solid var(--stroke);">
           <option value="">Поле фильтра</option>
           <option value="agn_name" {% if filter_field == 'agn_name' %}selected{% endif %}>Название</option>
+          <option value="short_name" {% if filter_field == 'short_name' %}selected{% endif %}>Сокращенное название</option>
           <option value="inn" {% if filter_field == 'inn' %}selected{% endif %}>ИНН</option>
           <option value="pref" {% if filter_field == 'pref' %}selected{% endif %}>Префикс для кодов</option>
           <option value="email" {% if filter_field == 'email' %}selected{% endif %}>Email</option>
@@ -106,6 +105,11 @@
             <tr>
               <th class="sortable {% if sort_info.name.active %}active {{ sort_info.name.dir }}{% endif %}">
                 <a class="sort-label" href="{{ sort_info.name.url }}">Название
+                  <span class="sort-icon"><span class="arrow up"></span><span class="arrow down"></span></span>
+                </a>
+              </th>
+              <th class="sortable {% if sort_info.short_name.active %}active {{ sort_info.short_name.dir }}{% endif %}">
+                <a class="sort-label" href="{{ sort_info.short_name.url }}">Сокращенное название
                   <span class="sort-icon"><span class="arrow up"></span><span class="arrow down"></span></span>
                 </a>
               </th>
@@ -142,6 +146,7 @@
             {% for item in items %}
               <tr>
                 <td>{{ item.agn_name|default:"-" }}</td>
+                <td>{{ item.short_name|default:"-" }}</td>
                 <td>{{ item.pref|default:"-" }}</td>
                 <td>{{ item.inn|default:"-" }}</td>
                 <td>
@@ -161,7 +166,7 @@
                 </td>
               </tr>
             {% empty %}
-              <tr><td colspan="8">Нет данных</td></tr>
+              <tr><td colspan="9">Нет данных</td></tr>
             {% endfor %}
           </tbody>
         </table>
@@ -174,6 +179,7 @@
               <div>
                 <div class="muted">Клиент</div>
                 <h3 style="margin:0;">{{ item.agn_name|default:"Без названия" }}</h3>
+                <div class="muted" style="margin-top:4px;">{{ item.short_name|default:"-" }}</div>
               </div>
               <div class="row">
                 {% if item.pref %}<span class="pill">{{ item.pref }}</span>{% endif %}

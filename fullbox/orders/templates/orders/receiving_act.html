@@ -1,12 +1,11 @@
+{% load order_display %}
 <!doctype html>
 <html lang="ru">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>В работе {{ order_title|default:"Заявка"|lower }} № {{ order_id }}</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600&display=swap" rel="stylesheet">
+  <title>В работе {{ order_title|default:"Заявка"|lower }} № {{ order_id|display_order_number:"receiving" }}</title>
+  <link href="/static/vendor/space-grotesk.css" rel="stylesheet">
   <style>
     :root { --bg:#f6f4ed; --card:#ffffff; --card-soft:#f8f6f1; --gold:#c79a1c; --gold-soft:#f2d48c; --muted:#6b7280; --stroke: rgba(31,35,40,0.12); --text:#1f2328; --danger:#d14343; --success:#1f9d55; }
     * { box-sizing: border-box; }
@@ -108,7 +107,7 @@
         <aside class="detail-side">
           <div class="side-card">
             <div class="muted">FULLBOX · {% include "partials/current_user.html" %}</div>
-            <h3>В работе {{ order_title|default:"Заявка"|lower }} № {{ order_id }}</h3>
+            <h3>В работе {{ order_title|default:"Заявка"|lower }} № {{ order_id|display_order_number:"receiving" }}</h3>
             <div class="muted">Статус: {{ status_label }}</div>
           </div>
 

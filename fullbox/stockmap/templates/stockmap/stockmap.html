@@ -4,9 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Карта склада | FULLBOX</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@500;600;700&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="/static/vendor/bricolage-manrope.css" rel="stylesheet">
   <style>
     :root {
       --bg: #f2efe8;
@@ -104,6 +102,65 @@
       outline: 2px solid rgba(14,107,91,0.5);
       outline-offset: 2px;
     }
+    .row-link.os-row-link {
+      border-color: var(--row-badge-border, rgba(14,107,91,0.35));
+      background: linear-gradient(140deg, var(--row-badge-bg, rgba(14,107,91,0.12)), rgba(255,255,255,0.08));
+      color: var(--row-badge-ink, var(--accent-strong));
+      box-shadow: var(--row-badge-shadow, 0 8px 20px rgba(14,107,91,0.12));
+    }
+    .row-link.os-row-link:hover {
+      border-color: var(--row-badge-border, var(--accent));
+      box-shadow: 0 14px 30px rgba(15,23,42,0.16);
+    }
+    .picker-note {
+      margin: 12px 0 14px;
+      padding: 10px 12px;
+      border-radius: 12px;
+      border: 1px solid rgba(14,107,91,0.3);
+      background: rgba(14,107,91,0.1);
+      color: var(--accent-strong);
+      font-weight: 600;
+      font-size: 13px;
+    }
+    .pick-location-btn {
+      border: 1px solid rgba(14,107,91,0.35);
+      border-radius: 10px;
+      background: rgba(14,107,91,0.08);
+      color: var(--accent-strong);
+      font-weight: 700;
+      font-size: 12px;
+      padding: 6px 10px;
+      cursor: pointer;
+      transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+    }
+    .pick-location-btn:hover {
+      transform: translateY(-1px);
+      border-color: var(--accent);
+      box-shadow: 0 10px 24px rgba(14,107,91,0.16);
+    }
+    .pick-location-btn.near-suggested,
+    .row-link.near-suggested {
+      border-color: rgba(14,107,91,0.75);
+      box-shadow: 0 0 0 2px rgba(14,107,91,0.22), 0 12px 26px rgba(14,107,91,0.2);
+    }
+    .pick-location-btn.draft-reserved {
+      border-color: rgba(28,31,26,0.2);
+      background: rgba(28,31,26,0.08);
+      color: #7a7f87;
+      cursor: not-allowed;
+      box-shadow: none;
+      opacity: 0.95;
+    }
+    .pick-location-btn.draft-reserved:hover {
+      transform: none;
+      border-color: rgba(28,31,26,0.2);
+      box-shadow: none;
+    }
+    .row-link.has-draft-reserved,
+    .pick-location-btn.has-draft-reserved {
+      border-color: rgba(242,183,71,0.7);
+      box-shadow: 0 0 0 2px rgba(242,183,71,0.2), 0 8px 22px rgba(242,183,71,0.24);
+    }
   </style>
 </head>
 <body>
@@ -117,10 +174,18 @@
             <div class="muted">Паллетные места</div>
           </div>
         </div>
-        <a class="btn" href="{{ cabinet_url }}">В кабинет</a>
+        <div style="display:flex; gap:10px; flex-wrap:wrap;">
+          <a class="btn" href="/stockmap/visual/{% if picker_mode %}?picker=1{% endif %}">Визуальная схема</a>
+          <a class="btn" href="{{ cabinet_url }}">В кабинет</a>
+        </div>
       </div>
 
       <div class="note">1 ячейка — 1 поддон</div>
+      {% if picker_mode %}
+        <div class="picker-note">
+          Режим выбора локации: нажмите "Выбрать" для PR/OTG/MR или перейдите в ряд OS и выберите свободную ячейку.
+        </div>
+      {% endif %}
 
       {% if cells %}
         <table>
@@ -133,6 +198,9 @@
               <th class="cell-center">Ячейка</th>
               <th class="cell-center">Всего свободных</th>
               <th class="cell-center">Всего занятых</th>
+              {% if picker_mode %}
+                <th class="cell-center">Выбор</th>
+              {% endif %}
             </tr>
           </thead>
           <tbody>
@@ -141,7 +209,12 @@
                 <td>{{ row.zone }}</td>
                 <td class="cell-center">
                   {% if row.zone == "OS" and row.row %}
-                    <a class="row-link" href="/stockmap/os/{{ row.row }}/">{{ row.row }}</a>
+                    <a
+                      class="row-link os-row-link"
+                      href="/stockmap/os/{{ row.row }}/{% if picker_mode %}?picker=1{% endif %}"
+                      style="--row-badge-bg: {{ row.badge_bg }}; --row-badge-border: {{ row.badge_border }}; --row-badge-ink: {{ row.badge_ink }}; --row-badge-shadow: {{ row.badge_shadow }};"
+                      title="Заполнено {{ row.fill_percent }}%"
+                    >{{ row.row }}</a>
                   {% else %}
                     {{ row.row }}
                   {% endif %}
@@ -150,7 +223,26 @@
                 <td class="cell-center">{{ row.tier }}</td>
                 <td class="cell-center">{{ row.cell }}</td>
                 <td class="cell-center">{{ row.free }}</td>
-                <td class="cell-center">{{ row.occupied }}</td>
+                <td class="cell-center">
+                  {% if row.zone == "PR" and row.occupied %}
+                    <a class="row-link" href="/stockmap/pr/" title="Открыть паллеты в зоне приемки">{{ row.occupied }}</a>
+                  {% else %}
+                    {{ row.occupied }}
+                  {% endif %}
+                </td>
+                {% if picker_mode %}
+                  <td class="cell-center">
+                    {% if row.zone == "PR" or row.zone == "OTG" %}
+                      <button type="button" class="pick-location-btn" data-pick-zone="{{ row.zone }}">Выбрать</button>
+                    {% elif row.zone == "MR" and row.row %}
+                      <button type="button" class="pick-location-btn" data-pick-zone="MR" data-pick-row="{{ row.row }}">Выбрать</button>
+                    {% elif row.zone == "OS" and row.row %}
+                      <a class="pick-location-btn" href="/stockmap/os/{{ row.row }}/?picker=1">Ряд {{ row.row }}</a>
+                    {% else %}
+                      —
+                    {% endif %}
+                  </td>
+                {% endif %}
               </tr>
             {% endfor %}
           </tbody>
@@ -160,5 +252,164 @@
       {% endif %}
     </div>
   </div>
+  {% if picker_mode %}
+    <script>
+      (() => {
+        const params = new URLSearchParams(window.location.search || '');
+        const reservedKeys = new Set(
+          params.getAll('reserved')
+            .map((value) => String(value || '').trim().toUpperCase())
+            .filter((value) => value),
+        );
+        const toInt = (value) => Number.parseInt(String(value || '').trim(), 10) || 0;
+        const mrKey = (row) => (row > 0 ? `MR:${row}` : '');
+        const extractRowFromHref = (href) => {
+          const match = String(href || '').match(/\/stockmap\/os\/(\d+)\//i);
+          return match ? toInt(match[1]) : 0;
+        };
+        const countReservedInOSRow = (row) => {
+          if (row <= 0) {
+            return 0;
+          }
+          const marker = `OS:${row}:`;
+          let count = 0;
+          reservedKeys.forEach((key) => {
+            if (key.startsWith(marker)) {
+              count += 1;
+            }
+          });
+          return count;
+        };
+        const applyPickerParamsToHref = (href) => {
+          if (!href) {
+            return href;
+          }
+          const url = new URL(href, window.location.origin);
+          url.searchParams.set('picker', '1');
+          ['near_zone', 'near_row', 'near_section', 'near_tier', 'near_cell'].forEach((name) => {
+            if (params.has(name)) {
+              url.searchParams.set(name, params.get(name));
+            }
+          });
+          params.getAll('reserved').forEach((value) => {
+            url.searchParams.append('reserved', value);
+          });
+          return `${url.pathname}?${url.searchParams.toString()}`;
+        };
+        const sendSelection = (location, label) => {
+          const payload = {
+            type: 'stockmap-location-picked',
+            location: location || {},
+            label: label || '',
+            ts: Date.now(),
+          };
+          try {
+            localStorage.setItem('stockmap_location_pick', JSON.stringify(payload));
+          } catch (err) {}
+          if (window.opener && !window.opener.closed) {
+            window.opener.postMessage(payload, window.location.origin);
+          }
+          window.close();
+        };
+
+        document.querySelectorAll('.row-link[href*="/stockmap/os/"]').forEach((link) => {
+          const row = extractRowFromHref(link.getAttribute('href'));
+          if (row > 0) {
+            const reservedCount = countReservedInOSRow(row);
+            if (reservedCount > 0) {
+              link.classList.add('has-draft-reserved');
+              link.title = `В ряду ${row} уже выбрано ${reservedCount} ячеек в текущем наборе заданий.`;
+            }
+          }
+          link.setAttribute('href', applyPickerParamsToHref(link.getAttribute('href')));
+        });
+        document.querySelectorAll('.pick-location-btn[href*="/stockmap/os/"]').forEach((link) => {
+          const row = extractRowFromHref(link.getAttribute('href'));
+          if (row > 0) {
+            const reservedCount = countReservedInOSRow(row);
+            if (reservedCount > 0) {
+              link.classList.add('has-draft-reserved');
+              link.title = `В ряду ${row} уже выбрано ${reservedCount} ячеек в текущем наборе заданий.`;
+            }
+          }
+          link.setAttribute('href', applyPickerParamsToHref(link.getAttribute('href')));
+        });
+
+        const labelByZone = (zone, row) => {
+          const token = String(zone || '').toUpperCase();
+          if (token === 'PR') {
+            return 'PR · Зона приемки';
+          }
+          if (token === 'OTG') {
+            return 'OTG · Зона отгрузки';
+          }
+          if (token === 'MR') {
+            return row ? `MR · Между рядами · Ряд ${row}` : 'MR · Между рядами';
+          }
+          return token || 'PR';
+        };
+
+        document.querySelectorAll('.pick-location-btn[data-pick-zone]').forEach((btn) => {
+          const zone = String(btn.dataset.pickZone || '').toUpperCase();
+          const row = toInt(btn.dataset.pickRow);
+          if (zone === 'MR') {
+            const key = mrKey(row);
+            if (key && reservedKeys.has(key)) {
+              btn.classList.add('draft-reserved');
+              btn.disabled = true;
+              btn.title = 'Этот ряд MR уже выбран для другой палеты в текущем наборе заданий.';
+            }
+          }
+          btn.addEventListener('click', () => {
+            if (btn.disabled) {
+              return;
+            }
+            sendSelection(
+              {
+                zone,
+                row,
+                section: 0,
+                tier: 0,
+                cell: 0,
+              },
+              labelByZone(zone, row),
+            );
+          });
+        });
+
+        const nearZone = String(params.get('near_zone') || '').toUpperCase();
+        const nearRow = toInt(params.get('near_row'));
+        if (nearZone) {
+          const zoneButton = Array.from(document.querySelectorAll('.pick-location-btn[data-pick-zone]'))
+            .find((btn) => {
+              if (btn.disabled) {
+                return false;
+              }
+              const zone = String(btn.dataset.pickZone || '').toUpperCase();
+              const row = toInt(btn.dataset.pickRow);
+              if (zone !== nearZone) {
+                return false;
+              }
+              if (nearZone === 'MR') {
+                return row > 0 && row === nearRow;
+              }
+              return nearZone === 'PR' || nearZone === 'OTG';
+            });
+          if (zoneButton) {
+            zoneButton.classList.add('near-suggested');
+            zoneButton.scrollIntoView({ block: 'center', behavior: 'smooth' });
+          }
+          if (nearZone === 'OS' && nearRow > 0) {
+            const rowLink = Array.from(document.querySelectorAll('.row-link'))
+              .find((link) => Number.parseInt(String(link.textContent || '').trim(), 10) === nearRow);
+            if (rowLink) {
+              rowLink.classList.add('near-suggested');
+              rowLink.scrollIntoView({ block: 'center', behavior: 'smooth' });
+            }
+          }
+        }
+      })();
+    </script>
+  {% endif %}
 </body>
 </html>

@@ -15,6 +15,7 @@ ROLE_USERNAMES = {
     "processing_worker": "processing_worker",
     "manager": "manager",
     "storekeeper": "storekeeper",
+    "logistician": "logistician",
     "picker": "picker",
     "developer": "dev",
 }

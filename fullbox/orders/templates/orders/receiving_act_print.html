@@ -281,6 +281,9 @@
           <th style="width:100px;">ШК</th>
           <th style="width:80px;">Артикул</th>
           <th>Наименование</th>
+          {% if show_marking_column %}
+            <th style="width:180px;">ЧЗ</th>
+          {% endif %}
           <th style="width:95px;">Количество по заявке</th>
           <th style="width:65px;">Принято</th>
           <th style="width:85px;">Кол-во коробов (принято)</th>
@@ -294,6 +297,9 @@
             <td>{{ item.barcode|default:"-" }}</td>
             <td>{{ item.sku_code|default:"-" }}</td>
             <td>{{ item.name|default:"-" }}</td>
+            {% if show_marking_column %}
+              <td>{{ item.marking_code|default:"-" }}</td>
+            {% endif %}
             <td class="num">{{ item.planned }}</td>
             <td class="num">{{ item.actual }}</td>
             <td class="num">{{ item.box_qty }}</td>
@@ -301,13 +307,13 @@
           </tr>
         {% empty %}
           <tr>
-            <td colspan="8">Нет данных по товарам.</td>
+            <td colspan="{% if show_marking_column %}9{% else %}8{% endif %}">Нет данных по товарам.</td>
           </tr>
         {% endfor %}
       </tbody>
       <tfoot>
         <tr>
-          <td colspan="4">Итого</td>
+          <td colspan="{% if show_marking_column %}5{% else %}4{% endif %}">Итого</td>
           <td class="num">{{ total_planned }}</td>
           <td class="num">{{ total_actual }}</td>
           <td class="num">{{ total_boxes }}</td>

@@ -1,6 +1,7 @@
 from django.urls import path
 
 from .views import (
+    receiving_marking_scan,
     processing_marking_summary,
     processing_marking_scan,
     processing_marking_import,
@@ -11,6 +12,7 @@ from .views import (
 app_name = "marking"
 
 urlpatterns = [
+    path("receiving/<str:order_id>/scan/", receiving_marking_scan, name="receiving-scan"),
     path("processing/<str:order_id>/summary/", processing_marking_summary, name="processing-summary"),
     path("processing/<str:order_id>/scan/", processing_marking_scan, name="processing-scan"),
     path("processing/<str:order_id>/print/", processing_marking_print, name="processing-print"),

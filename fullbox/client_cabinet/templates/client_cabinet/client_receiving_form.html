@@ -4,9 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Заявка на приемку | {{ agency.agn_name|default:"Клиент" }}</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="/static/vendor/space-grotesk.css" rel="stylesheet">
   <style>
     :root {
       --bg:#f6f4ed;
@@ -143,7 +141,7 @@
         <div class="muted">Поля с <span class="required">*</span> обязательны.</div>
       </div>
       <div style="display:flex; gap:10px; flex-wrap:wrap;">
-        <a class="btn ghost" href="/client/{{ agency.id }}/sku/">Номенклатура клиента</a>
+        <a class="btn ghost" href="/client/{{ agency.id }}/sku/?view=table">Номенклатура клиента</a>
         <a class="btn ghost" href="/client/dashboard/?client={{ agency.id }}">Кабинет клиента</a>
       </div>
     </header>

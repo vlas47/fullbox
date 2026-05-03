@@ -1,18 +1,17 @@
+{% load static %}
 <!doctype html>
 <html lang="ru">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Номенклатура | {{ agency.agn_name|default:"Клиент" }}</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="{% static 'vendor/space-grotesk.css' %}" rel="stylesheet">
   <style>
     :root { --bg:#f6f4ed; --card:#ffffff; --gold:#c79a1c; --gold-soft:#f2d48c; --text:#1f2328; --muted:#6b7280; --stroke: rgba(31,35,40,0.12); }
     * { box-sizing: border-box; }
     body { margin:0; background:var(--bg); color:var(--text); font-family:'Space Grotesk',system-ui,sans-serif; }
     a { color: inherit; text-decoration: none; }
-    .wrap { max-width: 1400px; margin: 0 auto; padding: 28px 18px 64px; }
+    .wrap { width: 100%; max-width: none; margin: 0; padding: 28px 24px 64px; }
     header { display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; }
     h1 { margin:0; letter-spacing:-0.4px; }
     .muted { color: var(--muted); }
@@ -113,7 +112,7 @@
           <input type="hidden" name="return_to" value="{{ request.GET.return_to }}">
         {% endif %}
         <div style="overflow-x:auto; margin-top:16px;">
-          <table style="width:100%; border-collapse:collapse; min-width:900px;" data-sku-table>
+          <table style="width:100%; border-collapse:collapse; min-width:1320px;" data-sku-table>
           <thead>
             <tr>
               <th style="text-align:left; padding:10px; border-bottom:1px solid var(--stroke);">Действия</th>
@@ -122,6 +121,8 @@
               <th style="text-align:left; padding:10px; border-bottom:1px solid var(--stroke);">Бренд</th>
               <th style="text-align:left; padding:10px; border-bottom:1px solid var(--stroke);">Маркет</th>
               <th style="text-align:left; padding:10px; border-bottom:1px solid var(--stroke);">Размер</th>
+              <th style="text-align:left; padding:10px; border-bottom:1px solid var(--stroke);">Вес нетто, кг</th>
+              <th style="text-align:left; padding:10px; border-bottom:1px solid var(--stroke);">Вес брутто, кг</th>
               <th style="text-align:left; padding:10px; border-bottom:1px solid var(--stroke);">ШК</th>
               <th style="text-align:left; padding:10px; border-bottom:1px solid var(--stroke);">Обновлено</th>
             </tr>
@@ -158,6 +159,12 @@
                 </select>
               </th>
               <th>
+                <input class="filter-input" type="text" name="filter_weight_net" value="{{ filter_values.weight_net }}" placeholder="Нетто" data-filter-input="text">
+              </th>
+              <th>
+                <input class="filter-input" type="text" name="filter_weight_gross" value="{{ filter_values.weight_gross }}" placeholder="Брутто" data-filter-input="text">
+              </th>
+              <th>
                 <input class="filter-input" type="text" name="filter_barcode" value="{{ filter_values.barcode }}" placeholder="ШК" data-filter-input="text">
               </th>
               <th>
@@ -192,6 +199,8 @@
                     <span class="size-value" data-prefix="">{{ item.size|default:"-" }}</span>
                   </div>
                 </td>
+                <td style="padding:10px;">{{ item.weight_net_kg|default:"-" }}</td>
+                <td style="padding:10px;">{{ item.weight_gross_kg|default:item.weight_kg|default:"-" }}</td>
                 <td style="padding:10px;">
                   <span
                     class="barcode-value"
@@ -203,7 +212,7 @@
                 <td style="padding:10px;">{{ item.updated_at|date:"d.m.Y H:i" }}</td>
               </tr>
             {% empty %}
-              <tr><td colspan="6" style="padding:12px;">Нет товаров</td></tr>
+              <tr><td colspan="10" style="padding:12px;">Нет товаров</td></tr>
             {% endfor %}
           </tbody>
           </table>
@@ -236,6 +245,8 @@
               <div>{{ item.name }}</div>
               <div class="row">
                 {% if item.market %}<span class="tag">Маркет: {{ item.market }}</span>{% endif %}
+                {% if item.weight_net_kg %}<span class="tag">Нетто: {{ item.weight_net_kg }} кг</span>{% endif %}
+                {% if item.weight_gross_kg or item.weight_kg %}<span class="tag">Брутто: {{ item.weight_gross_kg|default:item.weight_kg }} кг</span>{% endif %}
                 <span class="tag barcode-tag">
                   <span class="barcode-label">ШК</span>
                   <span class="barcode-wrap">
@@ -290,7 +301,9 @@
     </div>
   </div>
 </body>
-<script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
+{% if view_mode == 'cards' %}
+<script src="{% static 'vendor/jsbarcode.min.js' %}"></script>
+{% endif %}
 <script>
   (function(){
     const deleteBtns = document.querySelectorAll('.delete-btn');

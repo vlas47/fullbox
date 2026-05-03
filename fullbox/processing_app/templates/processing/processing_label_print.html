@@ -1,3 +1,4 @@
+{% load order_display %}
 <!doctype html>
 
 <html lang="ru">
@@ -9,12 +10,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
 
   <title>Печать этикеток | FULLBOX</title>
-
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-
-  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@500;600;700&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="/static/vendor/bricolage-manrope.css" rel="stylesheet">
 
   <style>
 
@@ -829,7 +825,8 @@
 
     }
 
-    .label-printers-card .printer-row input {
+    .label-printers-card .printer-row input,
+    .label-printers-card .printer-row select {
 
       width: 260px;
 
@@ -1179,7 +1176,7 @@
 
         <div class="profile">
 
-          <div class="profile-value">Карта обработки № {{ order_id }}</div>
+          <div class="profile-value">Карта обработки № {{ order_id|display_order_number:"processing" }}</div>
 
           <div class="muted">{{ status_label }}</div>
 
@@ -1471,14 +1468,18 @@
 
                   <label for="label-printer-quick">Принтер этикеток</label>
 
-                  <input id="label-printer-quick" data-label-printer list="label-printers" placeholder="Выберите или введите">
-                  <datalist id="label-printers">
-                    {% for printer in available_printers %}
-                      <option value="{{ printer }}"></option>
+                  <select id="label-printer-quick" data-label-printer>
+                    <option value="">Выберите принтер</option>
+                    {% for printer in available_label_printers|default:available_printers %}
+                      <option value="{{ printer }}">{{ printer }}</option>
                     {% endfor %}
-                  </datalist>
+                  </select>
 
                 </div>
+
+                {% if available_pdf_printers %}
+                  <div class="printer-meta">PDF и виртуальные: {{ available_pdf_printers|join:", " }}</div>
+                {% endif %}
 
                 <div class="actions">
 
@@ -1565,6 +1566,8 @@
                       </div>
 
                       <button class="label-print-btn" type="button" data-label-print>Печать</button>
+
+                      <button class="label-print-btn secondary" type="button" data-label-pdf>PDF</button>
 
                       {% if label.key == "item_cz" %}
 
@@ -1680,7 +1683,7 @@
 
                       {% if row.barcode and row.barcode != '-' %}
 
-                        <button class="btn" type="button" data-label-row data-barcode="{{ row.barcode|default:'' }}" data-size="{{ row.size|default:'' }}" data-cz-codes="{{ row.cz_codes_json|default:'[]'|escape }}" data-qty="{{ row.qty_value|default:0 }}">Выбрать</button>
+                        <button class="btn" type="button" data-label-row data-barcode="{{ row.barcode|default:'' }}" data-size="{{ row.size|default:'' }}" data-cz-codes="{{ row.cz_codes_json|default:'[]'|escape }}" data-qty="{{ row.qty_value|default:0 }}" data-qty-no-cz="{{ row.print_qty_no_cz|default:0 }}" data-qty-cz="{{ row.print_qty_cz|default:0 }}">Выбрать</button>
 
                       {% else %}
 
@@ -1806,7 +1809,7 @@
 
   <script src="/static/vendor/html2canvas.min.js"></script>
 
-  <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+  <script src="/static/vendor/jspdf.umd.min.js"></script>
 
   <script>
 
@@ -2113,6 +2116,12 @@
 
       if (printerInputs.length) {
 
+        const availablePrinterNames = () => new Set(
+          printerInputs.flatMap((input) => Array.from(input.options || []))
+            .map((option) => String(option.value || '').trim())
+            .filter(Boolean)
+        );
+
         const setPrinterValue = (value) => {
 
           printerInputs.forEach((input) => {
@@ -2129,7 +2138,7 @@
 
         const stored = localStorage.getItem('processing_label_printer') || localStorage.getItem('label_printer');
 
-        if (stored) {
+        if (stored && availablePrinterNames().has(stored)) {
 
           setPrinterValue(stored);
 
@@ -2215,6 +2224,7 @@
         const lastErrorLine = panel.querySelector('[data-print-last-error]');
 
         const printButtons = Array.from(panel.querySelectorAll('[data-label-print]'));
+        const pdfButtons = Array.from(panel.querySelectorAll('[data-label-pdf]'));
         const resetPrintedButtons = Array.from(panel.querySelectorAll('[data-label-reset-printed]'));
 
         const printProgressKey = 'processing_label_printed';
@@ -2249,8 +2259,16 @@
 
         const printProgress = loadPrintProgress();
 
-        const getRowQty = () => (Number.isFinite(window.processingLabelQty) ? window.processingLabelQty : 0);
+        const getRowQty = (mode = 'no-cz') => {
+          const byMode = window.processingLabelQtyByMode || {};
+          const value = byMode[mode];
+          if (Number.isFinite(value)) {
+            return value;
+          }
+          return Number.isFinite(window.processingLabelQty) ? window.processingLabelQty : 0;
+        };
         const orderId = '{{ order_id|escapejs }}';
+        const cardId = '{{ card_id|default:""|escapejs }}';
 
 
         const getPrintKey = (mode) => {
@@ -2293,7 +2311,7 @@
 
             const mode = resolveMode(card.dataset.labelCard);
 
-            const totalQty = getRowQty();
+            const totalQty = getRowQty(mode);
 
             const availableCodes = mode === 'cz'
 
@@ -3081,7 +3099,7 @@
 
         const rawSize = Math.min(host.clientWidth, host.clientHeight);
 
-        const size = Math.floor(rawSize * 0.85) || 64;
+        const size = Math.floor(rawSize * 1.0) || 64;
 
         box.style.width = `${size}px`;
 
@@ -3398,6 +3416,44 @@
 
       };
 
+      const shortenClientLabel = (value) => {
+
+        const normalized = String(value || '')
+          .replace(/\u00a0/g, ' ')
+          .replace(/^клиент\s*:\s*/i, '')
+          .replace(/\s+/g, ' ')
+          .trim();
+
+        if (!normalized) {
+
+          return '';
+
+        }
+
+        const ipMatch = normalized.match(/^(?:ип|индивидуальный\s+предприниматель)\s+(.+)$/i);
+
+        if (!ipMatch) {
+
+          return normalized;
+
+        }
+
+        const parts = String(ipMatch[1] || '').trim().split(/\s+/).filter(Boolean);
+
+        if (!parts.length) {
+
+          return 'ИП';
+
+        }
+
+        const surname = parts[0];
+
+        const initials = parts.slice(1, 3).map((part) => `${part.charAt(0).toUpperCase()}.`).join('');
+
+        return initials ? `ИП ${surname} ${initials}` : `ИП ${surname}`;
+
+      };
+
 
 
         const updateLabelRoot = (root, data, mode, sizes) => {
@@ -3434,7 +3490,7 @@
 
           setInfoLine(root, 'box_basis', data.box_basis, 'Основание: ');
 
-          setInfoLine(root, 'box_client', data.box_client, 'Клиент: ');
+          setInfoLine(root, 'box_client', shortenClientLabel(data.box_client), null);
 
           setInfoLine(root, 'box_pallet_number', data.box_pallet_number, null);
 
@@ -3673,6 +3729,11 @@
       const getSelectedPrinter = () => {
 
         const printerInputs = Array.from(document.querySelectorAll('[data-label-printer]'));
+        const allowedPrinters = new Set(
+          printerInputs.flatMap((input) => Array.from(input.options || []))
+            .map((option) => String(option.value || '').trim())
+            .filter(Boolean)
+        );
 
         for (const input of printerInputs) {
 
@@ -3686,7 +3747,7 @@
 
         }
 
-        return (
+        const stored = (
 
           localStorage.getItem('processing_label_printer')
 
@@ -3695,6 +3756,8 @@
           || ''
 
         ).trim();
+
+        return stored && allowedPrinters.has(stored) ? stored : '';
 
       };
 
@@ -3707,6 +3770,27 @@
         const height = parseFloat((card && card.dataset.labelHeight) || (root && root.dataset.labelHeight)) || 40;
 
         return { width, height };
+
+      };
+
+
+      const getPrintPageDimensions = (target, dims) => {
+
+        if (!dims) {
+
+          return { width: 58, height: 40 };
+
+        }
+
+        const labelType = target && target.dataset ? target.dataset.labelType : '';
+
+        if (labelType === 'box' || labelType === 'pallet') {
+
+          return { width: dims.height, height: dims.width };
+
+        }
+
+        return { width: dims.width, height: dims.height };
 
       };
 
@@ -3806,11 +3890,85 @@
 
 
 
-      const isPdfPrinter = (name) => {
+      const buildPdfDocument = async ({ root, data, mode, sizes, dims, printDims, jobs, requested }) => {
 
-        const value = String(name || '').toLowerCase();
+        const jsPdfApi = window.jspdf && window.jspdf.jsPDF ? window.jspdf.jsPDF : null;
 
-        return value.includes('print to pdf') || value.includes('pdf');
+        if (!jsPdfApi) {
+
+          setStatusLine('Не удалось загрузить модуль PDF');
+
+          alert('Не удалось загрузить модуль PDF. Обновите страницу и попробуйте снова.');
+
+          return false;
+
+        }
+
+        const orientation = printDims.width >= printDims.height ? 'landscape' : 'portrait';
+
+        const doc = new jsPdfApi({
+          orientation,
+          unit: 'mm',
+          format: [printDims.width, printDims.height],
+          compress: true,
+        });
+
+        let sharedImage = '';
+
+        if (mode !== 'cz') {
+          setStatusLine('Подготовка PDF: 1 / 1');
+          sharedImage = await buildLabelImage(root, data, mode, sizes, dims);
+          if (!sharedImage) {
+            setStatusLine('Ошибка формирования этикетки');
+            alert('Не удалось сформировать этикетку.');
+            return false;
+          }
+        }
+
+        for (let i = 0; i < jobs.length; i += 1) {
+
+          const czCode = jobs[i];
+          const payload = Object.assign({}, data);
+
+          if (mode === 'cz') {
+            payload.cz_code = czCode || '';
+          }
+
+          let image = sharedImage;
+          if (mode === 'cz') {
+            setStatusLine(jobs.length > 1 ? `PDF: ${i + 1} / ${jobs.length}` : 'Подготовка PDF:');
+            image = await buildLabelImage(root, payload, mode, sizes, dims);
+          }
+
+          if (!image) {
+            setStatusLine('Ошибка формирования этикетки');
+            alert('Не удалось сформировать этикетку.');
+            return false;
+          }
+
+          if (i > 0) {
+            doc.addPage([printDims.width, printDims.height], orientation);
+          }
+
+          doc.addImage(image, 'PNG', 0, 0, printDims.width, printDims.height, undefined, 'FAST');
+        }
+
+        const sanitizeFilenamePart = (value) => String(value || '')
+          .trim()
+          .replace(/[\\/:*?"<>|]+/g, '-')
+          .replace(/\s+/g, '_')
+          .replace(/_+/g, '_')
+          .replace(/^_+|_+$/g, '');
+        const barcodePart = sanitizeFilenamePart(data.barcode) || 'no_barcode';
+        const modePart = mode === 'cz' ? 'ЧЗ' : '';
+        const qtyPart = String(jobs.length || requested || 0);
+        const pdfFileName = modePart
+          ? `L_${barcodePart}_${modePart}_${qtyPart}.pdf`
+          : `L_${barcodePart}_${qtyPart}.pdf`;
+
+        doc.save(pdfFileName);
+        setStatusLine(`PDF готов: ${jobs.length} стр.`);
+        return true;
 
       };
 
@@ -4007,7 +4165,7 @@
       };
 
 
-const enqueuePrintJob = async (card) => {
+      const enqueuePrintJob = async (card, outputMode = 'queue') => {
 
         if (!card) {
 
@@ -4031,7 +4189,7 @@ const enqueuePrintJob = async (card) => {
 
         const mode = resolveMode(card.dataset.labelCard);
 
-        const printer = getSelectedPrinter();
+        const printer = outputMode === 'queue' ? getSelectedPrinter() : '';
 
         const czCodes = Array.isArray(window.processingLabelCzCodes)
 
@@ -4046,7 +4204,7 @@ const enqueuePrintJob = async (card) => {
           : 0;
 
 
-        if (!printer) {
+        if (outputMode === 'queue' && !printer) {
 
           setStatusLine('Не выбран принтер');
 
@@ -4093,7 +4251,8 @@ const enqueuePrintJob = async (card) => {
         clearLastError();
 
         const dims = getLabelDimensions(card, root);
-        const totalQty = getRowQty();
+        const printDims = getPrintPageDimensions(root, dims);
+        const totalQty = getRowQty(mode);
 
         const printedCount = getPrintedCount(mode);
 
@@ -4173,78 +4332,22 @@ const enqueuePrintJob = async (card) => {
 
         }
 
-        const wantsPdf = isPdfPrinter(printer);
-
-        if (wantsPdf) {
-
-          const jsPdfApi = window.jspdf && window.jspdf.jsPDF ? window.jspdf.jsPDF : null;
-
-          if (!jsPdfApi) {
-
-            setStatusLine('Не удалось загрузить модуль PDF');
-
-            alert('Не удалось загрузить модуль PDF. Обновите страницу и попробуйте снова.');
-
-            return;
-
-          }
-
-          const orientation = dims.width >= dims.height ? 'landscape' : 'portrait';
-
-          const doc = new jsPdfApi({ orientation, unit: 'mm', format: [dims.width, dims.height], compress: true });
-
-          for (let i = 0; i < jobs.length; i += 1) {
-
-            const czCode = jobs[i];
-
-            const payload = Object.assign({}, data);
-
-            if (mode === 'cz') {
-
-              payload.cz_code = czCode || '';
-
-            }
-
-            setStatusLine(jobs.length > 1 ? `PDF: ${i + 1} / ${jobs.length}` : 'Подготовка PDF:');
-
-            const image = await buildLabelImage(root, payload, mode, sizes, dims);
-
-            if (!image) {
-
-              setStatusLine('Ошибка формирования этикетки');
-
-              alert('Не удалось сформировать этикетку.');
-
-              return;
-
-            }
-
-            if (i > 0) {
-
-              doc.addPage([dims.width, dims.height], orientation);
-
-            }
-
-            doc.addImage(image, 'PNG', 0, 0, dims.width, dims.height);
-
-          }
-
-          const stamp = new Date().toISOString().slice(0, 19).replace(/[T:]/g, '-');
-
-          doc.save(`labels_${stamp}.pdf`);
-
-          if (mode !== 'cz') {
-
+        if (outputMode === 'pdf') {
+          const pdfOk = await buildPdfDocument({
+            root,
+            data,
+            mode,
+            sizes,
+            dims,
+            printDims,
+            jobs,
+            requested,
+          });
+          if (pdfOk && mode !== 'cz') {
             addPrintedCount(mode, jobs.length);
-
             updatePrintProgress();
-
           }
-
-          setStatusLine(`PDF готов: ${jobs.length} стр.`);
-
           return;
-
         }
 
         for (let i = 0; i < jobs.length; i += 1) {
@@ -4295,9 +4398,9 @@ const enqueuePrintJob = async (card) => {
 
               body: JSON.stringify({
 
-                order_id: '',
+                order_id: orderId || '',
 
-                card_id: '',
+                card_id: cardId || '',
 
                 article: payload.article || '',
 
@@ -4309,9 +4412,9 @@ const enqueuePrintJob = async (card) => {
 
                 label_png_base64: base64,
 
-                label_width_mm: dims.width,
+                label_width_mm: printDims.width,
 
-                label_height_mm: dims.height,
+                label_height_mm: printDims.height,
 
               }),
 
@@ -4363,7 +4466,23 @@ const enqueuePrintJob = async (card) => {
 
             const card = btn.closest('[data-label-card]');
 
-            enqueuePrintJob(card);
+            enqueuePrintJob(card, 'queue');
+
+          });
+
+        });
+
+      }
+
+      if (pdfButtons.length) {
+
+        pdfButtons.forEach((btn) => {
+
+          btn.addEventListener('click', () => {
+
+            const card = btn.closest('[data-label-card]');
+
+            enqueuePrintJob(card, 'pdf');
 
           });
 
@@ -4645,6 +4764,7 @@ const enqueuePrintJob = async (card) => {
       let selectedCzCodes = [];
 
       let selectedQty = 0;
+      let selectedQtyByMode = { 'no-cz': 0, 'cz': 0 };
 
       const parseCodes = (raw) => {
 
@@ -4686,13 +4806,16 @@ const enqueuePrintJob = async (card) => {
 
       };
 
-      const setRow = (barcode, size, codes, qty) => {
+      const setRow = (barcode, size, codes, qty, qtyNoCz, qtyCz) => {
 
         const list = Array.isArray(codes) ? codes : [];
 
         selectedCzCodes = list;
 
         selectedQty = Number.isFinite(qty) ? qty : 0;
+        const noCzQty = Number.isFinite(qtyNoCz) ? qtyNoCz : selectedQty;
+        const czQty = Number.isFinite(qtyCz) ? qtyCz : selectedQty;
+        selectedQtyByMode = { 'no-cz': noCzQty, 'cz': czQty };
 
         setValue(barcodeInput, barcode);
 
@@ -4709,6 +4832,7 @@ const enqueuePrintJob = async (card) => {
         window.processingLabelCzCodes = selectedCzCodes;
 
         window.processingLabelQty = selectedQty;
+        window.processingLabelQtyByMode = selectedQtyByMode;
 
         if (window.processingLabelUpdateProgress) {
 
@@ -4729,10 +4853,17 @@ const enqueuePrintJob = async (card) => {
         }
 
         const qty = parseInt(btn.dataset.qty || '0', 10);
-
+        const qtyNoCz = parseInt(btn.dataset.qtyNoCz || '', 10);
+        const qtyCz = parseInt(btn.dataset.qtyCz || '', 10);
         const codes = parseCodes(btn.dataset.czCodes || '[]');
-
-        setRow(btn.dataset.barcode || '', btn.dataset.size || '', codes, Number.isFinite(qty) ? qty : 0);
+        setRow(
+          btn.dataset.barcode || '',
+          btn.dataset.size || '',
+          codes,
+          Number.isFinite(qty) ? qty : 0,
+          Number.isFinite(qtyNoCz) ? qtyNoCz : undefined,
+          Number.isFinite(qtyCz) ? qtyCz : undefined,
+        );
 
       };
 
@@ -4784,7 +4915,7 @@ const enqueuePrintJob = async (card) => {
 
         } else {
 
-          setRow(initialBarcode, initialSize, [], 0);
+          setRow(initialBarcode, initialSize, [], 0, 0, 0);
 
         }
 

@@ -12,6 +12,8 @@ STAFF_ROLES = {
     "processing_head",
     "processing_worker",
     "manager",
+    "storekeeper",
+    "logistician",
     "accountant",
     "reachtruck_driver",
     "developer",
@@ -22,14 +24,43 @@ def is_staff_role(role: str | None) -> bool:
     return role in STAFF_ROLES
 
 
-def get_employee_for_user(user):
+def get_employee_for_user(user, *, preferred_id: int | None = None, preferred_role: str | None = None):
     if not user or not getattr(user, "is_authenticated", False):
         return None
-    return Employee.objects.filter(user=user, is_active=True).first()
+    employees = Employee.objects.filter(user=user, is_active=True).order_by("id")
+    if preferred_id:
+        employee = employees.filter(id=preferred_id).first()
+        if employee:
+            return employee
+    if preferred_role:
+        employee = employees.filter(role=preferred_role).first()
+        if employee:
+            return employee
+    return employees.first()
+
+
+def get_request_employee(request):
+    if not request or not getattr(request, "user", None):
+        return None
+    preferred_id = None
+    preferred_role = None
+    session = getattr(request, "session", None)
+    if session is not None:
+        raw_id = session.get("employee_id")
+        try:
+            preferred_id = int(raw_id)
+        except (TypeError, ValueError):
+            preferred_id = None
+        preferred_role = str(session.get("employee_role") or "").strip() or None
+    return get_employee_for_user(
+        request.user,
+        preferred_id=preferred_id,
+        preferred_role=preferred_role,
+    )
 
 
 def get_request_role(request):
-    employee = get_employee_for_user(request.user)
+    employee = get_request_employee(request)
     if employee:
         return employee.role
     if settings.DEBUG:
@@ -72,6 +103,7 @@ def resolve_cabinet_url(role: str | None) -> str:
     mapping = {
         "manager": "/team-manager/",
         "storekeeper": "/sklad/",
+        "logistician": "/logistics/",
         "head_manager": "/head-manager/",
         "processing_head": "/processing-head/",
         "processing_worker": "/processing-worker/",

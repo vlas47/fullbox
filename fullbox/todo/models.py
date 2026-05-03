@@ -8,10 +8,12 @@ from django.utils import timezone
 
 from audit.models import OrderAuditEntry
 from employees.models import Employee
+from fullbox.order_numbers import format_order_number, replace_order_number_in_title
 
 
 _RECEIVING_ROUTE_RE = re.compile(r"/orders/receiving/([^/]+)/")
 _PROCESSING_ROUTE_RE = re.compile(r"/orders/processing/([^/]+)/")
+_SHIPPING_ROUTE_RE = re.compile(r"/shipping/(\d+)/")
 _STATUS_ONLY_KEYS = {"comment", "message", "status", "status_label", "submit_action"}
 
 
@@ -28,6 +30,15 @@ def _extract_processing_order_id(route: str | None) -> str | None:
     if not route:
         return None
     match = _PROCESSING_ROUTE_RE.search(route)
+    if not match:
+        return None
+    return match.group(1)
+
+
+def _extract_shipping_order_pk(route: str | None) -> str | None:
+    if not route:
+        return None
+    match = _SHIPPING_ROUTE_RE.search(route)
     if not match:
         return None
     return match.group(1)
@@ -67,6 +78,14 @@ def _payload_for_receiving_order(order_id: str) -> dict:
         .order_by("created_at")
     )
     return _latest_payload_from_entries(entries)
+
+
+def _display_shipping_number(number: str | None) -> str:
+    return format_order_number("shipping", number)
+
+
+def _shipping_task_title_with_display_id(title: str | None, raw_number: str | None) -> str:
+    return f"Заявка на отгрузку №{_display_shipping_number(raw_number)}"
 
 
 def default_due_date():
@@ -137,12 +156,30 @@ class Task(models.Model):
         if order_id:
             payload = _payload_for_receiving_order(order_id)
             title = _receiving_title_from_payload(payload)
-            self._display_title_cache = f"{title} №{order_id}"
+            self._display_title_cache = f"{title} №{format_order_number('receiving', order_id)}"
             return self._display_title_cache
         order_id = _extract_processing_order_id(self.route)
         if order_id:
-            self._display_title_cache = f"Заявка на обработку №{order_id}"
+            self._display_title_cache = f"Заявка на обработку №{format_order_number('processing', order_id)}"
             return self._display_title_cache
+        shipping_pk = _extract_shipping_order_pk(self.route)
+        if shipping_pk:
+            try:
+                from shipping.models import ShippingOrder
+
+                shipping_order = (
+                    ShippingOrder.objects.filter(pk=int(shipping_pk))
+                    .only("number")
+                    .first()
+                )
+            except Exception:
+                shipping_order = None
+            if shipping_order:
+                self._display_title_cache = _shipping_task_title_with_display_id(
+                    self.title,
+                    shipping_order.number,
+                )
+                return self._display_title_cache
         self._display_title_cache = self.title
         return self._display_title_cache
 

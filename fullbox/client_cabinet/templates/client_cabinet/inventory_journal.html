@@ -4,9 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Складские остатки | FULLBOX</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@500;600;700&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="/static/vendor/bricolage-manrope.css" rel="stylesheet">
   <style>
     :root {
       --bg: #f2efe8;
@@ -302,8 +300,8 @@
               <span class="nav-title">Заявка на приемку</span>
               <span class="nav-sub">Отправить поставку</span>
             </a>
-            <a class="nav-link" href="/orders/packing/?client={{ client_agency.id }}">
-              <span class="nav-title">Заявка на упаковку</span>
+            <a class="nav-link" href="/orders/processing/?client={{ client_agency.id }}">
+              <span class="nav-title">Заявка на обработку</span>
               <span class="nav-sub">Подготовка товара</span>
             </a>
             <a class="nav-link" href="/client/marking/?client={{ client_agency.id }}">
@@ -354,6 +352,10 @@
                   <th>Размер</th>
                   <th>Тип товара</th>
                   <th>Кол-во</th>
+                  <th>Резерв OBR</th>
+                  <th>Товар в обработке</th>
+                  <th>Резерв OTG</th>
+                  <th>Доступный остаток</th>
                 </tr>
                 <tr class="filter-row">
                   <th>
@@ -377,6 +379,10 @@
                     </select>
                   </th>
                   <th></th>
+                  <th></th>
+                  <th></th>
+                  <th></th>
+                  <th></th>
                 </tr>
               </thead>
               <tbody>
@@ -387,10 +393,14 @@
                     <td>{{ row.size }}</td>
                     <td>{{ row.goods_type }}</td>
                     <td>{{ row.qty }}</td>
+                    <td>{{ row.processing_reserved_qty|default:0 }}</td>
+                    <td>{{ row.processing_in_progress_qty|default:0 }}</td>
+                    <td>{{ row.shipping_reserved_qty|default:0 }}</td>
+                    <td>{{ row.available_qty|default:0 }}</td>
                   </tr>
                 {% empty %}
                   <tr>
-                    <td colspan="5" class="muted">Записей пока нет.</td>
+                    <td colspan="9" class="muted">Записей пока нет.</td>
                   </tr>
                 {% endfor %}
               </tbody>

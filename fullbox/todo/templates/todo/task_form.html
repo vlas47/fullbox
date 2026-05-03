@@ -4,9 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>FULLBOX | {{ title }}</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="/static/vendor/space-grotesk.css" rel="stylesheet">
   <style>
     :root { --bg:#f6f4ed; --card:#ffffff; --card-soft:#f8f6f1; --stroke:rgba(31,35,40,0.12); --text:#1f2328; --muted:#6b7280; --gold:#c79a1c; --gold-soft:#f2d48c; }
     * { box-sizing: border-box; }
@@ -38,11 +36,12 @@
           <h1>{{ title }}</h1>
           <div class="muted">Заполните поля и сохраните задачу.</div>
         </div>
-        <a class="btn" href="{% url 'todo:list' %}">К списку</a>
+        <a class="btn" href="{{ return_url|default:'#' }}">Назад</a>
       </div>
 
       <form method="post">
         {% csrf_token %}
+        <input type="hidden" name="next" value="{{ return_url }}">
         <div>
           <label for="id_title">Название</label>
           {{ form.title }}
@@ -68,7 +67,7 @@
           {{ form.due_date }}
         </div>
         <div class="actions">
-          <button class="btn" type="button" onclick="window.history.back()">Отмена</button>
+          <button class="btn" type="button" onclick="window.location.href='{{ return_url|escapejs }}'">Отмена</button>
           <button class="btn primary" type="submit">Сохранить</button>
         </div>
       </form>

@@ -4,9 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{{ title }} | FULLBOX</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="/static/vendor/space-grotesk.css" rel="stylesheet">
   {% load widget_tweaks %}
   <style>
     :root { --bg:#0b0b0f; --card:#14141f; --gold:#d6a300; --gold-soft:#e7c34a; --text:#e8e8ed; --muted:#9aa0b3; --stroke: rgba(255,255,255,0.08); }
@@ -343,7 +341,9 @@
             <div><label>Цвет (текст)</label>{{ form.color.errors }}{% if form.color.errors %}{% render_field form.color class+="field-error" %}{% else %}{% render_field form.color %}{% endif %}</div>
             <div><label>Цвет (справочник)</label>{{ form.color_ref.errors }}{% if form.color_ref.errors %}{% render_field form.color_ref class+="field-error" %}{% else %}{% render_field form.color_ref %}{% endif %}</div>
             <div><label>Размер товара</label>{{ form.size.errors }}{% if form.size.errors %}{% render_field form.size class+="field-error" %}{% else %}{% render_field form.size %}{% endif %}</div>
-            <div><label>Вес, кг</label>{{ form.weight_kg.errors }}{% if form.weight_kg.errors %}{% render_field form.weight_kg class+="field-error" %}{% else %}{% render_field form.weight_kg %}{% endif %}</div>
+            <div><label>Вес, кг (совм.)</label>{{ form.weight_kg.errors }}{% if form.weight_kg.errors %}{% render_field form.weight_kg class+="field-error" %}{% else %}{% render_field form.weight_kg %}{% endif %}</div>
+            <div><label>Вес нетто, кг</label>{{ form.weight_net_kg.errors }}{% if form.weight_net_kg.errors %}{% render_field form.weight_net_kg class+="field-error" %}{% else %}{% render_field form.weight_net_kg %}{% endif %}</div>
+            <div><label>Вес брутто, кг</label>{{ form.weight_gross_kg.errors }}{% if form.weight_gross_kg.errors %}{% render_field form.weight_gross_kg class+="field-error" %}{% else %}{% render_field form.weight_gross_kg %}{% endif %}</div>
             <div><label>Объем</label>{{ form.volume.errors }}{% if form.volume.errors %}{% render_field form.volume class+="field-error" %}{% else %}{% render_field form.volume %}{% endif %}</div>
             <div><label>Длина, мм</label>{{ form.length_mm.errors }}{% if form.length_mm.errors %}{% render_field form.length_mm class+="field-error" %}{% else %}{% render_field form.length_mm %}{% endif %}</div>
             <div><label>Ширина, мм</label>{{ form.width_mm.errors }}{% if form.width_mm.errors %}{% render_field form.width_mm class+="field-error" %}{% else %}{% render_field form.width_mm %}{% endif %}</div>
@@ -439,8 +439,8 @@
     </div>
   </div>
 {{ label_settings|json_script:"label-settings-data" }}
-<script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+<script src="/static/vendor/jsbarcode.min.js"></script>
+<script src="/static/vendor/qrcode.min.js"></script>
 </body>
 <script>
   (function(){

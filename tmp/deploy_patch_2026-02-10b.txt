@@ -1,2 +1,0 @@
-fullbox/templates/login.html
-journal.md

@@ -1,6 +1,24 @@
+import re
+
 from django.conf import settings
 from django.db import models
 from django.db.models import Q
+
+
+_AGENCY_SHORT_NAME_PATTERNS = (
+    (re.compile(r"\bобщество\s+с\s+ограниченной\s+ответственностью\b", re.IGNORECASE), "ООО"),
+    (re.compile(r"\bиндивидуальный\s+предприниматель\b", re.IGNORECASE), "ИП"),
+)
+
+
+def abbreviate_agency_name(value: str | None) -> str | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    for pattern, replacement in _AGENCY_SHORT_NAME_PATTERNS:
+        text = pattern.sub(replacement, text)
+    text = re.sub(r"\s+", " ", text).strip()
+    return text or None
 
 
 class Agency(models.Model):
@@ -8,6 +26,7 @@ class Agency(models.Model):
 
     id = models.AutoField(primary_key=True)
     agn_name = models.CharField("Организация", max_length=255, blank=True, null=True)
+    short_name = models.CharField("Сокращенное название", max_length=255, blank=True, null=True)
     inn = models.CharField("ИНН", max_length=32, blank=True, null=True)
     kpp = models.CharField("КПП", max_length=32, blank=True, null=True)
     adres = models.TextField("Адрес", blank=True, null=True)
@@ -44,6 +63,10 @@ class Agency(models.Model):
 
     def __str__(self) -> str:
         return self.agn_name or f"Клиент {self.id}"
+
+    def save(self, *args, **kwargs):
+        self.short_name = abbreviate_agency_name(self.agn_name)
+        super().save(*args, **kwargs)
 
 
 class Market(models.Model):
@@ -158,6 +181,12 @@ class SKU(models.Model):
     )
     weight_kg = models.DecimalField(
         "Вес, кг", max_digits=10, decimal_places=3, blank=True, null=True
+    )
+    weight_net_kg = models.DecimalField(
+        "Вес нетто, кг", max_digits=10, decimal_places=3, blank=True, null=True
+    )
+    weight_gross_kg = models.DecimalField(
+        "Вес брутто, кг", max_digits=10, decimal_places=3, blank=True, null=True
     )
     volume = models.DecimalField(
         "Объем", max_digits=12, decimal_places=3, blank=True, null=True

@@ -1,2 +1,0 @@
-fullbox/processing_app/templates/processing/processing_work.html
-journal.md

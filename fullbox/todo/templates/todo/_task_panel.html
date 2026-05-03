@@ -5,6 +5,13 @@
   .task-col-header { display:flex; justify-content:space-between; align-items:center; padding:10px 12px; border-bottom:1px dashed var(--stroke); font-weight:600; }
   .task-col-body { display:grid; gap:8px; padding:10px; align-content:start; align-items:start; }
   .task-card { padding:10px; border:1px solid var(--stroke); border-radius:12px; background:var(--card, rgba(255,255,255,0.02)); }
+  .task-card-link { display:block; color:inherit; text-decoration:none; }
+  .task-card.clickable { cursor:pointer; transition: transform 0.16s ease, box-shadow 0.16s ease; }
+  .task-card-link:hover .task-card.clickable,
+  .task-card-link:focus-visible .task-card.clickable {
+    transform: translateY(-1px);
+    box-shadow: 0 12px 24px rgba(15, 23, 42, 0.08);
+  }
   .task-card.order-receiving {
     border-color: rgba(34,197,94,0.35);
     background: linear-gradient(135deg, rgba(34,197,94,0.12), rgba(236,253,245,0.75));
@@ -88,24 +95,9 @@
         <div class="task-col-body">
           {% if column.tasks %}
             {% for task in column.tasks %}
-              <div class="task-card{% if task.route and "/orders/receiving/" in task.route %} order-receiving{% elif task.route and "/orders/processing/" in task.route %} order-processing{% endif %}{% if task_panel_attention_employee_id and task.assigned_to_id == task_panel_attention_employee_id %}{% if task_panel_role == "manager" and task.status == "done" %}{% elif task.route and "/orders/receiving/" in task.route and "/act/print/" not in task.route %}{% else %} attention{% endif %}{% endif %}">
-                <div class="task-title">
-                  {% if task.route and "/orders/receiving/" in task.route %}
-                    {% if "/act/print/" in task.route %}
-                      <a href="{{ task.route }}">{{ task.title }}</a>
-                    {% else %}
-                      <a href="{{ task.route }}">{{ task.display_title }}</a>
-                    {% endif %}
-                  {% elif task.route and "/orders/processing/" in task.route %}
-                    {% if task_panel_role == "processing_worker" and task.worker_title %}
-                      <a href="{{ task.route }}">{{ task.worker_title }}</a>
-                    {% else %}
-                      <a href="{{ task.route }}">{{ task.display_title }}</a>
-                    {% endif %}
-                  {% else %}
-                    <a href="{% url 'todo:detail' task.id %}">{{ task.display_title }}</a>
-                  {% endif %}
-                </div>
+              <a class="task-card-link" href="{{ task.panel_url }}">
+              <div class="task-card clickable{% if task.route and "/orders/receiving/" in task.route %} order-receiving{% elif task.route and "/orders/processing/" in task.route %} order-processing{% endif %}{% if task_panel_attention_employee_id and task.assigned_to_id == task_panel_attention_employee_id %}{% if task_panel_role == "manager" and task.status == "done" %}{% elif task.route and "/orders/receiving/" in task.route and "/act/print/" not in task.route %}{% else %} attention{% endif %}{% endif %}">
+                <div class="task-title">{{ task.panel_title }}</div>
                 {% if task_panel_role == "storekeeper" and task.route %}
                   {% if "/orders/receiving/" in task.route or "/orders/processing/" in task.route %}
                   {% else %}
@@ -220,6 +212,7 @@
                   </div>
                 {% endif %}
               </div>
+              </a>
             {% endfor %}
           {% else %}
             <div class="task-empty">Нет задач</div>

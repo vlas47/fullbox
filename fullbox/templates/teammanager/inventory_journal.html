@@ -4,9 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Складские остатки | FULLBOX</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@500;600;700&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="/static/vendor/bricolage-manrope.css" rel="stylesheet">
   <style>
     :root {
       --bg: #f2efe8;
@@ -306,6 +304,7 @@
                   <th>Размер</th>
                   <th>Тип товара</th>
                   <th>Кол-во</th>
+                  <th>Доступный остаток</th>
                   <th>Короб</th>
                   <th>Палета</th>
                   <th>Зона</th>
@@ -335,6 +334,7 @@
                     </select>
                   </th>
                   <th></th>
+                  <th></th>
                   <th><span class="muted">-</span></th>
                   <th><span class="muted">-</span></th>
                   <th><span class="muted">-</span></th>
@@ -345,19 +345,20 @@
                   <tr>
                     <td>{{ row.created_at|date:"d.m.Y, H:i" }}</td>
                     <td>{{ row.client_label }}</td>
-                    <td>{{ row.order_id }}</td>
+                    <td>{{ row.order_type_code }}-{{ row.order_id }}</td>
                     <td>{{ row.sku }}</td>
                     <td>{{ row.name }}</td>
                     <td>{{ row.size }}</td>
                     <td>{{ row.goods_type }}</td>
                     <td>{{ row.qty }}</td>
+                    <td>{{ row.available_qty|default:0 }}</td>
                     <td>{{ row.box_code }}</td>
                     <td>{{ row.pallet_code }}</td>
                     <td>{{ row.location }}</td>
                   </tr>
                 {% empty %}
                   <tr>
-                    <td colspan="11" class="orders-empty">Записей пока нет.</td>
+                    <td colspan="12" class="orders-empty">Записей пока нет.</td>
                   </tr>
                 {% endfor %}
               </tbody>

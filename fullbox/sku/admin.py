@@ -94,8 +94,8 @@ class ColorAdmin(admin.ModelAdmin):
 
 @admin.register(Agency)
 class AgencyAdmin(admin.ModelAdmin):
-    list_display = ("id", "agn_name", "inn", "email", "phone", "use_nds")
-    search_fields = ("agn_name", "inn", "pref", "email")
+    list_display = ("id", "agn_name", "short_name", "inn", "email", "phone", "use_nds")
+    search_fields = ("agn_name", "short_name", "inn", "pref", "email")
     list_filter = ("use_nds",)
 
     def save_model(self, request, obj, form, change):

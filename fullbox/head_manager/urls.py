@@ -1,8 +1,24 @@
 from django.urls import path
-from .views import HeadManagerDashboard, MarketplaceWarehousesView, MarketplaceWarehousesSyncView
+from .views import (
+    CarrierCreateView,
+    CarrierListView,
+    CarrierUpdateView,
+    HeadManagerDashboard,
+    MarketplaceWarehousesSyncView,
+    MarketplaceWarehousesView,
+    OwnCompanyCreateView,
+    OwnCompanyListView,
+    OwnCompanyUpdateView,
+)
 
 urlpatterns = [
     path('', HeadManagerDashboard.as_view(), name='head-manager-dashboard'),
+    path('own-companies/', OwnCompanyListView.as_view(), name='head-manager-own-companies'),
+    path('own-companies/new/', OwnCompanyCreateView.as_view(), name='head-manager-own-company-create'),
+    path('own-companies/<int:pk>/edit/', OwnCompanyUpdateView.as_view(), name='head-manager-own-company-edit'),
+    path('carriers/', CarrierListView.as_view(), name='head-manager-carriers'),
+    path('carriers/new/', CarrierCreateView.as_view(), name='head-manager-carrier-create'),
+    path('carriers/<int:pk>/edit/', CarrierUpdateView.as_view(), name='head-manager-carrier-edit'),
     path('marketplace-warehouses/', MarketplaceWarehousesView.as_view(), name='head-manager-marketplace-warehouses'),
     path(
         'marketplace-warehouses/sync/',
