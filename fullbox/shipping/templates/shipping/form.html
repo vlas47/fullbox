@@ -1,0 +1,2077 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ page_title|default:"Новая заявка на отгрузку" }}</title>
+  <link href="/static/vendor/bricolage-manrope.css" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #f2efe8;
+      --surface: #fffdf8;
+      --surface-2: #f7f2ea;
+      --ink: #1c1f1a;
+      --muted: #6b6f66;
+      --accent: #0e6b5b;
+      --sun: #f2b747;
+      --stroke: rgba(28,31,26,0.12);
+      --danger: #d4543c;
+      --shadow: 0 18px 45px rgba(15,23,42,0.12);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Manrope", system-ui, sans-serif;
+      color: var(--ink);
+      overflow: hidden;
+      background:
+        radial-gradient(1200px 540px at -10% -20%, rgba(242,183,71,0.22), transparent 60%),
+        radial-gradient(900px 520px at 110% 10%, rgba(14,107,91,0.18), transparent 55%),
+        var(--bg);
+      min-height: 100vh;
+    }
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 0;
+      background-image:
+        linear-gradient(rgba(28,31,26,0.06) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(28,31,26,0.06) 1px, transparent 1px);
+      background-size: 36px 36px;
+      opacity: 0.08;
+    }
+    a { color: inherit; text-decoration: none; }
+    .wrap { position: relative; z-index: 1; padding: 24px; }
+    .layout {
+      display: grid;
+      grid-template-columns: 260px minmax(0, 1fr);
+      gap: 20px;
+      min-height: calc(100vh - 96px);
+    }
+    .side {
+      background: var(--surface);
+      border: 1px solid var(--stroke);
+      border-radius: 22px;
+      padding: 18px;
+      box-shadow: var(--shadow);
+      display: grid;
+      gap: 16px;
+      max-height: calc(100vh - 96px);
+      overflow: auto;
+    }
+    .brand-title { font-family: "Bricolage Grotesque", "Manrope", sans-serif; font-size: 22px; letter-spacing: 0.6px; }
+    .profile {
+      display: grid;
+      gap: 6px;
+      padding: 12px;
+      border-radius: 16px;
+      background: var(--surface-2);
+      border: 1px solid var(--stroke);
+    }
+    .profile-value { font-weight: 600; }
+    .nav { display: grid; gap: 10px; }
+    .nav-link {
+      display: grid;
+      gap: 4px;
+      padding: 12px;
+      border-radius: 16px;
+      border: 1px solid var(--stroke);
+      background: var(--surface-2);
+      transition: transform .2s ease, box-shadow .2s ease, border-color .2s ease;
+    }
+    .nav-link:hover {
+      transform: translateY(-1px);
+      border-color: rgba(14,107,91,0.4);
+      box-shadow: 0 12px 24px rgba(14,107,91,0.12);
+    }
+    .nav-link.primary {
+      background: linear-gradient(135deg, rgba(242,183,71,0.45), rgba(14,107,91,0.15));
+      border-color: transparent;
+    }
+    .nav-title { font-weight: 700; }
+    .nav-sub { font-size: 12px; color: var(--muted); }
+    .btn {
+      padding: 10px 14px;
+      border-radius: 12px;
+      border: 1px solid var(--stroke);
+      background: rgba(28,31,26,0.04);
+      color: var(--ink);
+      font-weight: 700;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      cursor: pointer;
+      transition: transform .2s ease, box-shadow .2s ease, border-color .2s ease;
+    }
+    .btn:hover {
+      transform: translateY(-1px);
+      border-color: rgba(14,107,91,0.4);
+      box-shadow: 0 10px 24px rgba(14,107,91,0.14);
+    }
+    .btn.primary {
+      background: linear-gradient(120deg, var(--sun), #ffd88a);
+      border-color: transparent;
+      color: #2a2110;
+    }
+    .btn.ghost { background: transparent; }
+    .content { display: grid; gap: 18px; max-height: calc(100vh - 96px); overflow: auto; padding-right: 4px; }
+    .panel {
+      background: var(--surface);
+      border: 1px solid var(--stroke);
+      border-radius: 22px;
+      box-shadow: var(--shadow);
+      padding: 18px;
+    }
+    .panel-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 14px;
+      flex-wrap: wrap;
+      margin-bottom: 14px;
+    }
+    .panel-title {
+      margin: 0;
+      font-family: "Bricolage Grotesque", "Manrope", sans-serif;
+      font-size: 24px;
+    }
+    .panel-subtitle { color: var(--muted); font-size: 13px; }
+    .form-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+    .meta-columns {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+    }
+    .meta-card {
+      border: 1px solid var(--stroke);
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.48);
+      padding: 10px;
+      display: grid;
+      gap: 10px;
+    }
+    .meta-title {
+      margin: 0;
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--ink);
+    }
+    .meta-card .form-grid {
+      margin-bottom: 0;
+      grid-template-columns: 1fr;
+      gap: 8px;
+    }
+    .field {
+      display: grid;
+      gap: 6px;
+    }
+    .field-stack {
+      gap: 8px;
+      align-items: stretch;
+      padding: 10px 12px;
+    }
+    .field-stack > label {
+      margin: 0;
+      line-height: 1.25;
+      font-size: 12px;
+      white-space: normal;
+    }
+    .field-stack .field-control {
+      display: grid;
+      gap: 6px;
+      min-width: 0;
+    }
+    .field-inline {
+      grid-template-columns: 160px minmax(0, 1fr);
+      align-items: center;
+      gap: 8px;
+      padding: 7px 8px;
+      border: 1px solid transparent;
+      border-radius: 10px;
+      background: rgba(255,255,255,0.44);
+      transition: border-color .2s ease, background-color .2s ease, box-shadow .2s ease;
+    }
+    .field-inline > label {
+      margin: 0;
+      line-height: 1.2;
+      font-size: 12px;
+      white-space: nowrap;
+    }
+    .field-inline .field-control {
+      min-width: 0;
+    }
+    .field-inline .field-control .hint {
+      margin-top: 4px;
+    }
+    .field-picker-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 8px;
+      align-items: center;
+    }
+    .picker-btn {
+      white-space: nowrap;
+      padding-inline: 12px;
+    }
+    .field-state-required {
+      border-color: rgba(236,72,153,0.5);
+      background: rgba(251,207,232,0.46);
+      animation: requiredPulse 1.8s ease-in-out infinite;
+    }
+    .field-state-valid {
+      border-color: rgba(34,197,94,0.45);
+      background: rgba(187,247,208,0.36);
+      box-shadow: inset 0 0 0 1px rgba(34,197,94,0.08);
+    }
+    .field-state-invalid {
+      border-color: rgba(212,84,60,0.55);
+      background: rgba(212,84,60,0.16);
+    }
+    @keyframes requiredPulse {
+      0% { box-shadow: 0 0 0 0 rgba(236,72,153,0.26); }
+      50% { box-shadow: 0 0 0 8px rgba(236,72,153,0.07); }
+      100% { box-shadow: 0 0 0 0 rgba(236,72,153,0.26); }
+    }
+    label { font-weight: 600; color: var(--muted); }
+    .required { color: var(--danger); }
+    input, select, textarea {
+      width: 100%;
+      padding: 9px 10px;
+      border-radius: 10px;
+      border: 1px solid var(--stroke);
+      background: var(--surface-2);
+      color: var(--ink);
+      font-family: inherit;
+      font-size: 14px;
+    }
+    input[type="checkbox"] {
+      width: 16px;
+      height: 16px;
+      padding: 0;
+      border-radius: 4px;
+      vertical-align: middle;
+    }
+    textarea { resize: vertical; min-height: 68px; }
+    .checkbox-inline {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--ink);
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .datetime-field { display: grid; gap: 8px; }
+    .datetime-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .datetime-row.datetime-row-eta { grid-template-columns: minmax(0, 1fr) 112px; }
+    .datetime-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+    .datetime-chip {
+      border: 1px solid var(--stroke);
+      background: rgba(28,31,26,0.04);
+      color: var(--ink);
+      border-radius: 999px;
+      padding: 6px 10px;
+      font-size: 12px;
+      cursor: pointer;
+      font-weight: 700;
+    }
+    .datetime-chip:hover {
+      border-color: rgba(14,107,91,0.4);
+      box-shadow: 0 10px 20px rgba(14,107,91,0.14);
+    }
+    .mini-metrics-wrap {
+      border: 1px solid var(--stroke);
+      border-radius: 10px;
+      background: rgba(255,255,255,0.52);
+      overflow: hidden;
+    }
+    .mini-metrics {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+    }
+    .mini-metrics th,
+    .mini-metrics td {
+      padding: 6px 8px;
+      border-bottom: 1px solid var(--stroke);
+      text-align: left;
+    }
+    .mini-metrics tr:last-child th,
+    .mini-metrics tr:last-child td {
+      border-bottom: none;
+    }
+    .mini-metrics th {
+      width: 70%;
+      color: var(--muted);
+      font-weight: 600;
+    }
+    .mini-metrics td {
+      width: 30%;
+      font-weight: 700;
+    }
+    .field-inline .mini-metrics-wrap {
+      width: 100%;
+    }
+    .hint { color: var(--muted); font-size: 12px; }
+    .attachment-stack {
+      display: grid;
+      gap: 8px;
+    }
+    .attachment-list {
+      display: grid;
+      gap: 8px;
+      margin-top: 4px;
+    }
+    .attachment-title {
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--muted);
+    }
+    .attachment-item {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      flex-wrap: wrap;
+      padding: 8px 10px;
+      border-radius: 10px;
+      border: 1px solid var(--stroke);
+      background: rgba(255,255,255,0.62);
+      font-size: 12px;
+    }
+    .attachment-item a {
+      font-weight: 700;
+    }
+    .attachment-selected-empty {
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .errors { display: grid; gap: 8px; margin-bottom: 10px; }
+    .error-item {
+      border: 1px solid rgba(212,84,60,0.35);
+      background: rgba(212,84,60,0.14);
+      color: #7f1d1d;
+      border-radius: 12px;
+      padding: 10px 12px;
+      font-size: 14px;
+    }
+    .picker-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 30;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      background: rgba(28,31,26,0.36);
+      backdrop-filter: blur(4px);
+    }
+    .picker-overlay.is-open {
+      display: flex;
+    }
+    .picker-modal {
+      width: min(780px, 100%);
+      max-height: min(78vh, 760px);
+      overflow: hidden;
+      display: grid;
+      grid-template-rows: auto auto minmax(0, 1fr) auto;
+      gap: 12px;
+      border-radius: 22px;
+      border: 1px solid var(--stroke);
+      background: var(--surface);
+      box-shadow: 0 28px 70px rgba(15,23,42,0.22);
+      padding: 18px;
+    }
+    .picker-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 12px;
+    }
+    .picker-title {
+      margin: 0;
+      font-family: "Bricolage Grotesque", "Manrope", sans-serif;
+      font-size: 22px;
+    }
+    .picker-search {
+      width: 100%;
+      border: 1px solid var(--stroke);
+      border-radius: 12px;
+      padding: 12px 14px;
+      font: inherit;
+      background: var(--surface-2);
+    }
+    .picker-list {
+      overflow: auto;
+      border: 1px solid var(--stroke);
+      border-radius: 16px;
+      background: rgba(255,255,255,0.72);
+      padding: 8px;
+      display: grid;
+      gap: 8px;
+      align-content: start;
+    }
+    .picker-item {
+      width: 100%;
+      text-align: left;
+      display: grid;
+      gap: 4px;
+      padding: 12px 14px;
+      border-radius: 14px;
+      border: 1px solid var(--stroke);
+      background: var(--surface);
+      cursor: pointer;
+    }
+    .picker-item:hover {
+      border-color: rgba(14,107,91,0.4);
+      box-shadow: 0 10px 24px rgba(14,107,91,0.10);
+    }
+    .picker-item-title {
+      font-weight: 700;
+    }
+    .picker-item-meta {
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.4;
+    }
+    .picker-empty {
+      padding: 16px;
+      border-radius: 14px;
+      background: var(--surface-2);
+      color: var(--muted);
+      font-size: 13px;
+      border: 1px dashed var(--stroke);
+    }
+    .picker-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 10px;
+    }
+    .actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 14px; }
+    .side-actions {
+      display: grid;
+      gap: 10px;
+      margin-top: 4px;
+    }
+    .side-actions .btn {
+      width: 100%;
+      justify-content: center;
+      text-align: center;
+    }
+    .stock-th {
+      padding: 8px;
+      text-align: left;
+      vertical-align: top;
+      font-size: 12px;
+      color: var(--muted);
+      min-width: 110px;
+    }
+    .stock-th .th-top {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      margin-bottom: 4px;
+      white-space: nowrap;
+    }
+    .stock-th .th-sort {
+      border: 0;
+      background: transparent;
+      padding: 0;
+      margin: 0;
+      font: inherit;
+      color: inherit;
+      cursor: pointer;
+      font-weight: 700;
+      text-align: left;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .stock-th .th-sort:hover { color: var(--ink); }
+    .stock-th .th-sort.active { color: var(--ink); }
+    .stock-th .th-sort-ind {
+      font-size: 10px;
+      opacity: 0.5;
+      min-width: 10px;
+      text-align: center;
+    }
+    .stock-th .th-sort.active .th-sort-ind { opacity: 1; }
+    .stock-th .th-filter,
+    .stock-th .th-filter-select {
+      width: 100%;
+      padding: 5px 6px;
+      border-radius: 8px;
+      border: 1px solid var(--stroke);
+      background: #fff;
+      color: var(--ink);
+      font-size: 12px;
+      font-family: inherit;
+    }
+    .stock-th .th-filter::placeholder { color: #9ca3af; }
+    .stock-th.compact { min-width: 90px; }
+    .stock-th.narrow { min-width: 80px; }
+    .stock-th.wide { min-width: 160px; }
+    .stock-th.action-col { min-width: 120px; }
+    .stock-table tbody tr.mix-box-row td {
+      background: var(--mix-bg, rgba(59,130,246,0.08));
+    }
+    .stock-table tbody tr.mix-box-row td:first-child {
+      border-left: 2px solid var(--mix-stroke, rgba(59,130,246,0.7));
+    }
+    .stock-table tbody tr.mix-box-row td:last-child {
+      border-right: 2px solid var(--mix-stroke, rgba(59,130,246,0.7));
+    }
+    .stock-table tbody tr.mix-box-start td {
+      border-top: 2px solid var(--mix-stroke, rgba(59,130,246,0.7));
+    }
+    .stock-table tbody tr.mix-box-end td {
+      border-bottom: 2px solid var(--mix-stroke, rgba(59,130,246,0.7));
+    }
+    .stock-table tbody tr.mix-tone-0 { --mix-bg: rgba(59,130,246,0.11); --mix-stroke: rgba(59,130,246,0.72); --mix-ink: #1d4ed8; }
+    .stock-table tbody tr.mix-tone-1 { --mix-bg: rgba(16,185,129,0.11); --mix-stroke: rgba(16,185,129,0.72); --mix-ink: #047857; }
+    .stock-table tbody tr.mix-tone-2 { --mix-bg: rgba(245,158,11,0.11); --mix-stroke: rgba(245,158,11,0.72); --mix-ink: #b45309; }
+    .stock-table tbody tr.mix-tone-3 { --mix-bg: rgba(236,72,153,0.11); --mix-stroke: rgba(236,72,153,0.72); --mix-ink: #be185d; }
+    .stock-table tbody tr.mix-tone-4 { --mix-bg: rgba(168,85,247,0.11); --mix-stroke: rgba(168,85,247,0.72); --mix-ink: #7e22ce; }
+    .stock-table tbody tr.mix-tone-5 { --mix-bg: rgba(14,165,233,0.11); --mix-stroke: rgba(14,165,233,0.72); --mix-ink: #0369a1; }
+    .stock-table tbody tr.mix-box-row .mix-badge {
+      color: var(--mix-ink, #1e3a8a);
+      border-color: color-mix(in srgb, var(--mix-stroke, rgba(59,130,246,0.72)) 55%, white);
+      background: color-mix(in srgb, var(--mix-bg, rgba(59,130,246,0.08)) 85%, white);
+    }
+    .mix-badge {
+      display: inline-flex;
+      margin-left: 6px;
+      padding: 2px 6px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 700;
+      color: #1e3a8a;
+      background: rgba(59,130,246,0.16);
+      border: 1px solid rgba(59,130,246,0.36);
+      vertical-align: middle;
+    }
+    .section {
+      border: 1px solid var(--stroke);
+      border-radius: 16px;
+      background: var(--surface-2);
+      padding: 14px;
+      display: grid;
+      gap: 10px;
+    }
+    .section h3 {
+      margin: 0;
+      font-size: 17px;
+      font-family: "Bricolage Grotesque", "Manrope", sans-serif;
+    }
+    code { background: rgba(28,31,26,0.06); padding: 2px 6px; border-radius: 6px; }
+    @media (max-width: 1200px) {
+      body { overflow: auto; }
+      .layout { grid-template-columns: 1fr; }
+      .side, .content { max-height: none; overflow: visible; padding-right: 0; }
+      .meta-columns { grid-template-columns: 1fr; }
+      .side-actions .btn {
+        width: auto;
+      }
+      .field-inline {
+        grid-template-columns: 1fr;
+        align-items: stretch;
+      }
+      .field-inline > label {
+        white-space: normal;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="layout">
+      <aside class="side">
+        <div class="brand-title">FULLBOX</div>
+        <div class="profile">
+          <div class="profile-value">
+            {% if scope == "client" and selected_client %}
+              Кабинет клиента<br>
+              {{ selected_client.agn_name|default:selected_client.fio_agn|default:"клиента" }}
+            {% else %}
+              {% include "partials/current_user.html" %}
+            {% endif %}
+          </div>
+        </div>
+        <nav class="nav">
+          {% if scope == "client" and selected_client %}
+            <a class="nav-link" href="/client/dashboard/?client={{ selected_client.id }}">
+              <span class="nav-title">В кабинет</span>
+              <span class="nav-sub">Главная клиента</span>
+            </a>
+            <a class="nav-link" href="{% url 'shipping:list' %}?client={{ selected_client.id }}">
+              <span class="nav-title">Список отгрузок</span>
+              <span class="nav-sub">Журнал заявок</span>
+            </a>
+            <a class="nav-link primary" href="{% if is_edit_mode %}{% url 'shipping:detail' edit_order.pk %}{% else %}{% url 'shipping:create' %}?client={{ selected_client.id }}{% endif %}">
+              <span class="nav-title">{% if is_edit_mode %}Текущая заявка{% else %}Новая отгрузка{% endif %}</span>
+              <span class="nav-sub">{% if is_edit_mode %}Вернуться к карточке{% else %}Создание заявки{% endif %}</span>
+            </a>
+            <a class="nav-link" href="/sklad/journal/?client={{ selected_client.id }}">
+              <span class="nav-title">Складские остатки</span>
+              <span class="nav-sub">Доступный товар</span>
+            </a>
+          {% else %}
+            <a class="nav-link" href="{{ cabinet_url }}">
+              <span class="nav-title">В кабинет</span>
+              <span class="nav-sub">Главная роли</span>
+            </a>
+            <a class="nav-link" href="{% url 'shipping:list' %}">
+              <span class="nav-title">Список отгрузок</span>
+              <span class="nav-sub">Журнал заявок</span>
+            </a>
+            <a class="nav-link primary" href="{% if is_edit_mode %}{% url 'shipping:detail' edit_order.pk %}{% else %}{% url 'shipping:create' %}{% endif %}">
+              <span class="nav-title">{% if is_edit_mode %}Текущая заявка{% else %}Новая отгрузка{% endif %}</span>
+              <span class="nav-sub">{% if is_edit_mode %}Вернуться к карточке{% else %}Создание заявки{% endif %}</span>
+            </a>
+          {% endif %}
+        </nav>
+        <div class="side-actions">
+          {% if is_edit_mode %}
+            <button class="btn primary" type="submit" form="shipping-create-form" name="action" value="update">Сохранить изменения</button>
+            <a class="btn" href="{% url 'shipping:detail' edit_order.pk %}">Отмена</a>
+          {% else %}
+            <button class="btn primary" type="submit" form="shipping-create-form" name="action" value="submit">Создать и отправить</button>
+            <button class="btn" type="submit" form="shipping-create-form" name="action" value="save_draft">Сохранить черновик</button>
+          {% endif %}
+        </div>
+        <a class="btn ghost" href="/logout/">Выход</a>
+      </aside>
+
+      <main class="content">
+        <section class="panel">
+          <div class="panel-header">
+            <div>
+              <h1 class="panel-title">{{ page_title|default:"Новая заявка на отгрузку" }}</h1>
+              <div class="panel-subtitle">{{ page_subtitle|default:"Создайте заявку и отправьте в работу менеджеру/складу." }}</div>
+            </div>
+          </div>
+
+          {% if form.errors %}
+            <div class="errors">
+              {% for field in form %}
+                {% for err in field.errors %}
+                  <div class="error-item">{{ field.label }}: {{ err }}</div>
+                {% endfor %}
+              {% endfor %}
+              {% for err in form.non_field_errors %}
+                <div class="error-item">{{ err }}</div>
+              {% endfor %}
+            </div>
+          {% endif %}
+          {% if parse_errors %}
+            <div class="errors">
+              {% for error in parse_errors %}
+                <div class="error-item">{{ error }}</div>
+              {% endfor %}
+            </div>
+          {% endif %}
+
+          <form method="post" enctype="multipart/form-data" id="shipping-create-form">
+            {% csrf_token %}
+            {% if edit_order %}
+              <input type="hidden" name="edit_order_id" value="{{ edit_order.pk }}">
+              <input type="hidden" name="edit" value="1">
+            {% endif %}
+            <div class="section">
+              <h3>Параметры заявки</h3>
+              <div class="meta-columns">
+                <div class="meta-card">
+                  <h4 class="meta-title">Параметры</h4>
+                  <div class="form-grid">
+                    <div class="field field-inline" data-required-field="agency" data-required-mode="select">
+                      <label>Клиент <span class="required">*</span></label>
+                      <div class="field-control">
+                        {{ form.agency }}
+                      </div>
+                    </div>
+                    <div class="field field-inline" data-required-field="shipping_barcode" data-required-mode="text">
+                      <label>ШК поставки <span class="required">*</span></label>
+                      <div class="field-control">
+                        {{ form.shipping_barcode }}
+                        <div class="hint">Штрихкод поставки маркетплейса. Номер поставки заполняется отдельным полем справа.</div>
+                      </div>
+                    </div>
+                    <div class="field field-inline">
+                      <label>Паллет / Коробов</label>
+                      <div class="field-control">
+                        <div class="mini-metrics-wrap">
+                          <table class="mini-metrics">
+                            <tbody>
+                              <tr>
+                                <th>Паллет, кол-во</th>
+                                <td id="auto-pallet-count">после обработки</td>
+                              </tr>
+                              <tr>
+                                <th>Коробов, кол-во</th>
+                                <td id="auto-box-count">0</td>
+                              </tr>
+                            </tbody>
+                          </table>
+                        </div>
+                        <div class="hint">Паллеты указываются после обработки заявки кладовщиком. Короба считаются автоматически по блоку «Позиции».</div>
+                      </div>
+                    </div>
+                    <div class="field field-inline">
+                      <label>Комментарий</label>
+                      <div class="field-control">
+                        {{ form.comment }}
+                        <div class="hint">Короткий комментарий по отгрузке.</div>
+                      </div>
+                    </div>
+                    <div class="field field-inline">
+                      <label>Прикрепить файлы</label>
+                      <div class="field-control attachment-stack">
+                        <input
+                          id="shipping-documents"
+                          type="file"
+                          name="documents"
+                          multiple
+                          accept=".pdf,.jpg,.jpeg,.png,.xlsx,.xls,.doc,.docx,.txt"
+                        >
+                        <div class="hint">Файлы будут загружены на сервер только после нажатия «Создать и отправить» или «Сохранить черновик». После сохранения заявки любой участник процесса сможет открыть их из карточки. Срок хранения на сервере: {{ attachment_retention_days }} дней.</div>
+                        <div class="attachment-title">Выбраны для отправки, но ещё не загружены на сервер</div>
+                        <div class="attachment-list" id="shipping-documents-selected">
+                          <div class="attachment-selected-empty">Файлы не выбраны.</div>
+                        </div>
+                        {% if existing_attachments %}
+                          <div class="attachment-title">Уже загружены на сервер</div>
+                          <div class="attachment-list">
+                            {% for attachment in existing_attachments %}
+                              <div class="attachment-item">
+                                <a href="{% url 'shipping:attachment-download' edit_order.pk attachment.pk %}">{{ attachment.filename }}</a>
+                                <span>до {{ attachment.expires_at|date:"d.m.Y H:i" }}</span>
+                              </div>
+                            {% endfor %}
+                          </div>
+                        {% endif %}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div class="meta-card">
+                  <h4 class="meta-title">Маркетплейс</h4>
+                  <div class="form-grid">
+                    <div class="field field-inline" data-required-field="marketplace" data-required-mode="select">
+                      <label>Маркетплейс <span class="required">*</span></label>
+                      <div class="field-control">
+                        {{ form.marketplace }}
+                      </div>
+                    </div>
+                    <div class="field field-inline" data-required-field="wb_supply_barcode" data-required-mode="text">
+                      <label>Номер поставки <span class="required">*</span></label>
+                      <div class="field-control">
+                        {{ form.wb_supply_barcode }}
+                      </div>
+                    </div>
+                    <div class="field field-inline">
+                      <label>Транзитный склад</label>
+                      <div class="field-control">
+                        <label class="checkbox-inline">
+                          {{ form.wb_transit_warehouse }}
+                          <span>Да</span>
+                        </label>
+                      </div>
+                    </div>
+                    <div class="field field-inline" id="transit-address-field" data-required-field="transit_address" data-required-mode="text" data-required-when="transit">
+                      <label>Транзитный адрес</label>
+                      <div class="field-control">
+                        <div class="field-picker-row">
+                          {{ form.transit_address }}
+                          <button class="btn ghost picker-btn" type="button" data-picker-target="transit">Выбрать</button>
+                        </div>
+                        <datalist id="transit-address-options"></datalist>
+                        <div class="hint" id="transit-address-hint"></div>
+                      </div>
+                    </div>
+                    <div class="field field-inline" data-required-field="destination_warehouse" data-required-mode="text">
+                      <label>Склад назначения <span class="required">*</span></label>
+                      <div class="field-control">
+                        <div class="field-picker-row">
+                          {{ form.destination_warehouse }}
+                          <button class="btn ghost picker-btn" type="button" data-picker-target="destination">Выбрать</button>
+                        </div>
+                        <datalist id="destination-warehouse-options"></datalist>
+                        <div class="hint" id="destination-warehouse-hint"></div>
+                      </div>
+                    </div>
+                    <div class="field field-inline" data-required-field="supply_type" data-required-mode="select">
+                      <label>Тип поставки <span class="required">*</span></label>
+                      <div class="field-control">
+                        {{ form.supply_type }}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div class="meta-card">
+                  <h4 class="meta-title">Маршрут</h4>
+                  <div class="form-grid">
+                    <div class="field field-stack" data-required-field="slot_date" data-required-mode="date" data-required-when="ozon">
+                      <label>Дата слота</label>
+                      <div class="field-control">
+                        {{ form.slot_date }}
+                        <div class="hint">Слот маркетплейса. Это отдельная дата приемки, не плановая дата отгрузки.</div>
+                      </div>
+                    </div>
+                    <div class="field field-stack" id="slot-time-field" data-required-field="slot_time" data-required-mode="time" data-required-when="ozon">
+                      <label>Время слота</label>
+                      <div class="field-control">
+                        {{ form.slot_time }}
+                        <div class="hint">Для Ozon укажите временное окно слота отдельно от даты отгрузки.</div>
+                      </div>
+                    </div>
+                    <div class="field field-stack field-state-route" data-required-field="eta_at" data-required-mode="datetime">
+                      <label>Плановая дата и время отгрузки <span class="required">*</span></label>
+                      <div class="field-control">
+                        <div class="datetime-field">
+                          <div class="datetime-row datetime-row-eta">
+                            <input type="date" id="eta-date" required>
+                            <input type="time" id="eta-time" required step="300">
+                          </div>
+                          {{ form.eta_at }}
+                        </div>
+                        <div class="hint">Планируйте отгрузку только в рабочее время с 08:00 до 19:00. Заявки на следующий день принимаются до 11:00 текущего дня.</div>
+                      </div>
+                    </div>
+                    <div class="field field-inline" data-required-field="vehicle_type" data-required-mode="select">
+                      <label>Транспорт <span class="required">*</span></label>
+                      <div class="field-control">
+                        {{ form.vehicle_type }}
+                      </div>
+                    </div>
+                    <div class="field field-inline">
+                      <label>Номер авто</label>
+                      <div class="field-control">
+                        {{ form.vehicle_number }}
+                      </div>
+                    </div>
+                    <div class="field field-inline" data-required-field="driver_phone" data-required-mode="phone-optional">
+                      <label>Телефон водителя</label>
+                      <div class="field-control">
+                        {{ form.driver_phone }}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="section">
+              <h3>Позиции</h3>
+              <div class="hint">Выберите позиции из складских остатков и укажите количество коробов. Для микс-короба достаточно выбрать одну строку: остальные позиции из этого короба добавятся автоматически.</div>
+              {% if stock_rows %}
+                <div style="overflow:auto; border-radius:14px; border:1px solid var(--stroke); background:rgba(15,23,42,0.03);">
+                  <table class="stock-table" style="width:100%; border-collapse:collapse; min-width:920px;">
+                    <thead>
+                      <tr>
+                        <th class="stock-th">
+                          <div class="th-top">
+                            <button type="button" class="th-sort" data-sort-key="sku_code" data-sort-type="text">Артикул <span class="th-sort-ind">⇅</span></button>
+                          </div>
+                          <input class="th-filter" type="text" data-filter-key="sku_code" data-filter-type="text" placeholder="Поиск">
+                        </th>
+                        <th class="stock-th wide">
+                          <div class="th-top">
+                            <button type="button" class="th-sort" data-sort-key="name" data-sort-type="text">Наименование <span class="th-sort-ind">⇅</span></button>
+                          </div>
+                          <input class="th-filter" type="text" data-filter-key="name" data-filter-type="text" placeholder="Поиск">
+                        </th>
+                        <th class="stock-th narrow">
+                          <div class="th-top">
+                            <button type="button" class="th-sort" data-sort-key="size" data-sort-type="text">Размер <span class="th-sort-ind">⇅</span></button>
+                          </div>
+                          <input class="th-filter" type="text" data-filter-key="size" data-filter-type="text" placeholder="Размер">
+                        </th>
+                        <th class="stock-th wide">
+                          <div class="th-top">
+                            <button type="button" class="th-sort" data-sort-key="barcode" data-sort-type="text">ШК <span class="th-sort-ind">⇅</span></button>
+                          </div>
+                          <input class="th-filter" type="text" data-filter-key="barcode" data-filter-type="text" placeholder="Штрихкод">
+                        </th>
+                        <th class="stock-th">
+                          <div class="th-top">
+                            <button type="button" class="th-sort" data-sort-key="goods_type" data-sort-type="text">Тип <span class="th-sort-ind">⇅</span></button>
+                          </div>
+                          <input class="th-filter" type="text" data-filter-key="goods_type" data-filter-type="text" placeholder="Тип">
+                        </th>
+                        <th class="stock-th compact">
+                          <div class="th-top">
+                            <button type="button" class="th-sort" data-sort-key="box_qty" data-sort-type="number">Ед. в коробе <span class="th-sort-ind">⇅</span></button>
+                          </div>
+                        </th>
+                        <th class="stock-th compact">
+                          <div class="th-top">
+                            <button type="button" class="th-sort" data-sort-key="available_boxes" data-sort-type="number">Доступно коробов <span class="th-sort-ind">⇅</span></button>
+                          </div>
+                        </th>
+                        <th class="stock-th action-col">
+                          <div class="th-top">
+                            <button type="button" class="th-sort" data-sort-key="ship_boxes" data-sort-type="number">К отгрузке (короба) <span class="th-sort-ind">⇅</span></button>
+                          </div>
+                        </th>
+                        <th class="stock-th compact">
+                          <div class="th-top">
+                            <button type="button" class="th-sort" data-sort-key="ship_total" data-sort-type="number">Итог, шт <span class="th-sort-ind">⇅</span></button>
+                          </div>
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {% for row in stock_rows %}
+                        <tr
+                          data-is-mixed="{% if row.is_mixed_box %}1{% else %}0{% endif %}"
+                          data-mix-group="{{ row.mixed_group|default:'' }}"
+                          data-mix-color="{{ row.mixed_color|default:'-1' }}"
+                          data-sku-code="{{ row.sku_code|default:'' }}"
+                          data-name="{{ row.name|default:'' }}"
+                          data-size="{{ row.size|default:'' }}"
+                          data-barcode="{{ row.barcode|default:'' }}"
+                          data-goods-type="{{ row.goods_type|default:'' }}"
+                          data-box-qty="{{ row.box_qty|default:0 }}"
+                          data-available-boxes="{{ row.available_boxes|default:0 }}"
+                          data-ship-boxes="{{ row.selected_boxes|default:'0' }}"
+                          data-ship-total="0"
+                        >
+                          <td style="padding:8px;">
+                            <input type="hidden" name="stock_key_all[]" value="{{ row.key }}">
+                            <b>{{ row.sku_code }}</b>
+                          </td>
+                          <td style="padding:8px;">{{ row.name|default:"-" }}</td>
+                          <td style="padding:8px;">{{ row.size|default:"-" }}</td>
+                          <td style="padding:8px;">{{ row.barcode|default:"-" }}</td>
+                          <td style="padding:8px;">
+                            {{ row.goods_type|default:"-" }}
+                            {% if row.is_mixed_box %}
+                              <span class="mix-badge">Микс-короб</span>
+                            {% endif %}
+                          </td>
+                          <td style="padding:8px;">{{ row.box_qty }}</td>
+                          <td style="padding:8px;">{{ row.available_boxes }} ({{ row.available_qty }} шт)</td>
+                          <td style="padding:8px;">
+                            <input
+                              type="number"
+                              min="0"
+                              max="{{ row.available_boxes }}"
+                              value="{{ row.selected_boxes|default:'0' }}"
+                              name="stock_boxes[]"
+                              data-box-qty="{{ row.box_qty }}"
+                              class="ship-boxes-input"
+                              data-selected="{{ row.selected_boxes|default:'0' }}"
+                              style="max-width:120px;"
+                            >
+                          </td>
+                          <td style="padding:8px;"><span class="ship-total-cell">0</span></td>
+                        </tr>
+                      {% endfor %}
+                    </tbody>
+                  </table>
+                </div>
+              {% else %}
+                <div class="error-item">Складских остатков для выбора не найдено.</div>
+              {% endif %}
+            </div>
+
+            <div class="actions">
+              {% if edit_order %}
+                <a class="btn ghost" href="{% url 'shipping:detail' edit_order.pk %}">Назад к заявке</a>
+              {% elif scope == "client" and selected_client %}
+                <a class="btn ghost" href="{% url 'shipping:list' %}?client={{ selected_client.id }}">Назад к списку</a>
+              {% else %}
+                <a class="btn ghost" href="{% url 'shipping:list' %}">Назад к списку</a>
+              {% endif %}
+            </div>
+          </form>
+        </section>
+      </main>
+    </div>
+  </div>
+  <div class="picker-overlay" id="warehouse-picker-overlay" aria-hidden="true">
+    <div class="picker-modal" role="dialog" aria-modal="true" aria-labelledby="warehouse-picker-title">
+      <div class="picker-head">
+        <div>
+          <h3 class="picker-title" id="warehouse-picker-title">Выбор адреса</h3>
+          <div class="panel-subtitle" id="warehouse-picker-subtitle">Сначала выберите маркетплейс.</div>
+        </div>
+        <button class="btn ghost" type="button" id="warehouse-picker-close">Закрыть</button>
+      </div>
+      <input class="picker-search" type="text" id="warehouse-picker-search" placeholder="Поиск по названию, типу или адресу">
+      <div class="picker-list" id="warehouse-picker-list"></div>
+      <div class="picker-actions">
+        <button class="btn ghost" type="button" id="warehouse-picker-cancel">Отмена</button>
+      </div>
+    </div>
+  </div>
+  {{ marketplace_warehouse_catalog|json_script:"marketplace-warehouse-catalog" }}
+  <script>
+    (function () {
+      const formEl = document.getElementById('shipping-create-form');
+      const documentsInput = document.getElementById('shipping-documents');
+      const selectedDocumentsEl = document.getElementById('shipping-documents-selected');
+      const etaHidden = document.getElementById('eta_at');
+      const etaDate = document.getElementById('eta-date');
+      const etaTime = document.getElementById('eta-time');
+      const transitCheckbox = formEl ? formEl.querySelector('[name="wb_transit_warehouse"]') : null;
+      const transitAddressInput = formEl ? formEl.querySelector('[name="transit_address"]') : null;
+      const destinationWarehouseInput = formEl ? formEl.querySelector('[name="destination_warehouse"]') : null;
+      const marketplaceInput = formEl ? formEl.querySelector('[name="marketplace"]') : null;
+      const slotDateInput = document.getElementById('slot_date');
+      const slotTimeInput = document.getElementById('slot_time');
+      const slotTimeField = document.getElementById('slot-time-field');
+      const transitAddressField = document.getElementById('transit-address-field');
+      const transitAddressOptions = document.getElementById('transit-address-options');
+      const destinationWarehouseOptions = document.getElementById('destination-warehouse-options');
+      const transitAddressHint = document.getElementById('transit-address-hint');
+      const destinationWarehouseHint = document.getElementById('destination-warehouse-hint');
+      const warehouseCatalogEl = document.getElementById('marketplace-warehouse-catalog');
+      const warehouseCatalog = warehouseCatalogEl ? JSON.parse(warehouseCatalogEl.textContent) : {};
+      const pickerOverlay = document.getElementById('warehouse-picker-overlay');
+      const pickerList = document.getElementById('warehouse-picker-list');
+      const pickerTitle = document.getElementById('warehouse-picker-title');
+      const pickerSubtitle = document.getElementById('warehouse-picker-subtitle');
+      const pickerSearch = document.getElementById('warehouse-picker-search');
+      const pickerClose = document.getElementById('warehouse-picker-close');
+      const pickerCancel = document.getElementById('warehouse-picker-cancel');
+      const nowRef = new Date('{{ server_now_iso|escapejs }}');
+      const deadlineHour = Number('{{ next_day_deadline_hour|default:11 }}');
+      const deadlineMessage = '{{ next_day_deadline_error|escapejs }}';
+      const workdayStartHour = Number('{{ workday_start_hour|default:8 }}');
+      const workdayEndHour = Number('{{ workday_end_hour|default:19 }}');
+      const workdayMessage = '{{ workday_hours_error|escapejs }}';
+      const marketplaceLabels = {
+        wb: 'Wildberries',
+        ozon: 'Ozon',
+        yandex: 'Яндекс Маркет',
+        sber: 'Сбер',
+      };
+      const warehousePickerState = {
+        target: '',
+        rows: [],
+      };
+
+      const pad = (value) => String(value).padStart(2, '0');
+      const toDateValue = (date) => `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+      const toDateTimeValue = (date) => `${toDateValue(date)}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+
+      const normalizeMarketplaceKey = (value) => {
+        const text = String(value || '').trim().toLowerCase();
+        if (!text) {
+          return '';
+        }
+        if (['wb', 'wildberries', 'wildberries (wb)'].includes(text)) {
+          return 'wb';
+        }
+        if (['ozon'].includes(text)) {
+          return 'ozon';
+        }
+        if (['yandex', 'yandex market', 'yandex.market', 'яндекс', 'яндекс маркет'].includes(text)) {
+          return 'yandex';
+        }
+        if (['sber', 'сбер', 'сбермегамаркет', 'sbermegamarket'].includes(text)) {
+          return 'sber';
+        }
+        return '';
+      };
+
+      const selectedMarketplaceKey = () => {
+        if (!marketplaceInput) {
+          return '';
+        }
+        const selectedOption = marketplaceInput.options[marketplaceInput.selectedIndex];
+        const candidates = [
+          marketplaceInput.value,
+          selectedOption ? selectedOption.textContent : '',
+        ];
+        for (const candidate of candidates) {
+          const key = normalizeMarketplaceKey(candidate);
+          if (key) {
+            return key;
+          }
+        }
+        return '';
+      };
+
+      const normalizeWarehouseRow = (row) => {
+        if (row && typeof row === 'object') {
+          return {
+            type: String(row.type || '').trim(),
+            name: String(row.name || '').trim(),
+            address: String(row.address || '').trim(),
+          };
+        }
+        const text = String(row || '').trim();
+        if (!text) {
+          return { type: '', name: '', address: '' };
+        }
+        let left = text;
+        let address = '';
+        for (const separator of [' — ', ' - ', ' – ']) {
+          if (text.includes(separator)) {
+            const parts = text.split(separator, 2);
+            if (parts[0] && parts[1]) {
+              left = parts[0].trim();
+              address = parts[1].trim();
+              break;
+            }
+          }
+        }
+        let type = '';
+        let name = left;
+        if (left.includes('·')) {
+          const parts = left.split('·', 2);
+          type = String(parts[0] || '').trim();
+          name = String(parts[1] || '').trim();
+        }
+        return { type, name: name || left, address };
+      };
+
+      const replaceDatalistOptions = (datalistEl, rows, valueGetter, labelGetter) => {
+        if (!datalistEl) {
+          return;
+        }
+        datalistEl.innerHTML = '';
+        rows.forEach((row) => {
+          const value = String(valueGetter(row) || '').trim();
+          const label = String(labelGetter(row) || '').trim();
+          if (!value) {
+            return;
+          }
+          const option = document.createElement('option');
+          option.value = value;
+          if (label && label !== value) {
+            option.label = label;
+            option.textContent = label;
+          }
+          datalistEl.appendChild(option);
+        });
+      };
+
+      const warehouseBucketFlags = (row) => {
+        const normalized = normalizeWarehouseRow(row);
+        const text = [normalized.type, normalized.name, normalized.address].join(' ').trim().toLowerCase();
+        if (!text) {
+          return { destination: false, transit: false };
+        }
+        if (text.includes('обычный + транзитный')) {
+          return { destination: true, transit: true };
+        }
+        const isTransit = (
+          text.startsWith('транзитный')
+          || text.includes('транзитный /')
+          || text.includes('транзитный ·')
+          || text.includes('(транзитный)')
+        );
+        if (isTransit) {
+          return { destination: false, transit: true };
+        }
+        const isExplicitDestination = (
+          text.startsWith('обычный')
+          || text.includes('обычный ·')
+          || text.includes('(обычный)')
+        );
+        if (isExplicitDestination) {
+          return { destination: true, transit: false };
+        }
+        return { destination: true, transit: false };
+      };
+
+      const splitWarehouseSuggestions = (rows) => {
+        const destination = [];
+        const transit = [];
+        rows.forEach((row) => {
+          const normalized = normalizeWarehouseRow(row);
+          if (!normalized.name && !normalized.address) {
+            return;
+          }
+          const flags = warehouseBucketFlags(row);
+          if (flags.destination) {
+            destination.push(normalized);
+          }
+          if (flags.transit) {
+            transit.push(normalized);
+          }
+        });
+        return { destination, transit };
+      };
+
+      const updateWarehouseHints = (marketplaceKey, destinationRows, transitRows) => {
+        const label = marketplaceLabels[marketplaceKey] || 'маркетплейса';
+        if (destinationWarehouseHint) {
+          destinationWarehouseHint.textContent = marketplaceKey
+            ? (destinationRows.length
+              ? `Подсказки загружены для ${label}: ${destinationRows.length} обычных складов.`
+              : `Для ${label} справочник обычных складов пока пуст.`)
+            : 'Сначала выберите маркетплейс.';
+        }
+        if (transitAddressHint) {
+          transitAddressHint.textContent = marketplaceKey
+            ? (transitRows.length
+              ? `Подсказки загружены для ${label}: ${transitRows.length} транзитных складов.`
+              : `Для ${label} справочник транзитных складов пока пуст.`)
+            : 'Сначала выберите маркетплейс.';
+        }
+      };
+
+      const syncMarketplaceWarehouseOptions = () => {
+        const marketplaceKey = selectedMarketplaceKey();
+        const rows = Array.isArray(warehouseCatalog[marketplaceKey]) ? warehouseCatalog[marketplaceKey] : [];
+        const splitRows = splitWarehouseSuggestions(rows);
+        replaceDatalistOptions(
+          destinationWarehouseOptions,
+          splitRows.destination,
+          (row) => row.name || row.address,
+          (row) => row.address || row.type,
+        );
+        replaceDatalistOptions(
+          transitAddressOptions,
+          splitRows.transit,
+          (row) => row.address || row.name,
+          (row) => row.name || row.type,
+        );
+        updateWarehouseHints(marketplaceKey, splitRows.destination, splitRows.transit);
+      };
+
+      const warehousePickerRows = (target) => {
+        const marketplaceKey = selectedMarketplaceKey();
+        const rows = Array.isArray(warehouseCatalog[marketplaceKey]) ? warehouseCatalog[marketplaceKey] : [];
+        const splitRows = splitWarehouseSuggestions(rows);
+        return {
+          marketplaceKey,
+          rows: target === 'transit' ? splitRows.transit : splitRows.destination,
+        };
+      };
+
+      const closeWarehousePicker = () => {
+        if (!pickerOverlay) {
+          return;
+        }
+        pickerOverlay.classList.remove('is-open');
+        pickerOverlay.setAttribute('aria-hidden', 'true');
+        warehousePickerState.target = '';
+        warehousePickerState.rows = [];
+      };
+
+      const applyWarehousePickerValue = (row) => {
+        if (!row) {
+          return;
+        }
+        const targetInput = warehousePickerState.target === 'transit' ? transitAddressInput : destinationWarehouseInput;
+        if (!targetInput) {
+          return;
+        }
+        const nextValue = warehousePickerState.target === 'transit'
+          ? (row.address || row.name)
+          : (row.name || row.address);
+        targetInput.value = String(nextValue || '').trim();
+        targetInput.dispatchEvent(new Event('input', { bubbles: true }));
+        targetInput.dispatchEvent(new Event('change', { bubbles: true }));
+        closeWarehousePicker();
+        targetInput.focus();
+      };
+
+      const renderWarehousePickerList = (rows) => {
+        if (!pickerList) {
+          return;
+        }
+        const query = String(pickerSearch ? pickerSearch.value : '').trim().toLowerCase();
+        const filteredRows = rows.filter((row) => {
+          const haystack = [row.type, row.name, row.address].join(' ').toLowerCase();
+          return !query || haystack.includes(query);
+        });
+        pickerList.innerHTML = '';
+        if (!filteredRows.length) {
+          const empty = document.createElement('div');
+          empty.className = 'picker-empty';
+          empty.textContent = 'По текущему маркетплейсу в справочнике нет подходящих адресов.';
+          pickerList.appendChild(empty);
+          return;
+        }
+        filteredRows.forEach((row) => {
+          const button = document.createElement('button');
+          button.type = 'button';
+          button.className = 'picker-item';
+          button.innerHTML = `
+            <span class="picker-item-title">${row.name || row.address || 'Без названия'}</span>
+            <span class="picker-item-meta">${[row.type, row.address].filter(Boolean).join(' · ') || 'Без адреса'}</span>
+          `;
+          button.addEventListener('click', () => applyWarehousePickerValue(row));
+          pickerList.appendChild(button);
+        });
+      };
+
+      const openWarehousePicker = (target) => {
+        const { marketplaceKey, rows } = warehousePickerRows(target);
+        if (!marketplaceKey) {
+          window.alert('Сначала выберите маркетплейс.');
+          return;
+        }
+        warehousePickerState.target = target;
+        warehousePickerState.rows = rows;
+        if (pickerTitle) {
+          pickerTitle.textContent = target === 'transit' ? 'Выбор транзитного адреса' : 'Выбор склада назначения';
+        }
+        if (pickerSubtitle) {
+          const marketplaceLabel = marketplaceLabels[marketplaceKey] || 'маркетплейса';
+          pickerSubtitle.textContent = `Справочник ${marketplaceLabel}. После выбора поле можно отредактировать вручную.`;
+        }
+        if (pickerSearch) {
+          pickerSearch.value = '';
+        }
+        renderWarehousePickerList(rows);
+        if (pickerOverlay) {
+          pickerOverlay.classList.add('is-open');
+          pickerOverlay.setAttribute('aria-hidden', 'false');
+        }
+        window.setTimeout(() => pickerSearch && pickerSearch.focus(), 0);
+      };
+
+      const syncSlotTimeVisibility = () => {
+        if (!slotTimeField || !slotTimeInput) {
+          return;
+        }
+        const isOzon = selectedMarketplaceKey() === 'ozon';
+        slotTimeField.style.display = isOzon ? '' : 'none';
+        slotTimeInput.disabled = !isOzon;
+        slotTimeInput.required = isOzon;
+        if (!isOzon) {
+          slotTimeInput.value = '';
+        }
+      };
+
+      const minEtaDateTime = () => {
+        const now = new Date(nowRef);
+        const target = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, workdayStartHour, 0, 0, 0);
+        return target;
+      };
+
+      const clampEtaTime = (value) => {
+        const raw = String(value || '').trim();
+        if (!raw) {
+          return '';
+        }
+        const [hoursText, minutesText] = raw.split(':');
+        const hours = Number(hoursText);
+        const minutes = Number(minutesText);
+        if (!Number.isFinite(hours) || !Number.isFinite(minutes)) {
+          return '';
+        }
+        if (hours < workdayStartHour) {
+          return `${pad(workdayStartHour)}:00`;
+        }
+        if (hours > workdayEndHour || (hours === workdayEndHour && minutes > 0)) {
+          return `${pad(workdayEndHour)}:00`;
+        }
+        return `${pad(hours)}:${pad(minutes)}`;
+      };
+
+      const applyEtaDateTime = (date) => {
+        if (!etaDate || !etaTime || !etaHidden) {
+          return;
+        }
+        etaDate.value = toDateValue(date);
+        etaTime.value = `${pad(date.getHours())}:${pad(date.getMinutes())}`;
+        etaHidden.value = toDateTimeValue(date);
+      };
+
+      const syncEtaHidden = () => {
+        if (!etaDate || !etaTime || !etaHidden) {
+          return;
+        }
+        if (!etaDate.value || !etaTime.value) {
+          etaHidden.value = '';
+          return;
+        }
+        const normalizedTime = clampEtaTime(etaTime.value);
+        if (normalizedTime && normalizedTime !== etaTime.value) {
+          etaTime.value = normalizedTime;
+        }
+        etaHidden.value = `${etaDate.value}T${etaTime.value}`;
+      };
+
+      const syncTransitAddressVisibility = () => {
+        if (!transitAddressField || !transitAddressInput || !transitCheckbox) {
+          return;
+        }
+        const enabled = Boolean(transitCheckbox.checked);
+        transitAddressField.style.display = enabled ? '' : 'none';
+        transitAddressInput.disabled = !enabled;
+        transitAddressInput.required = enabled;
+      };
+
+      const renderSelectedDocuments = () => {
+        if (!selectedDocumentsEl) {
+          return;
+        }
+        const files = Array.from(documentsInput?.files || []);
+        if (!files.length) {
+          selectedDocumentsEl.innerHTML = '<div class="attachment-selected-empty">Файлы не выбраны.</div>';
+          return;
+        }
+        selectedDocumentsEl.innerHTML = files.map((file) => {
+          const kb = Math.max(1, Math.round((file.size || 0) / 1024));
+          return `<div class="attachment-item"><span>${file.name}</span><span>${kb} KB</span></div>`;
+        }).join('');
+      };
+
+      if (etaDate && etaTime && etaHidden) {
+        const minDate = minEtaDateTime();
+        etaHidden.dataset.minValue = toDateTimeValue(minDate);
+        etaHidden.dataset.workdayStart = `${pad(workdayStartHour)}:00`;
+        etaHidden.dataset.workdayEnd = `${pad(workdayEndHour)}:00`;
+        etaDate.min = toDateValue(minDate);
+        etaTime.min = `${pad(workdayStartHour)}:00`;
+        etaTime.max = `${pad(workdayEndHour)}:00`;
+        if (etaHidden.value) {
+          const [datePart, timePart] = String(etaHidden.value).split('T');
+          if (datePart) {
+            etaDate.value = datePart;
+          }
+          if (timePart) {
+            etaTime.value = clampEtaTime(String(timePart).slice(0, 5));
+          }
+          syncEtaHidden();
+        } else {
+          applyEtaDateTime(minDate);
+        }
+        etaDate.addEventListener('change', syncEtaHidden);
+        etaTime.addEventListener('change', syncEtaHidden);
+
+        document.querySelectorAll('.datetime-chip').forEach((chip) => {
+          chip.addEventListener('click', () => {
+            const offset = Number(chip.dataset.offset || 1);
+            const timeValue = String(chip.dataset.time || '10:00');
+            const [hh, mm] = timeValue.split(':').map((part) => Number(part));
+            const target = new Date(nowRef);
+            target.setDate(target.getDate() + offset);
+            target.setHours(hh || 0, mm || 0, 0, 0);
+            applyEtaDateTime(target);
+          });
+        });
+      }
+
+      const requiredRows = formEl
+        ? Array.from(formEl.querySelectorAll('[data-required-field]'))
+        : [];
+
+      const setRowState = (row, state) => {
+        if (!row) {
+          return;
+        }
+        row.classList.remove('field-state-required', 'field-state-valid', 'field-state-invalid');
+        if (state) {
+          row.classList.add(`field-state-${state}`);
+        }
+      };
+
+      const etaValidationState = () => {
+        if (!etaHidden || !String(etaHidden.value || '').trim()) {
+          return { ok: false, empty: true, message: 'Заполните плановую дату и время отгрузки.' };
+        }
+        const minRaw = String(etaHidden.dataset.minValue || '').trim();
+        if (minRaw) {
+          const selected = new Date(etaHidden.value);
+          const minDate = new Date(minRaw);
+          if (selected < minDate) {
+            return { ok: false, empty: false, message: 'Плановая дата отгрузки должна быть не раньше следующего дня.' };
+          }
+        }
+        const selectedDate = new Date(etaHidden.value);
+        const now = new Date(nowRef);
+        const nextDay = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 0, 0);
+        const selectedDayOnly = new Date(
+          selectedDate.getFullYear(),
+          selectedDate.getMonth(),
+          selectedDate.getDate(),
+          0,
+          0,
+          0,
+          0
+        );
+        if (selectedDayOnly.getTime() === nextDay.getTime() && now.getHours() >= deadlineHour) {
+          return { ok: false, empty: false, message: deadlineMessage };
+        }
+        const hours = selectedDate.getHours();
+        const minutes = selectedDate.getMinutes();
+        if (hours < workdayStartHour || hours > workdayEndHour || (hours === workdayEndHour && minutes > 0)) {
+          return { ok: false, empty: false, message: workdayMessage };
+        }
+        return { ok: true, empty: false, message: '' };
+      };
+
+      const phoneValidationState = () => {
+        const driverPhoneField = formEl ? formEl.querySelector('[name="driver_phone"]') : null;
+        const phoneRaw = String(driverPhoneField ? driverPhoneField.value : '').trim();
+        if (!phoneRaw) {
+          return { ok: true, empty: true, message: '' };
+        }
+        const phoneDigits = phoneRaw.replace(/\D/g, '');
+        if (phoneDigits.length !== 11 || !['7', '8'].includes(phoneDigits[0])) {
+          return { ok: false, empty: false, message: 'Введите корректный телефон водителя.' };
+        }
+        return { ok: true, empty: false, message: '' };
+      };
+
+      const slotDateValidationState = () => {
+        const isOzon = selectedMarketplaceKey() === 'ozon';
+        const value = String(slotDateInput ? slotDateInput.value : '').trim();
+        if (!isOzon && !value) {
+          return { ok: true, empty: true, message: '' };
+        }
+        if (!value) {
+          return { ok: false, empty: true, message: 'Для Ozon укажите дату слота.' };
+        }
+        return { ok: true, empty: false, message: '' };
+      };
+
+      const slotTimeValidationState = () => {
+        const isOzon = selectedMarketplaceKey() === 'ozon';
+        const timeValue = String(slotTimeInput ? slotTimeInput.value : '').trim();
+        const dateValue = String(slotDateInput ? slotDateInput.value : '').trim();
+        if (!isOzon && !timeValue) {
+          return { ok: true, empty: true, message: '' };
+        }
+        if (timeValue && !dateValue) {
+          return { ok: false, empty: false, message: 'Сначала укажите дату слота.' };
+        }
+        if (isOzon && !timeValue) {
+          return { ok: false, empty: true, message: 'Для Ozon укажите время слота.' };
+        }
+        return { ok: true, empty: false, message: '' };
+      };
+
+      const updateRequiredVisuals = () => {
+        requiredRows.forEach((row) => {
+          const key = String(row.dataset.requiredField || '').trim();
+          const mode = String(row.dataset.requiredMode || 'text').trim();
+          const when = String(row.dataset.requiredWhen || '').trim();
+          let requiredNow = true;
+          if (when === 'transit') {
+            requiredNow = Boolean(transitCheckbox && transitCheckbox.checked);
+          } else if (when === 'ozon') {
+            requiredNow = selectedMarketplaceKey() === 'ozon';
+          }
+          if (!requiredNow) {
+            setRowState(row, '');
+            return;
+          }
+          if (mode === 'date') {
+            const state = slotDateValidationState();
+            setRowState(row, state.ok ? 'valid' : (state.empty ? 'required' : 'invalid'));
+            return;
+          }
+          if (mode === 'time') {
+            const state = slotTimeValidationState();
+            setRowState(row, state.ok ? 'valid' : (state.empty ? 'required' : 'invalid'));
+            return;
+          }
+          if (mode === 'datetime') {
+            const state = etaValidationState();
+            setRowState(row, state.ok ? 'valid' : (state.empty ? 'required' : 'invalid'));
+            return;
+          }
+          if (mode === 'phone') {
+            const state = phoneValidationState();
+            setRowState(row, state.ok ? 'valid' : (state.empty ? 'required' : 'invalid'));
+            return;
+          }
+          if (mode === 'phone-optional') {
+            const state = phoneValidationState();
+            setRowState(row, state.empty ? '' : (state.ok ? 'valid' : 'invalid'));
+            return;
+          }
+          const control = row.querySelector('input, select, textarea');
+          const value = String(control ? control.value : '').trim();
+          if (!value) {
+            setRowState(row, 'required');
+            return;
+          }
+          setRowState(row, 'valid');
+        });
+      };
+
+      const validateMetaFields = () => {
+        if (!formEl) {
+          return true;
+        }
+        const agencyField = formEl.querySelector('[name="agency"]');
+        const shippingBarcodeField = formEl.querySelector('[name="shipping_barcode"]');
+        const wbSupplyBarcodeField = formEl.querySelector('[name="wb_supply_barcode"]');
+        const supplyTypeField = formEl.querySelector('[name="supply_type"]');
+        const vehicleTypeField = formEl.querySelector('[name="vehicle_type"]');
+
+        if (!agencyField || !String(agencyField.value || '').trim()) {
+          alert('Выберите клиента.');
+          return false;
+        }
+        if (!shippingBarcodeField || !String(shippingBarcodeField.value || '').trim()) {
+          alert('Укажите ШК поставки.');
+          return false;
+        }
+        if (!marketplaceInput || !String(marketplaceInput.value || '').trim()) {
+          alert('Выберите маркетплейс.');
+          return false;
+        }
+        if (!wbSupplyBarcodeField || !String(wbSupplyBarcodeField.value || '').trim()) {
+          alert('Укажите номер поставки.');
+          return false;
+        }
+        if (!destinationWarehouseInput || !String(destinationWarehouseInput.value || '').trim()) {
+          alert('Укажите склад назначения.');
+          return false;
+        }
+        if (!supplyTypeField || !String(supplyTypeField.value || '').trim()) {
+          alert('Выберите тип поставки.');
+          return false;
+        }
+        const slotDateState = slotDateValidationState();
+        if (!slotDateState.ok) {
+          alert(slotDateState.message);
+          return false;
+        }
+        const slotTimeState = slotTimeValidationState();
+        if (!slotTimeState.ok) {
+          alert(slotTimeState.message);
+          return false;
+        }
+
+        const etaState = etaValidationState();
+        if (!etaState.ok) {
+          alert(etaState.message);
+          return false;
+        }
+        if (!vehicleTypeField || !String(vehicleTypeField.value || '').trim()) {
+          alert('Выберите транспорт.');
+          return false;
+        }
+        const phoneState = phoneValidationState();
+        if (!phoneState.ok) {
+          alert(phoneState.message);
+          return false;
+        }
+        if (transitCheckbox && transitCheckbox.checked) {
+          const transitAddress = String(transitAddressInput ? transitAddressInput.value : '').trim();
+          if (!transitAddress) {
+            alert('Укажите транзитный адрес.');
+            return false;
+          }
+        }
+        const stockBoxesInputs = Array.from(
+          formEl.querySelectorAll('input[name="stock_boxes[]"], input[name="stock_boxes"]')
+        );
+        const hasSelectedItems = stockBoxesInputs.some((input) => {
+          const value = Number.parseInt(String(input.value || '').trim(), 10);
+          return Number.isFinite(value) && value > 0;
+        });
+        if (!hasSelectedItems) {
+          alert('Выберите минимум одну позицию для отгрузки и укажите количество коробов.');
+          return false;
+        }
+        return true;
+      };
+
+      if (formEl) {
+        syncTransitAddressVisibility();
+        syncMarketplaceWarehouseOptions();
+        syncSlotTimeVisibility();
+        formEl.querySelectorAll('[data-picker-target]').forEach((button) => {
+          button.addEventListener('click', () => {
+            openWarehousePicker(String(button.dataset.pickerTarget || '').trim());
+          });
+        });
+        if (transitCheckbox) {
+          transitCheckbox.addEventListener('change', () => {
+            syncTransitAddressVisibility();
+            updateRequiredVisuals();
+          });
+        }
+        if (marketplaceInput) {
+          marketplaceInput.addEventListener('change', () => {
+            syncMarketplaceWarehouseOptions();
+            syncSlotTimeVisibility();
+            updateRequiredVisuals();
+            if (pickerOverlay && pickerOverlay.classList.contains('is-open')) {
+              const { rows } = warehousePickerRows(warehousePickerState.target || 'destination');
+              warehousePickerState.rows = rows;
+              renderWarehousePickerList(rows);
+            }
+          });
+        }
+        if (documentsInput) {
+          documentsInput.addEventListener('change', renderSelectedDocuments);
+          renderSelectedDocuments();
+        }
+        requiredRows.forEach((row) => {
+          row.querySelectorAll('input, select, textarea').forEach((control) => {
+            control.addEventListener('input', updateRequiredVisuals);
+            control.addEventListener('change', updateRequiredVisuals);
+            control.addEventListener('blur', updateRequiredVisuals);
+          });
+        });
+        if (etaDate) {
+          etaDate.addEventListener('change', updateRequiredVisuals);
+        }
+        if (etaTime) {
+          etaTime.addEventListener('change', updateRequiredVisuals);
+        }
+        if (slotDateInput) {
+          slotDateInput.addEventListener('change', updateRequiredVisuals);
+        }
+        if (slotTimeInput) {
+          slotTimeInput.addEventListener('change', updateRequiredVisuals);
+        }
+        updateRequiredVisuals();
+        formEl.addEventListener('submit', (event) => {
+          syncEtaHidden();
+          syncTransitAddressVisibility();
+          updateRequiredVisuals();
+          if (!validateMetaFields()) {
+            event.preventDefault();
+          }
+        });
+      }
+
+      if (pickerSearch) {
+        pickerSearch.addEventListener('input', () => renderWarehousePickerList(warehousePickerState.rows));
+      }
+      if (pickerClose) {
+        pickerClose.addEventListener('click', closeWarehousePicker);
+      }
+      if (pickerCancel) {
+        pickerCancel.addEventListener('click', closeWarehousePicker);
+      }
+      if (pickerOverlay) {
+        pickerOverlay.addEventListener('click', (event) => {
+          if (event.target === pickerOverlay) {
+            closeWarehousePicker();
+          }
+        });
+      }
+      document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape' && pickerOverlay && pickerOverlay.classList.contains('is-open')) {
+          closeWarehousePicker();
+        }
+      });
+
+      const markMixedBoxGroups = () => {
+        const rows = document.querySelectorAll('.stock-table tbody tr[data-is-mixed]');
+        if (!rows.length) {
+          return;
+        }
+        rows.forEach((row) => {
+          row.classList.remove(
+            'mix-box-row',
+            'mix-box-start',
+            'mix-box-end',
+            'mix-tone-0',
+            'mix-tone-1',
+            'mix-tone-2',
+            'mix-tone-3',
+            'mix-tone-4',
+            'mix-tone-5'
+          );
+        });
+        let groupRows = [];
+        let groupKey = "";
+        let fallbackColorIndex = 0;
+        const flush = () => {
+          if (!groupRows.length) {
+            return;
+          }
+          const explicitColor = Number(groupRows[0].dataset.mixColor || -1);
+          const tone = Number.isFinite(explicitColor) && explicitColor >= 0
+            ? explicitColor % 6
+            : fallbackColorIndex % 6;
+          const toneClass = `mix-tone-${tone}`;
+          groupRows.forEach((row, index) => {
+            row.classList.add('mix-box-row');
+            row.classList.add(toneClass);
+            if (index === 0) {
+              row.classList.add('mix-box-start');
+            }
+            if (index === groupRows.length - 1) {
+              row.classList.add('mix-box-end');
+            }
+          });
+          fallbackColorIndex += 1;
+          groupRows = [];
+          groupKey = "";
+        };
+        rows.forEach((row) => {
+          if (row.style.display === 'none') {
+            flush();
+            return;
+          }
+          const isMix = String(row.dataset.isMixed || '') === '1';
+          const currentKey = String(row.dataset.mixGroup || '');
+          if (!isMix) {
+            flush();
+            return;
+          }
+          if (!groupRows.length) {
+            groupRows = [row];
+            groupKey = currentKey;
+            return;
+          }
+          if (groupKey === currentKey) {
+            groupRows.push(row);
+            return;
+          }
+          flush();
+          groupRows = [row];
+          groupKey = currentKey;
+        });
+        flush();
+      };
+
+      const inputs = document.querySelectorAll('.ship-boxes-input');
+      const rows = document.querySelectorAll('.stock-table tbody tr');
+      const tbody = document.querySelector('.stock-table tbody');
+      const autoBoxCountEl = document.getElementById('auto-box-count');
+      const groupRowsMap = new Map();
+      rows.forEach((row) => {
+        const isMix = String(row.dataset.isMixed || '') === '1';
+        const group = String(row.dataset.mixGroup || '');
+        if (!isMix || !group) {
+          return;
+        }
+        const list = groupRowsMap.get(group) || [];
+        list.push(row);
+        groupRowsMap.set(group, list);
+      });
+
+      let syncLock = false;
+
+      const normalizeBoxesValue = (input) => {
+        if (!input) {
+          return 0;
+        }
+        const minValue = Number(input.min || 0);
+        const maxValue = Number(input.max || input.dataset.maxBoxes || Number.MAX_SAFE_INTEGER);
+        const parsed = Number.parseInt(String(input.value || '').trim(), 10);
+        let value = Number.isFinite(parsed) ? parsed : 0;
+        if (Number.isFinite(minValue)) {
+          value = Math.max(value, minValue);
+        }
+        if (Number.isFinite(maxValue)) {
+          value = Math.min(value, maxValue);
+        }
+        input.value = String(Math.max(value, 0));
+        return Math.max(value, 0);
+      };
+
+      const recalcRow = (row) => {
+        if (!row) {
+          return;
+        }
+        const input = row.querySelector('.ship-boxes-input');
+        const totalEl = row.querySelector('.ship-total-cell');
+        const boxQty = Number(input ? (input.dataset.boxQty || 0) : 0);
+        const boxes = normalizeBoxesValue(input);
+        const total = Number.isFinite(boxes) ? boxes * boxQty : 0;
+        row.dataset.shipBoxes = Number.isFinite(boxes) ? String(boxes) : "0";
+        row.dataset.shipTotal = Number.isFinite(total) ? String(total) : "0";
+        if (totalEl) {
+          totalEl.textContent = String(total);
+        }
+      };
+
+      const updateAutoBoxCount = () => {
+        if (!autoBoxCountEl) {
+          return;
+        }
+        let sum = 0;
+        const mixedGroupCounts = new Map();
+        rows.forEach((row) => {
+          const input = row.querySelector('.ship-boxes-input');
+          const value = normalizeBoxesValue(input);
+          if (!Number.isFinite(value) || value <= 0) {
+            return;
+          }
+          const isMix = String(row.dataset.isMixed || '') === '1';
+          const group = String(row.dataset.mixGroup || '');
+          if (isMix && group) {
+            const existing = Number(mixedGroupCounts.get(group) || 0);
+            mixedGroupCounts.set(group, Math.max(existing, value));
+            return;
+          }
+          sum += value;
+        });
+        mixedGroupCounts.forEach((value) => {
+          sum += Number(value || 0);
+        });
+        autoBoxCountEl.textContent = String(sum);
+      };
+
+      inputs.forEach((input) => {
+        const row = input.closest('tr');
+        const recalc = (syncGroup = true) => {
+          recalcRow(row);
+          updateAutoBoxCount();
+          if (!syncGroup || syncLock || !row) {
+            return;
+          }
+          const isMix = String(row.dataset.isMixed || '') === '1';
+          const group = String(row.dataset.mixGroup || '');
+          if (!isMix || !group) {
+            return;
+          }
+          const groupRows = groupRowsMap.get(group) || [];
+          if (!groupRows.length) {
+            return;
+          }
+          syncLock = true;
+          const value = String(input.value || '0');
+          groupRows.forEach((groupRow) => {
+            const groupInput = groupRow.querySelector('.ship-boxes-input');
+            if (!groupInput || groupInput === input) {
+              return;
+            }
+            groupInput.value = value;
+            recalcRow(groupRow);
+          });
+          syncLock = false;
+          updateAutoBoxCount();
+        };
+        input.addEventListener('input', recalc);
+        recalc();
+      });
+      updateAutoBoxCount();
+      const getRowData = (row, key) => String(row.getAttribute(`data-${key.replace(/_/g, '-')}`) || '').trim();
+      const filters = Array.from(document.querySelectorAll('.stock-table .th-filter'));
+      const sortButtons = Array.from(document.querySelectorAll('.stock-table .th-sort'));
+      let sortState = { key: '', dir: 'asc', type: 'text' };
+
+      const compareRows = (rowA, rowB, key, type, dir) => {
+        const rawA = getRowData(rowA, key);
+        const rawB = getRowData(rowB, key);
+        let result = 0;
+        if (type === 'number') {
+          const a = Number(rawA || 0);
+          const b = Number(rawB || 0);
+          result = a - b;
+        } else {
+          result = rawA.localeCompare(rawB, 'ru', { sensitivity: 'base' });
+        }
+        return dir === 'asc' ? result : -result;
+      };
+
+      const applySort = () => {
+        if (!tbody || !sortState.key) {
+          return;
+        }
+        const ordered = Array.from(rows).map((row, index) => ({ row, index }));
+        ordered.sort((a, b) => {
+          const cmp = compareRows(a.row, b.row, sortState.key, sortState.type, sortState.dir);
+          if (cmp !== 0) {
+            return cmp;
+          }
+          return a.index - b.index;
+        });
+        ordered.forEach(({ row }) => tbody.appendChild(row));
+      };
+
+      const rowMatchesFilters = (row) => {
+        let matched = true;
+        filters.forEach((filterEl) => {
+          if (!matched) {
+            return;
+          }
+          const key = String(filterEl.dataset.filterKey || '').trim();
+          const mode = String(filterEl.dataset.filterType || 'text').trim();
+          const value = String(filterEl.value || '').trim();
+          if (!key || !value) {
+            return;
+          }
+          const rowValue = getRowData(row, key);
+          if (mode === 'text') {
+            if (!rowValue.toLowerCase().includes(value.toLowerCase())) {
+              matched = false;
+            }
+            return;
+          }
+          if (mode === 'min-number') {
+            const rowNum = Number(rowValue || 0);
+            const minNum = Number(value || 0);
+            if (rowNum < minNum) {
+              matched = false;
+            }
+          }
+        });
+        return matched;
+      };
+
+      const applyFilters = () => {
+        const mixedGroupMatched = new Map();
+        rows.forEach((row) => {
+          const isMix = String(row.dataset.isMixed || '') === '1';
+          const group = String(row.dataset.mixGroup || '');
+          if (!isMix || !group) {
+            return;
+          }
+          const current = mixedGroupMatched.get(group) === true;
+          mixedGroupMatched.set(group, current || rowMatchesFilters(row));
+        });
+
+        rows.forEach((row) => {
+          const isMix = String(row.dataset.isMixed || '') === '1';
+          const group = String(row.dataset.mixGroup || '');
+          let visible;
+          if (isMix && group) {
+            visible = mixedGroupMatched.get(group) === true;
+          } else {
+            visible = rowMatchesFilters(row);
+          }
+          row.style.display = visible ? '' : 'none';
+        });
+      };
+
+      const updateGrid = () => {
+        applySort();
+        applyFilters();
+        markMixedBoxGroups();
+      };
+
+      filters.forEach((filterEl) => {
+        filterEl.addEventListener('input', updateGrid);
+      });
+      sortButtons.forEach((button) => {
+        button.addEventListener('click', () => {
+          const key = String(button.dataset.sortKey || '').trim();
+          const type = String(button.dataset.sortType || 'text').trim();
+          if (!key) {
+            return;
+          }
+          if (sortState.key === key) {
+            sortState.dir = sortState.dir === 'asc' ? 'desc' : 'asc';
+          } else {
+            sortState = { key, dir: 'asc', type };
+          }
+          sortButtons.forEach((item) => {
+            const same = item === button;
+            item.classList.toggle('active', same);
+            const ind = item.querySelector('.th-sort-ind');
+            if (!ind) {
+              return;
+            }
+            if (!same) {
+              ind.textContent = '⇅';
+              return;
+            }
+            ind.textContent = sortState.dir === 'asc' ? '↑' : '↓';
+          });
+          updateGrid();
+        });
+      });
+      markMixedBoxGroups();
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,802 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Упаковочные листы · заявка {{ order.display_number|default:order.number }}</title>
+  <style>
+    :root{--bg:#f6f4ed;--card:#fff;--soft:#f8f6f1;--gold:#c79a1c;--gold-soft:#f2d48c;--muted:#6b7280;--stroke:rgba(31,35,40,.12);--text:#1f2328;--offset:88px}
+    *{box-sizing:border-box}html,body{height:100%}body{margin:0;background:var(--bg);color:var(--text);font-family:"Space Grotesk",system-ui,sans-serif}a{text-decoration:none;color:inherit}
+    .wrap{padding:24px 18px 64px;min-height:100vh}.layout{display:grid;grid-template-columns:280px minmax(0,1fr);gap:16px;align-items:start}.side,.main{display:grid;gap:12px}.card,.side-card{background:var(--card);border:1px solid var(--stroke);border-radius:16px;box-shadow:0 16px 30px rgba(15,23,42,.12)}.card{padding:18px}.side-card{padding:14px}
+    .muted{color:var(--muted)}.side-title,.section-title{font-weight:600}.side-title{margin:0 0 8px}.section-title{margin:0}.side-actions{display:grid;gap:8px}.tab,.btn{padding:10px 14px;border-radius:10px;border:1px solid var(--stroke);background:rgba(15,23,42,.04);color:var(--text);font-weight:600;cursor:pointer}.side-actions .tab{width:100%;display:inline-flex;justify-content:center}.primary{border-color:transparent;background:linear-gradient(120deg,var(--gold),var(--gold-soft))}.btn.small{padding:6px 10px;font-size:12px}
+    .info-list{display:grid;gap:10px}.info-label{font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--muted)}.info-value{font-weight:600;word-break:break-word}
+    .notice,.error{border-radius:12px;padding:10px 12px;margin-bottom:12px}.notice{border:1px solid rgba(31,157,85,.35);background:rgba(31,157,85,.12);color:#166534}.error{border:1px solid rgba(209,67,67,.35);background:rgba(209,67,67,.12);color:#7f1d1d}
+    .toolbar{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:center;margin-bottom:16px}.toolbar-left,.toolbar-right{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+    .print-module{display:none;gap:8px;padding:14px;border:1px solid var(--stroke);border-radius:14px;background:var(--soft);margin-bottom:16px}
+    .print-module.is-open{display:grid}
+    .print-meta{font-size:12px;color:var(--muted)}
+    .print-meta.strong{color:var(--text);font-weight:600}
+    .print-queue-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px}
+    .print-queue-card{padding:10px 12px;border-radius:12px;border:1px solid var(--stroke);background:#fff;display:grid;gap:4px}
+    .print-queue-label{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
+    .print-queue-value{font-size:22px;font-weight:700;line-height:1}
+    .print-queue-details{display:grid;gap:6px}
+    .print-queue-detail{padding:9px 12px;border-radius:12px;border:1px solid var(--stroke);background:#fff;font-size:12px;color:var(--muted)}
+    .print-queue-detail strong{color:var(--text)}
+    .printer-groups{display:grid;gap:14px}
+    .printer-group{display:grid;gap:10px}
+    .printer-group-head{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap}
+    .printer-group-title{margin:0;font-weight:700}
+    .printer-status-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px}
+    .printer-status-card{padding:12px;border-radius:14px;border:1px solid var(--stroke);background:#fff;display:grid;gap:8px}
+    .printer-status-card.green{border-color:rgba(22,101,52,.18);background:rgba(22,163,74,.08)}
+    .printer-status-card.gold{border-color:rgba(180,83,9,.18);background:rgba(245,158,11,.10)}
+    .printer-status-card.red{border-color:rgba(153,27,27,.18);background:rgba(239,68,68,.10)}
+    .printer-status-card.gray{border-color:rgba(100,116,139,.18);background:rgba(148,163,184,.10)}
+    .printer-status-head{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}
+    .printer-status-name{font-weight:700;word-break:break-word}
+    .printer-status-badge{padding:4px 8px;border-radius:999px;font-size:11px;font-weight:700;white-space:nowrap}
+    .printer-status-card.green .printer-status-badge{background:#166534;color:#fff}
+    .printer-status-card.gold .printer-status-badge{background:#b45309;color:#fff}
+    .printer-status-card.red .printer-status-badge{background:#991b1b;color:#fff}
+    .printer-status-card.gray .printer-status-badge{background:#475569;color:#fff}
+    .printer-status-meta{font-size:12px;color:var(--muted)}
+    .printer-status-tags{display:flex;gap:6px;flex-wrap:wrap}
+    .printer-status-tag{padding:3px 7px;border-radius:999px;background:rgba(15,23,42,.06);font-size:11px;color:var(--text)}
+    .print-list{margin:0;padding-left:18px;color:var(--muted);font-size:12px;display:grid;gap:4px}
+    .slip-printer{min-width:260px;padding:10px 12px;border-radius:10px;border:1px solid var(--stroke);background:#fff;color:var(--text)}
+    .slip-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px}.slip-card{padding:14px;border-radius:16px;border:1px solid var(--stroke);background:#fff;display:grid;gap:12px}.slip-card-head{display:grid;gap:8px;justify-items:start}.slip-card-title{font-weight:700}.slip-card-meta{font-size:12px;color:var(--muted)}.slip-card-actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-start}
+    .packing-slip-sheet{aspect-ratio:75/120;background:#fff;color:#111;border:1px solid rgba(17,24,39,.18);border-radius:.9em;padding:1.05em .92em;display:grid;grid-template-rows:auto auto auto 1fr;gap:.48em;box-shadow:0 .38em .9em rgba(15,23,42,.08)}
+    .packing-slip-title{font-size:1.18em;font-weight:800;letter-spacing:.04em;text-align:center}.packing-slip-marketplace{font-size:1.02em;font-weight:800;text-align:center;text-transform:uppercase;letter-spacing:.05em}
+    .packing-slip-qr-wrap{display:grid;gap:.22em;padding:.2em 0 .28em}.packing-slip-qr-main{display:grid;grid-template-columns:auto 1fr;gap:.4em;align-items:center}.packing-slip-qr-box{width:4.5em;height:4.5em;display:grid;place-items:center;background:#fff}.packing-slip-qr-box canvas,.packing-slip-qr-box img{display:block;max-width:100%;max-height:100%}.packing-slip-qr-counter{font-size:1.42em;font-weight:900;letter-spacing:.04em;line-height:1;text-align:center}.packing-slip-qr-caption{font-size:.48em;font-weight:700;letter-spacing:.04em;text-align:center;line-height:1.15;word-break:break-word}
+    .packing-slip-rows{display:grid;gap:.2em}.packing-slip-row{display:grid;grid-template-columns:1.18fr .82fr;gap:.4em;align-items:flex-start;padding:.16em 0;border-bottom:1px solid rgba(17,24,39,.12)}.packing-slip-row:last-child{border-bottom:none}.packing-slip-label{font-size:.58em;font-weight:700;text-transform:uppercase;letter-spacing:.03em}.packing-slip-value{font-size:.62em;font-weight:600;text-align:right;line-height:1.18;word-break:break-word}.packing-slip-value.left{text-align:left}
+    .packing-slip-modal{position:fixed;inset:0;display:none;align-items:center;justify-content:center;padding:20px;background:rgba(15,23,42,.52);z-index:30}.packing-slip-modal.is-open{display:flex}.packing-slip-modal-card{width:min(92vw,860px);max-height:92vh;overflow:auto;padding:18px;border-radius:20px;border:1px solid var(--stroke);background:#fff;box-shadow:0 24px 48px rgba(15,23,42,.22);display:grid;gap:14px}.packing-slip-modal-head{display:flex;justify-content:space-between;gap:12px;align-items:center}.packing-slip-modal-actions{display:flex;gap:8px;flex-wrap:wrap}.packing-slip-modal-body{display:grid;place-items:center;background:var(--soft);border:1px solid var(--stroke);border-radius:16px;padding:20px}
+    .packing-slip-capture{position:fixed;left:-99999px;top:0;opacity:0;pointer-events:none}
+    .empty{padding:18px;border-radius:16px;border:1px dashed var(--stroke);background:rgba(15,23,42,.03);color:var(--muted)}
+    @media (max-width:1100px){.layout{grid-template-columns:1fr}}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="layout">
+      <aside class="side">
+        <div class="side-card">
+          <div class="muted">FULLBOX · {% include "partials/current_user.html" %}</div>
+          <h3>Упаковочные листы · заявка {{ order.display_number|default:order.number }}</h3>
+          <div class="muted">Статус: {{ status_label }}</div>
+        </div>
+        <div class="side-card">
+          <h4 class="side-title">Действия</h4>
+          <div class="side-actions">
+            <a class="tab" href="{{ packing_url }}">К паллетизации</a>
+            <a class="tab" href="{{ detail_url }}">К заявке</a>
+            <a class="tab" href="{{ cabinet_url }}">В кабинет</a>
+            <a class="tab" href="/logout/">Выход</a>
+          </div>
+        </div>
+        <div class="side-card">
+          <h4 class="side-title">Информация</h4>
+          <div class="info-list">
+            <div><div class="info-label">Клиент</div><div class="info-value">{{ client_label }}</div></div>
+            <div><div class="info-label">Паллет</div><div class="info-value">{{ packing_summary.pallet_count|default:"0" }}</div></div>
+            <div><div class="info-label">Коробов</div><div class="info-value">{{ packing_summary.box_count|default:"0" }}</div></div>
+          </div>
+        </div>
+      </aside>
+
+      <main class="main">
+        <div class="card">
+          {% if messages %}
+            {% for message in messages %}
+              <div class="{% if message.tags == 'error' %}error{% else %}notice{% endif %}">{{ message }}</div>
+            {% endfor %}
+          {% endif %}
+
+          <div class="toolbar">
+            <div class="toolbar-left">
+              <div>
+                <div class="section-title">Упаковочные листы 75x120</div>
+                <div class="muted">Листы доступны только после завершения паллетизации. На каждом листе есть QR-код паллеты.</div>
+              </div>
+            </div>
+            <div class="toolbar-right">
+              <button class="btn" type="button" id="print-settings-toggle-btn" aria-expanded="false">Настройки печати</button>
+              <button class="btn" type="button" id="print-all-slips-pdf-btn">Печать в PDF</button>
+              <button class="btn primary" type="button" id="print-all-slips-btn">Печать всех</button>
+            </div>
+          </div>
+
+          <section class="print-module" id="print-module">
+            <div class="section-title">Модуль печати</div>
+            <div class="print-meta strong" data-print-status>Статус печати: {{ print_status_line }}</div>
+            <div class="print-meta" data-print-agent>Агент печати: {{ print_agent_line }}</div>
+            <div class="print-meta" data-printer-updated{% if not printer_details_updated_at %} style="display:none"{% endif %}>
+              Диагностика принтеров: {{ printer_details_updated_at }}
+            </div>
+            <div class="print-meta" data-print-refresh-message style="display:none"></div>
+            <div class="print-queue-grid">
+              <div class="print-queue-card">
+                <div class="print-queue-label">Ожидают</div>
+                <div class="print-queue-value" data-queue-pending>{{ print_queue_pending }}</div>
+              </div>
+              <div class="print-queue-card">
+                <div class="print-queue-label">Печатаются</div>
+                <div class="print-queue-value" data-queue-printing>{{ print_queue_printing }}</div>
+              </div>
+              <div class="print-queue-card">
+                <div class="print-queue-label">Зависло</div>
+                <div class="print-queue-value" data-queue-stuck>{{ print_queue_stuck }}</div>
+              </div>
+              <div class="print-queue-card">
+                <div class="print-queue-label">Ошибки</div>
+                <div class="print-queue-value" data-queue-failed>{{ print_queue_failed }}</div>
+              </div>
+            </div>
+            <div class="print-queue-details">
+              <div class="print-queue-detail" data-queue-pending-jobs><strong>Ждут:</strong> {% if print_queue_pending_jobs %}{{ print_queue_pending_jobs|join:"; " }}{% else %}нет{% endif %}</div>
+              <div class="print-queue-detail" data-queue-printing-jobs><strong>Печатаются:</strong> {% if print_queue_printing_jobs %}{{ print_queue_printing_jobs|join:"; " }}{% else %}нет{% endif %}</div>
+              <div class="print-queue-detail" data-queue-stuck-jobs><strong>Зависли:</strong> {% if print_queue_stuck_jobs %}{{ print_queue_stuck_jobs|join:"; " }}{% else %}нет{% endif %}</div>
+              <div class="print-queue-detail" data-queue-failed-jobs><strong>Ошибки:</strong> {% if print_queue_failed_jobs %}{{ print_queue_failed_jobs|join:"; " }}{% else %}нет{% endif %}</div>
+            </div>
+            <div class="toolbar" style="margin-bottom:0">
+              <div class="toolbar-left">
+                <select class="slip-printer" id="packing-slip-printer" data-label-printer>
+                  <option value="">Выберите аппаратный принтер на этом компьютере</option>
+                </select>
+                <button class="btn" type="button" id="refresh-printers-btn">Обновить</button>
+              </div>
+              <div class="toolbar-right">
+                <a class="btn" href="/labels/scanners/agent/download/" target="_blank" rel="noopener">Скачать Fullbox Agent</a>
+              </div>
+            </div>
+            {% if available_printers_meta.updated_at %}
+              <div class="print-meta">Последнее обновление принтеров: {{ available_printers_meta.updated_at }}{% if available_printers_meta.updated_by %} · {{ available_printers_meta.updated_by }}{% endif %}</div>
+            {% else %}
+              <div class="print-meta">Список принтеров появится после запуска Fullbox Agent на рабочем ПК.</div>
+            {% endif %}
+            <div class="print-meta">Программные принтеры вынесены отдельно. Для них используйте кнопку PDF у упаковочного листа.</div>
+            <div class="printer-groups">
+              <section class="printer-group">
+                <div class="printer-group-head">
+                  <div>
+                    <h4 class="printer-group-title">Аппаратные принтеры</h4>
+                    <div class="print-meta">Физические локальные и сетевые принтеры для прямой печати через Fullbox Agent.</div>
+                  </div>
+                </div>
+                <div class="printer-status-grid" id="hardware-printer-status-grid"></div>
+              </section>
+              <section class="printer-group">
+                <div class="printer-group-head">
+                  <div>
+                    <h4 class="printer-group-title">Программные принтеры</h4>
+                    <div class="print-meta">PDF и виртуальные устройства. Для сохранения упаковочного листа используйте кнопку PDF.</div>
+                  </div>
+                </div>
+                <div class="printer-status-grid" id="software-printer-status-grid"></div>
+              </section>
+            </div>
+          </section>
+
+          <div class="slip-grid" id="packing-slip-grid"></div>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <div class="packing-slip-modal" id="packing-slip-modal">
+    <div class="packing-slip-modal-card">
+      <div class="packing-slip-modal-head">
+        <div>
+          <div class="section-title">Предпросмотр упаковочного листа</div>
+          <div class="muted" id="packing-slip-modal-caption">-</div>
+        </div>
+        <div class="packing-slip-modal-actions">
+          <button class="btn" type="button" id="packing-slip-modal-close">Закрыть</button>
+          <button class="btn" type="button" id="packing-slip-modal-pdf">PDF</button>
+          <button class="btn primary" type="button" id="packing-slip-modal-print">Печать</button>
+        </div>
+      </div>
+      <div class="packing-slip-modal-body" id="packing-slip-modal-body"></div>
+    </div>
+  </div>
+  <div class="packing-slip-capture" id="packing-slip-capture-host" aria-hidden="true"></div>
+
+  {{ packing_slips_data|json_script:"packing-slips-data" }}
+  {{ print_status_payload|json_script:"print-status-data" }}
+  <script src="/static/vendor/qrcode.min.js"></script>
+  <script src="/static/vendor/html2canvas.min.js"></script>
+  <script src="/static/vendor/jspdf.umd.min.js"></script>
+  <script>
+    (() => {
+      const slipsData = JSON.parse(document.getElementById('packing-slips-data').textContent || '[]');
+      const initialPrintStatus = JSON.parse(document.getElementById('print-status-data').textContent || '{}');
+      const printerInputEl = document.getElementById('packing-slip-printer');
+      const printSettingsToggleBtn = document.getElementById('print-settings-toggle-btn');
+      const refreshPrintersBtn = document.getElementById('refresh-printers-btn');
+      const printAllSlipsPdfBtn = document.getElementById('print-all-slips-pdf-btn');
+      const printAllSlipsBtn = document.getElementById('print-all-slips-btn');
+      const printModuleEl = document.getElementById('print-module');
+      const slipGridEl = document.getElementById('packing-slip-grid');
+      const hardwarePrinterStatusGridEl = document.getElementById('hardware-printer-status-grid');
+      const softwarePrinterStatusGridEl = document.getElementById('software-printer-status-grid');
+      const slipModalEl = document.getElementById('packing-slip-modal');
+      const slipModalBodyEl = document.getElementById('packing-slip-modal-body');
+      const slipModalCaptionEl = document.getElementById('packing-slip-modal-caption');
+      const slipModalPdfEl = document.getElementById('packing-slip-modal-pdf');
+      const slipModalPrintEl = document.getElementById('packing-slip-modal-print');
+      const slipModalCloseEl = document.getElementById('packing-slip-modal-close');
+      const slipCaptureHostEl = document.getElementById('packing-slip-capture-host');
+      const csrfToken = '{{ csrf_token }}';
+      const printJobUrl = '/orders/processing/print-jobs/';
+      const printStatusUrl = '{% url "shipping:packing-slips-status" pk=order.pk %}';
+      const printerStorageKeys = ['shipping_packing_slip_printer', 'processing_label_printer', 'label_printer'];
+
+      const state = { previewSlipKey: '', printing: false, refreshing: false, printerStatusMap: {} };
+      const normalize = (value) => String(value || '').trim();
+      const escapeHtml = (value) => String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+
+      const sanitizeFilename = (value) => String(value || '')
+        .trim()
+        .replace(/[\\/:*?"<>|]+/g, '-')
+        .replace(/\s+/g, '_')
+        .replace(/_+/g, '_')
+        .replace(/^_+|_+$/g, '');
+      const setPrintModuleOpen = (open) => {
+        if (!printModuleEl || !printSettingsToggleBtn) return;
+        printModuleEl.classList.toggle('is-open', Boolean(open));
+        printSettingsToggleBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+        printSettingsToggleBtn.textContent = open ? 'Скрыть настройки печати' : 'Настройки печати';
+      };
+
+      const buildPrinterStatusMap = (items) => {
+        const next = {};
+        (Array.isArray(items) ? items : []).forEach((printer) => {
+          const key = normalize(printer?.name).toLowerCase();
+          if (key) next[key] = printer;
+        });
+        state.printerStatusMap = next;
+      };
+
+      const getPrinterMeta = (printerName) => state.printerStatusMap[normalize(printerName).toLowerCase()] || null;
+      const isVirtualPrinter = (printerName) => Boolean(getPrinterMeta(printerName)?.is_virtual);
+
+      const baseSlipRows = (slip) => [
+        ['Тип поставки', slip.supply_type],
+        ['Номер поставки', slip.supply_number],
+        ['ШК поставки', slip.shipping_barcode],
+        ['Кол-во коробов на паллете', slip.box_count],
+        ['Склад назначения', slip.destination_warehouse],
+        ['Транзитный склад', slip.transit_address],
+        ['Поставщик', slip.supplier_name],
+        ['Дата поставки', slip.delivery_date],
+      ];
+
+      const readStoredPrinter = () => {
+        for (const key of printerStorageKeys) {
+          const value = normalize(localStorage.getItem(key));
+          if (value) return value;
+        }
+        return '';
+      };
+
+      const persistPrinter = (value) => {
+        const normalizedValue = normalize(value);
+        if (!normalizedValue) return;
+        printerStorageKeys.forEach((key) => localStorage.setItem(key, normalizedValue));
+      };
+
+      const formatJobList = (items, fallback) => {
+        if (!Array.isArray(items) || !items.length) {
+          return fallback;
+        }
+        return items.map((item) => escapeHtml(item)).join('; ');
+      };
+
+      const appendPrinterOptions = (select, printers) => {
+        printers.forEach((printer) => {
+          const option = document.createElement('option');
+          option.value = printer;
+          option.textContent = printer;
+          select.appendChild(option);
+        });
+      };
+
+      const syncPrinterOptions = (printers, printerStatuses) => {
+        if (!printerInputEl) return;
+        const selected = normalize(printerInputEl.value) || readStoredPrinter();
+        const list = Array.isArray(printers) ? printers.map((item) => normalize(item)).filter(Boolean) : [];
+        const unique = Array.from(new Set(list.map((item) => item.toLowerCase()))).map((lowerName) => (
+          list.find((item) => item.toLowerCase() === lowerName)
+        )).filter(Boolean);
+        const statusMap = {};
+        (Array.isArray(printerStatuses) ? printerStatuses : []).forEach((printer) => {
+          const key = normalize(printer?.name).toLowerCase();
+          if (key) statusMap[key] = printer;
+        });
+        const hardwarePrinters = unique.filter((printer) => !statusMap[printer.toLowerCase()]?.is_virtual);
+        const softwarePrinters = unique.filter((printer) => statusMap[printer.toLowerCase()]?.is_virtual);
+        printerInputEl.innerHTML = '<option value="">Выберите аппаратный принтер на этом компьютере</option>';
+        appendPrinterOptions(printerInputEl, hardwarePrinters);
+        if (selected) {
+          const known = hardwarePrinters.some((item) => normalize(item).toLowerCase() === selected.toLowerCase());
+          if (!known) {
+            printerInputEl.value = '';
+          } else {
+            printerInputEl.value = selected;
+          }
+        }
+        if (softwarePrinters.length) {
+          const noteOption = document.createElement('option');
+          noteOption.value = '';
+          noteOption.textContent = `PDF/виртуальные принтеры: ${softwarePrinters.length} шт.`;
+          noteOption.disabled = true;
+          printerInputEl.appendChild(noteOption);
+        }
+      };
+
+      const renderPrinterStatusCards = (container, printers, emptyText) => {
+        if (!container) return;
+        if (!printers.length) {
+          container.innerHTML = `<div class="empty">${escapeHtml(emptyText)}</div>`;
+          return;
+        }
+        container.innerHTML = printers.map((printer) => {
+          const color = normalize(printer.color) || 'gray';
+          const tags = [];
+          if (printer.is_default) tags.push('по умолчанию');
+          if (printer.is_local) tags.push('локальный');
+          if (printer.is_network) tags.push('сетевой');
+          if (printer.is_virtual) tags.push('PDF/виртуальный');
+          if (Number(printer.jobs || 0) > 0) tags.push(`заданий: ${Number(printer.jobs || 0)}`);
+          return `
+            <div class="printer-status-card ${escapeHtml(color)}">
+              <div class="printer-status-head">
+                <div class="printer-status-name">${escapeHtml(printer.name || 'Без имени')}</div>
+                <div class="printer-status-badge">${escapeHtml(printer.state_label || 'Нет данных')}</div>
+              </div>
+              <div class="printer-status-meta">${escapeHtml(printer.status || 'Статус не сообщён агентом')}</div>
+              <div class="printer-status-tags">${tags.length ? tags.map((tag) => `<span class="printer-status-tag">${escapeHtml(tag)}</span>`).join('') : '<span class="printer-status-tag">без меток</span>'}</div>
+            </div>
+          `;
+        }).join('');
+      };
+
+      const renderPrinterStatuses = (items) => {
+        if (!hardwarePrinterStatusGridEl || !softwarePrinterStatusGridEl) return;
+        const printers = Array.isArray(items) ? items : [];
+        if (!printers.length) {
+          renderPrinterStatusCards(hardwarePrinterStatusGridEl, [], 'После ручного обновления здесь появится состояние аппаратных принтеров.');
+          renderPrinterStatusCards(softwarePrinterStatusGridEl, [], 'После ручного обновления здесь появится состояние PDF и виртуальных принтеров.');
+          return;
+        }
+        const hardwarePrinters = printers.filter((printer) => !printer?.is_virtual);
+        const softwarePrinters = printers.filter((printer) => Boolean(printer?.is_virtual));
+        renderPrinterStatusCards(hardwarePrinterStatusGridEl, hardwarePrinters, 'Аппаратные принтеры не найдены.');
+        renderPrinterStatusCards(softwarePrinterStatusGridEl, softwarePrinters, 'Программные принтеры не найдены.');
+      };
+
+      const applyPrintStatus = (payload, refreshMessage = '') => {
+        const data = payload && typeof payload === 'object' ? payload : {};
+        const statusEl = document.querySelector('[data-print-status]');
+        const agentEl = document.querySelector('[data-print-agent]');
+        const updatedEl = document.querySelector('[data-printer-updated]');
+        const refreshEl = document.querySelector('[data-print-refresh-message]');
+        if (statusEl) {
+          statusEl.textContent = `Статус печати: ${normalize(data.print_status_line) || 'нет данных'}`;
+        }
+        if (agentEl) {
+          agentEl.textContent = `Агент печати: ${normalize(data.print_agent_line) || 'неизвестно'}`;
+        }
+        if (updatedEl) {
+          const updatedAt = normalize(data.printer_details_updated_at);
+          updatedEl.textContent = updatedAt ? `Диагностика принтеров: ${updatedAt}` : 'Диагностика принтеров ещё не обновлялась.';
+          updatedEl.style.display = '';
+        }
+        if (refreshEl) {
+          const message = normalize(refreshMessage);
+          refreshEl.textContent = message;
+          refreshEl.style.display = message ? '' : 'none';
+        }
+
+        const counts = {
+          pending: Number(data.print_queue_pending || 0),
+          printing: Number(data.print_queue_printing || 0),
+          stuck: Number(data.print_queue_stuck || 0),
+          failed: Number(data.print_queue_failed || 0),
+        };
+        Object.entries(counts).forEach(([key, value]) => {
+          const el = document.querySelector(`[data-queue-${key}]`);
+          if (el) {
+            el.textContent = String(value);
+          }
+        });
+        const detailMap = {
+          pending: ['Ждут', data.print_queue_pending_jobs, 'нет'],
+          printing: ['Печатаются', data.print_queue_printing_jobs, 'нет'],
+          stuck: ['Зависли', data.print_queue_stuck_jobs, 'нет'],
+          failed: ['Ошибки', data.print_queue_failed_jobs, 'нет'],
+        };
+        Object.entries(detailMap).forEach(([key, [label, items, fallback]]) => {
+          const el = document.querySelector(`[data-queue-${key}-jobs]`);
+          if (el) {
+            el.innerHTML = `<strong>${escapeHtml(label)}:</strong> ${formatJobList(items, fallback)}`;
+          }
+        });
+
+        buildPrinterStatusMap(data.printer_statuses);
+        syncPrinterOptions(data.available_printers, data.printer_statuses);
+        renderPrinterStatuses(data.printer_statuses);
+      };
+
+      const refreshPrintStatus = async ({ silent = false } = {}) => {
+        if (state.refreshing) return;
+        state.refreshing = true;
+        refreshPrintersBtn?.setAttribute('disabled', 'disabled');
+        try {
+          const response = await fetch(printStatusUrl, {
+            method: 'POST',
+            headers: { 'X-CSRFToken': csrfToken },
+          });
+          const payload = await response.json().catch(() => ({}));
+          if (!response.ok || !payload.ok) {
+            throw new Error(payload.error || 'Не удалось обновить состояние печати.');
+          }
+          applyPrintStatus(payload, payload.refresh_message || '');
+          if (!silent && payload.refresh_message) {
+            alert(payload.refresh_message);
+          }
+        } catch (error) {
+          if (!silent) {
+            alert(error?.message || 'Не удалось обновить состояние печати.');
+          }
+        } finally {
+          state.refreshing = false;
+          refreshPrintersBtn?.removeAttribute('disabled');
+        }
+      };
+
+      const renderQr = (root, qrValue, mode) => {
+        const box = root.querySelector('[data-slip-qr-box]');
+        if (!box) return;
+        box.innerHTML = '';
+        if (!qrValue || !window.QRCode) return;
+        const size = mode === 'capture' ? 170 : mode === 'modal' ? 110 : 64;
+        new QRCode(box, {
+          text: qrValue,
+          width: size,
+          height: size,
+          correctLevel: QRCode.CorrectLevel.M,
+        });
+      };
+
+      const renderPackingSlipMarkup = (slip, mode = 'card') => {
+        const sizeMap = {
+          card: { width: 240, font: 12.4 },
+          modal: { width: 430, font: 22 },
+          capture: { width: 750, font: 38 },
+        };
+        const size = sizeMap[mode] || sizeMap.card;
+        const palletCounter = `${escapeHtml(slip.pallet_index || slip.pallet_label || '-')}/${escapeHtml(slip.total_pallets || '-')}`;
+        const rowsMarkup = baseSlipRows(slip).map(([label, value]) => (
+          `<div class="packing-slip-row"><div class="packing-slip-label">${escapeHtml(label)}</div><div class="packing-slip-value${String(label).includes('короб') ? ' left' : ''}">${escapeHtml(value || '-')}</div></div>`
+        )).join('');
+        return `
+          <div class="packing-slip-sheet packing-slip-sheet-${mode}" style="width:${size.width}px;font-size:${size.font}px">
+            <div class="packing-slip-title">УПАКОВОЧНЫЙ ЛИСТ</div>
+            <div class="packing-slip-marketplace">${escapeHtml(slip.marketplace_name || '-')}</div>
+            <div class="packing-slip-qr-wrap">
+              <div class="packing-slip-qr-main">
+                <div class="packing-slip-qr-box" data-slip-qr-box></div>
+                <div class="packing-slip-qr-counter">${palletCounter}</div>
+              </div>
+              <div class="packing-slip-qr-caption">${escapeHtml(slip.qr_value || '-')}</div>
+            </div>
+            <div class="packing-slip-rows">${rowsMarkup}</div>
+          </div>
+        `;
+      };
+
+      const mountSlip = (container, slip, mode) => {
+        if (!container || !slip) return;
+        container.innerHTML = renderPackingSlipMarkup(slip, mode);
+        const root = container.firstElementChild;
+        if (root) renderQr(root, slip.qr_value, mode);
+      };
+
+      const getSlip = (slipKey) => slipsData.find((item) => normalize(item.slip_key) === normalize(slipKey)) || null;
+
+      const openPreviewModal = (slipKey) => {
+        const slip = getSlip(slipKey);
+        if (!slip) return;
+        state.previewSlipKey = normalize(slipKey);
+        mountSlip(slipModalBodyEl, slip, 'modal');
+        slipModalCaptionEl.textContent = `Паллета ${slip.pallet_label} · ${slip.box_count} коробов`;
+        slipModalEl.classList.add('is-open');
+      };
+
+      const closePreviewModal = () => {
+        state.previewSlipKey = '';
+        slipModalBodyEl.innerHTML = '';
+        slipModalCaptionEl.textContent = '-';
+        slipModalEl.classList.remove('is-open');
+      };
+
+      const ensurePrinter = () => {
+        const printer = normalize(printerInputEl?.value) || readStoredPrinter();
+        if (!printer) {
+          alert('Укажи аппаратный принтер этикеток для печати упаковочных листов.');
+          printerInputEl?.focus();
+          return '';
+        }
+        if (isVirtualPrinter(printer)) {
+          alert('Для PDF и виртуальных принтеров используй кнопку PDF рядом с упаковочным листом.');
+          printerInputEl.value = '';
+          printerInputEl?.focus();
+          return '';
+        }
+        if (printerInputEl) printerInputEl.value = printer;
+        persistPrinter(printer);
+        return printer;
+      };
+
+      const getSelectedPrinter = () => normalize(printerInputEl?.value) || readStoredPrinter();
+
+      const captureSlipImageDataUrl = async (slip) => {
+        if (!window.html2canvas) {
+          throw new Error('html2canvas недоступен');
+        }
+        if (document.fonts?.ready) {
+          await document.fonts.ready.catch(() => null);
+        }
+        const wrapper = document.createElement('div');
+        mountSlip(wrapper, slip, 'capture');
+        const root = wrapper.firstElementChild;
+        if (!root) {
+          throw new Error('Не удалось подготовить шаблон упаковочного листа');
+        }
+        slipCaptureHostEl.innerHTML = '';
+        slipCaptureHostEl.appendChild(root);
+        await new Promise((resolve) => window.requestAnimationFrame(resolve));
+        const canvas = await window.html2canvas(root, {
+          backgroundColor: '#ffffff',
+          scale: 2,
+          useCORS: true,
+          logging: false,
+        });
+        slipCaptureHostEl.innerHTML = '';
+        return canvas.toDataURL('image/png');
+      };
+
+      const captureSlipImage = async (slip) => {
+        const dataUrl = await captureSlipImageDataUrl(slip);
+        return dataUrl.replace(/^data:image\/png;base64,/, '');
+      };
+
+      const downloadSlipPdf = async (slipKey) => withPrintLock(async () => {
+        const slip = getSlip(slipKey);
+        if (!slip) {
+          alert('Паллета для PDF не найдена.');
+          return;
+        }
+        const jsPdfApi = window.jspdf && window.jspdf.jsPDF ? window.jspdf.jsPDF : null;
+        if (!jsPdfApi) {
+          alert('Не удалось загрузить модуль PDF. Обнови страницу и попробуй снова.');
+          return;
+        }
+        try {
+          const image = await captureSlipImageDataUrl(slip);
+          const doc = new jsPdfApi({
+            orientation: 'portrait',
+            unit: 'mm',
+            format: [75, 120],
+            compress: true,
+          });
+          doc.addImage(image, 'PNG', 0, 0, 75, 120, undefined, 'FAST');
+          const palletPart = sanitizeFilename(slip.pallet_label) || 'pallet';
+          const supplyPart = sanitizeFilename(slip.supply_number) || 'supply';
+          doc.save(`packing_slip_${palletPart}_${supplyPart}.pdf`);
+        } catch (error) {
+          alert(error?.message || 'Не удалось подготовить PDF упаковочного листа.');
+        }
+      });
+
+      const downloadAllSlipsPdf = async () => withPrintLock(async () => {
+        if (!slipsData.length) {
+          alert('Нет паллет с коробами для выгрузки в PDF.');
+          return;
+        }
+        const jsPdfApi = window.jspdf && window.jspdf.jsPDF ? window.jspdf.jsPDF : null;
+        if (!jsPdfApi) {
+          alert('Не удалось загрузить модуль PDF. Обнови страницу и попробуй снова.');
+          return;
+        }
+        try {
+          const doc = new jsPdfApi({
+            orientation: 'portrait',
+            unit: 'mm',
+            format: [75, 120],
+            compress: true,
+          });
+          for (let index = 0; index < slipsData.length; index += 1) {
+            const slip = slipsData[index];
+            const image = await captureSlipImageDataUrl(slip);
+            if (index > 0) {
+              doc.addPage([75, 120], 'portrait');
+            }
+            doc.addImage(image, 'PNG', 0, 0, 75, 120, undefined, 'FAST');
+          }
+          const orderPart = sanitizeFilename('{{ order.display_number|default:order.number }}') || 'shipping_order';
+          doc.save(`packing_slips_${orderPart}_${slipsData.length}.pdf`);
+        } catch (error) {
+          alert(error?.message || 'Не удалось подготовить общий PDF упаковочных листов.');
+        }
+      });
+
+      const queueSlipPrint = async (slip) => {
+        const printer = ensurePrinter();
+        if (!printer) return false;
+        const image = await captureSlipImage(slip);
+        const response = await fetch(printJobUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': csrfToken,
+          },
+          body: JSON.stringify({
+            order_id: '{{ order.number }}',
+            card_id: String(slip.pallet_label || ''),
+            article: 'shipping_packing_slip',
+            barcode: String(slip.qr_value || ''),
+            size: 'pallet',
+            printer_name: printer,
+            label_png_base64: image,
+            label_width_mm: 75,
+            label_height_mm: 120,
+          }),
+        });
+        if (!response.ok) {
+          const text = await response.text();
+          throw new Error(text || 'Не удалось поставить задание печати в очередь');
+        }
+        return true;
+      };
+
+      const withPrintLock = async (work) => {
+        if (state.printing) return;
+        state.printing = true;
+        printAllSlipsPdfBtn?.setAttribute('disabled', 'disabled');
+        printAllSlipsBtn?.setAttribute('disabled', 'disabled');
+        slipModalPdfEl?.setAttribute('disabled', 'disabled');
+        slipModalPrintEl?.setAttribute('disabled', 'disabled');
+        try {
+          await work();
+        } finally {
+          state.printing = false;
+          printAllSlipsPdfBtn?.removeAttribute('disabled');
+          printAllSlipsBtn?.removeAttribute('disabled');
+          slipModalPdfEl?.removeAttribute('disabled');
+          slipModalPrintEl?.removeAttribute('disabled');
+        }
+      };
+
+      const printSlip = async (slipKey) => withPrintLock(async () => {
+        const slip = getSlip(slipKey);
+        if (!slip) {
+          alert('Паллета для печати не найдена.');
+          return;
+        }
+        try {
+          await queueSlipPrint(slip);
+          await refreshPrintStatus({ silent: true });
+          alert(`Упаковочный лист паллеты ${slip.pallet_label} отправлен в печать.`);
+        } catch (error) {
+          alert(error?.message || 'Не удалось отправить упаковочный лист в печать.');
+        }
+      });
+
+      const printAllSlips = async () => withPrintLock(async () => {
+        if (!slipsData.length) {
+          alert('Нет паллет с коробами для печати.');
+          return;
+        }
+        if (!ensurePrinter()) return;
+        for (const slip of slipsData) {
+          try {
+            await queueSlipPrint(slip);
+          } catch (error) {
+            await refreshPrintStatus({ silent: true });
+            alert(`Печать остановлена на паллете ${slip.pallet_label}: ${error?.message || 'ошибка без описания'}`);
+            return;
+          }
+        }
+        await refreshPrintStatus({ silent: true });
+        alert(`В очередь печати отправлено ${slipsData.length} упаковочных листов.`);
+      });
+
+      const renderSlips = () => {
+        if (!slipsData.length) {
+          slipGridEl.innerHTML = '<div class="empty">После паллетизации паллеты не найдены.</div>';
+          return;
+        }
+        slipGridEl.innerHTML = '';
+        slipsData.forEach((slip) => {
+          const card = document.createElement('div');
+          card.className = 'slip-card';
+          card.innerHTML = `
+            <div class="slip-card-head">
+              <div>
+                <div class="slip-card-title">Паллета ${escapeHtml(slip.pallet_label)}</div>
+                <div class="slip-card-meta">${escapeHtml(slip.box_count)} коробов · поставка ${escapeHtml(slip.supply_number)}</div>
+              </div>
+              <div class="slip-card-actions">
+                <button class="btn small" type="button" data-slip-preview="${escapeHtml(slip.slip_key)}">Предпросмотр</button>
+                <button class="btn small" type="button" data-slip-pdf="${escapeHtml(slip.slip_key)}">PDF</button>
+                <button class="btn small" type="button" data-slip-print="${escapeHtml(slip.slip_key)}">Печать</button>
+              </div>
+            </div>
+            <div data-slip-card-root></div>
+          `;
+          slipGridEl.appendChild(card);
+          mountSlip(card.querySelector('[data-slip-card-root]'), slip, 'card');
+        });
+        slipGridEl.querySelectorAll('[data-slip-preview]').forEach((btn) => btn.addEventListener('click', () => openPreviewModal(btn.dataset.slipPreview || '')));
+        slipGridEl.querySelectorAll('[data-slip-pdf]').forEach((btn) => btn.addEventListener('click', () => { void downloadSlipPdf(btn.dataset.slipPdf || ''); }));
+        slipGridEl.querySelectorAll('[data-slip-print]').forEach((btn) => btn.addEventListener('click', () => { void printSlip(btn.dataset.slipPrint || ''); }));
+      };
+
+      const printerInputs = Array.from(document.querySelectorAll('[data-label-printer]'));
+      if (printerInputs.length) {
+        const setPrinterValue = (value) => {
+          printerInputs.forEach((input) => {
+            if (input.value !== value) {
+              input.value = value;
+            }
+          });
+        };
+        const stored = localStorage.getItem('processing_label_printer') || localStorage.getItem('label_printer');
+        if (stored) {
+          setPrinterValue(stored);
+        }
+        printerInputs.forEach((input) => {
+          input.addEventListener('change', () => {
+            const value = normalize(input.value);
+            setPrinterValue(value);
+            localStorage.setItem('processing_label_printer', value);
+            localStorage.setItem('label_printer', value);
+            localStorage.setItem('shipping_packing_slip_printer', value);
+          });
+          input.addEventListener('blur', () => persistPrinter(input.value));
+        });
+      }
+
+      printSettingsToggleBtn?.addEventListener('click', () => {
+        setPrintModuleOpen(!printModuleEl?.classList.contains('is-open'));
+      });
+      printAllSlipsPdfBtn?.addEventListener('click', () => { void downloadAllSlipsPdf(); });
+      printAllSlipsBtn?.addEventListener('click', () => { void printAllSlips(); });
+      refreshPrintersBtn?.addEventListener('click', () => { void refreshPrintStatus(); });
+      slipModalCloseEl?.addEventListener('click', closePreviewModal);
+      slipModalEl?.addEventListener('click', (event) => {
+        if (event.target === slipModalEl) closePreviewModal();
+      });
+      slipModalPrintEl?.addEventListener('click', () => {
+        if (!state.previewSlipKey) return;
+        void printSlip(state.previewSlipKey);
+      });
+      slipModalPdfEl?.addEventListener('click', () => {
+        if (!state.previewSlipKey) return;
+        void downloadSlipPdf(state.previewSlipKey);
+      });
+
+      applyPrintStatus(initialPrintStatus);
+      setPrintModuleOpen(false);
+      renderSlips();
+    })();
+  </script>
+</body>
+</html>

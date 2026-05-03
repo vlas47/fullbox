@@ -1,0 +1,666 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Паллетизация отгрузки · заявка {{ order.display_number|default:order.number }}</title>
+  <style>
+    :root{--bg:#f6f4ed;--card:#fff;--soft:#f8f6f1;--gold:#c79a1c;--gold-soft:#f2d48c;--muted:#6b7280;--stroke:rgba(31,35,40,.12);--text:#1f2328;--success:#1f9d55;--danger:#d14343;--offset:88px}
+    *{box-sizing:border-box}html,body{height:100%}body{margin:0;background:var(--bg);color:var(--text);font-family:"Space Grotesk",system-ui,sans-serif}a{text-decoration:none;color:inherit}
+    .wrap{padding:24px 18px 64px;min-height:100vh}.layout{display:grid;grid-template-columns:280px minmax(0,1fr);gap:16px;align-items:stretch}.side,.main{display:grid;gap:12px;min-height:0}.scroll{overflow:auto;min-height:0}.side.scroll{height:calc(100vh - var(--offset))}
+    .card,.side-card{background:var(--card);border:1px solid var(--stroke);border-radius:16px;box-shadow:0 16px 30px rgba(15,23,42,.12)}.card{padding:16px}.side-card{padding:14px}.flow-card{display:flex;flex-direction:column;height:calc(100vh - var(--offset));min-height:0}
+    .muted{color:var(--muted)}.side-title,.section-title{font-weight:600}.side-title{margin:0 0 8px}.section-title{margin:12px 0 6px}
+    .side-actions{display:grid;gap:8px}.tab,.btn{padding:10px 14px;border-radius:10px;border:1px solid var(--stroke);background:rgba(15,23,42,.04);color:var(--text);font-weight:600;cursor:pointer}.side-actions .tab{width:100%;display:inline-flex;justify-content:center}.tab:hover,.btn:hover{background:rgba(15,23,42,.08)}.primary{border-color:transparent;background:linear-gradient(120deg,var(--gold),var(--gold-soft))}.btn.small{padding:6px 10px;font-size:12px}.btn[disabled]{opacity:.6;cursor:not-allowed}
+    .notice,.error{border-radius:12px;padding:10px 12px;margin-bottom:12px}.notice{border:1px solid rgba(31,157,85,.35);background:rgba(31,157,85,.12);color:#166534}.error{border:1px solid rgba(209,67,67,.35);background:rgba(209,67,67,.12);color:#7f1d1d}
+    .info-list{display:grid;gap:10px}.info-label{font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--muted)}.info-value{font-weight:600;word-break:break-word}
+    .action-bar{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:center}.action-left,.action-right{display:flex;gap:10px;flex-wrap:wrap;align-items:center}.pill{display:inline-flex;align-items:center;gap:6px;padding:4px 8px;border-radius:999px;border:1px solid var(--stroke);background:rgba(15,23,42,.04);font-size:12px;font-weight:600}.pill span{color:var(--gold)}
+    .split{display:grid;grid-template-columns:minmax(0,1fr) minmax(420px,1.15fr);gap:16px;flex:1;min-height:0}.col{display:grid;gap:12px;min-height:0;height:100%}.left-col{grid-template-rows:auto minmax(180px,clamp(220px,36vh,360px)) auto minmax(260px,1fr)}
+    .section-head{display:flex;justify-content:space-between;gap:10px;align-items:center}.section-hint{font-size:12px;color:var(--muted)}.section-count{font-weight:700;color:var(--gold)}
+    .table-wrap{overflow:auto;border:1px solid var(--stroke);border-radius:12px;min-height:0}.remaining{min-height:0}table{width:100%;border-collapse:collapse;min-width:520px;table-layout:fixed}th,td{border-bottom:1px solid var(--stroke);border-right:1px solid var(--stroke);padding:8px 10px;text-align:left;vertical-align:top;word-break:break-word}th:last-child,td:last-child{border-right:none}th{background:rgba(15,23,42,.04);color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:1px;position:sticky;top:0;z-index:1}
+    .current{background:var(--soft);border:1px solid var(--stroke);border-radius:16px;padding:12px;min-height:0}.current-grid{display:grid;grid-template-columns:140px minmax(0,1fr) 220px;gap:12px;align-items:stretch;min-height:0}.badge{width:120px;height:120px;border-radius:18px;border:1px dashed #d2a52a;background:#f9e7b8;color:#7a4c00;display:grid;place-items:center;text-align:center;padding:12px;font-weight:700;margin:0 auto}.box-meta{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:8px}.code{font-weight:600}.status{font-size:12px;text-transform:uppercase;letter-spacing:.8px;color:var(--gold)}.box-items{display:grid;gap:8px;max-height:clamp(240px,40vh,520px);overflow:auto;padding-right:4px}.box-item{display:flex;justify-content:space-between;gap:10px;align-items:center;padding:8px;border-radius:10px;border:1px solid var(--stroke);background:#fff}.box-item small{display:block;color:var(--muted)}.qty{font-weight:700;color:#7a4c00;background:rgba(199,154,32,.2);padding:2px 6px;border-radius:999px}.close-big{width:100%;min-height:110px;font-size:16px;font-weight:700;border-radius:14px}
+    .board{display:grid;gap:12px}.pallet{border:1px solid var(--stroke);border-radius:16px;padding:12px;background:#fff}.pallet.open{border-color:var(--gold);box-shadow:0 12px 26px rgba(199,154,32,.2)}.pallet.active{border-color:var(--success);box-shadow:0 0 0 2px rgba(31,157,85,.3)}.p-head{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:8px}.p-left{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.p-chip{width:48px;height:44px;display:grid;place-items:center;gap:2px;padding:4px 6px;border-radius:10px;border:1px solid var(--stroke);background:#f1f0ec;color:#555;font-weight:700;line-height:1.1;text-align:center}.p-chip-top{font-size:11px}.p-chip-bottom{font-size:10px;color:var(--muted)}.p-code{font-weight:600}.p-status{font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--muted)}.p-meta{display:flex;gap:12px;flex-wrap:wrap;font-size:11px;color:var(--muted);margin-bottom:8px}.p-meta span{font-weight:700;color:var(--text)}
+    .box-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(64px,1fr));gap:6px}.p-head .box-grid{display:flex;flex-wrap:wrap;gap:6px}.box-chip{width:64px;height:48px;border-radius:10px;position:relative;display:block;border:1px solid var(--stroke);background:#f1f0ec;color:#555;cursor:pointer}.box-chip.open{background:#f9e7b8;border-color:#d2a52a;color:#7a4c00}.box-chip.closed{background:#d8f2e1;border-color:#1f9d55;color:#0f5c30}.box-chip-number{position:absolute;top:4px;left:0;right:0;text-align:center;font-size:11px;font-weight:700;line-height:1}.box-chip-count{position:absolute;bottom:4px;left:0;right:0;text-align:center;font-size:10px;font-weight:600;opacity:.9}
+    .closed-list{display:grid;gap:8px;max-height:clamp(180px,28vh,320px);overflow:auto;padding-right:4px}.closed-row{display:flex;justify-content:space-between;gap:10px;align-items:center;padding:8px 10px;border-radius:10px;border:1px solid var(--stroke);background:#fff;font-size:13px}
+    .slip-panel{margin-top:16px;padding-top:16px;border-top:1px solid var(--stroke);display:grid;gap:14px}.slip-toolbar{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:center}.slip-toolbar-left,.slip-toolbar-right{display:flex;gap:10px;flex-wrap:wrap;align-items:center}.slip-printer{min-width:220px;padding:10px 12px;border-radius:10px;border:1px solid var(--stroke);background:#fff;color:var(--text)}.slip-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px}.slip-card{padding:14px;border-radius:16px;border:1px solid var(--stroke);background:#fff;display:grid;gap:12px}.slip-card-head{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}.slip-card-title{font-weight:700}.slip-card-meta{font-size:12px;color:var(--muted)}.slip-card-actions{display:flex;gap:8px;flex-wrap:wrap}
+    .packing-slip-sheet{aspect-ratio:75/120;background:#fff;color:#111;border:1px solid rgba(17,24,39,.18);border-radius:.9em;padding:1.05em .92em;display:grid;grid-template-rows:auto auto 1fr;gap:.48em;box-shadow:0 .38em .9em rgba(15,23,42,.08)}.packing-slip-title{font-size:1.18em;font-weight:800;letter-spacing:.04em;text-align:center}.packing-slip-marketplace{font-size:1.02em;font-weight:800;text-align:center;text-transform:uppercase;letter-spacing:.05em}.packing-slip-rows{display:grid;gap:.2em}.packing-slip-row{display:grid;grid-template-columns:1.18fr .82fr;gap:.4em;align-items:flex-start;padding:.16em 0;border-bottom:1px solid rgba(17,24,39,.12)}.packing-slip-row:last-child{border-bottom:none}.packing-slip-label{font-size:.58em;font-weight:700;text-transform:uppercase;letter-spacing:.03em}.packing-slip-value{font-size:.62em;font-weight:600;text-align:right;line-height:1.18;word-break:break-word}.packing-slip-value.left{text-align:left}
+    .packing-slip-modal{position:fixed;inset:0;display:none;align-items:center;justify-content:center;padding:20px;background:rgba(15,23,42,.52);z-index:30}.packing-slip-modal.is-open{display:flex}.packing-slip-modal-card{width:min(92vw,820px);max-height:92vh;overflow:auto;padding:18px;border-radius:20px;border:1px solid var(--stroke);background:#fff;box-shadow:0 24px 48px rgba(15,23,42,.22);display:grid;gap:14px}.packing-slip-modal-head{display:flex;justify-content:space-between;gap:12px;align-items:center}.packing-slip-modal-actions{display:flex;gap:8px;flex-wrap:wrap}.packing-slip-modal-body{display:grid;place-items:center;background:var(--soft);border:1px solid var(--stroke);border-radius:16px;padding:20px}.packing-slip-empty{padding:18px;border-radius:16px;border:1px dashed var(--stroke);background:rgba(15,23,42,.03);color:var(--muted)}
+    .packing-slip-capture{position:fixed;left:-99999px;top:0;opacity:0;pointer-events:none}
+    @media (max-width:1100px){.layout{grid-template-columns:1fr}.split{grid-template-columns:1fr}.current-grid{grid-template-columns:1fr}.flow-card{height:auto}.side.scroll{height:auto}.scroll{overflow:visible}.close-big{min-height:64px}}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="layout">
+      <aside class="side scroll">
+        <div class="side-card">
+          <div class="muted">FULLBOX · {% include "partials/current_user.html" %}</div>
+          <h3>Паллетизация отгрузки · заявка {{ order.display_number|default:order.number }}</h3>
+          <div class="muted">Статус: {{ status_label }}</div>
+        </div>
+        <div class="side-card">
+          <h4 class="side-title">Действия</h4>
+          <div class="side-actions">
+            <a class="tab" href="{{ detail_url }}">К заявке</a>
+            <a class="tab" href="{{ cabinet_url }}">В кабинет</a>
+            <a class="tab" href="/logout/">Выход</a>
+          </div>
+        </div>
+        <div class="side-card">
+          <h4 class="side-title">Информация</h4>
+          <div class="info-list">
+            <div>
+              <div class="info-label">Клиент</div>
+              <div class="info-value">{{ client_label }}</div>
+            </div>
+            <div>
+              <div class="info-label">Итог</div>
+              <div class="info-value" id="summary-line">-</div>
+            </div>
+          </div>
+        </div>
+        <div class="side-card">
+          <h4 class="side-title">Что делаем</h4>
+          <div class="muted">Берем уже собранные короба и распределяем их по новым паллетам отгрузки. Товар внутри коробов не перекладываем.</div>
+        </div>
+      </aside>
+
+      <main class="main">
+        <div class="card flow-card">
+          {% if messages %}
+            {% for message in messages %}
+              <div class="{% if message.tags == 'error' %}error{% else %}notice{% endif %}">{{ message }}</div>
+            {% endfor %}
+          {% endif %}
+
+          <form method="post" id="packing-form">
+            {% csrf_token %}
+            <input type="hidden" name="boxes_json" id="boxes-json">
+            <input type="hidden" name="pallets_json" id="pallets-json">
+          </form>
+
+          <div class="action-bar">
+            <div class="action-left">
+              <div class="pill">Открытая паллета: <span id="open-pallet-pill">-</span></div>
+              <div class="pill">Без паллеты: <span id="unassigned-pill">0</span></div>
+            </div>
+            <div class="action-right">
+              <button class="btn" type="button" id="close-pallet-btn">Закрыть паллету</button>
+              <button class="btn primary" type="submit" form="packing-form">Завершить паллетизацию</button>
+            </div>
+          </div>
+
+          <div class="split">
+            <div class="col left-col">
+              <div class="section-head">
+                <div class="section-title">Неразмещенные короба</div>
+                <div class="section-hint">В списке: <span class="section-count" id="remaining-count">0</span></div>
+              </div>
+              <div class="table-wrap remaining">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Короб</th>
+                      <th>Кол-во</th>
+                      <th>ШК / состав</th>
+                      <th>В паллету</th>
+                    </tr>
+                  </thead>
+                  <tbody id="remaining-boxes"></tbody>
+                </table>
+              </div>
+
+              <div class="section-head">
+                <div class="section-title">Открытая паллета</div>
+                <div class="section-hint">Внутри: <span class="section-count" id="current-count">0</span></div>
+              </div>
+              <div class="current">
+                <div class="current-grid">
+                  <div><div class="badge" id="current-pallet-badge">Паллета</div></div>
+                  <div>
+                    <div class="box-meta">
+                      <div class="code" id="current-pallet-code">-</div>
+                      <div class="status" id="current-pallet-status">Открыта</div>
+                    </div>
+                    <div class="box-items" id="current-pallet-boxes"></div>
+                  </div>
+                  <div><button class="btn primary close-big" type="button" id="close-current-pallet-btn">Закрыть паллету</button></div>
+                </div>
+              </div>
+            </div>
+
+            <div class="col scroll">
+              <div class="section-title">Паллеты</div>
+              <div class="board" id="pallet-board"></div>
+
+              <div class="section-title">Закрытые паллеты</div>
+              <div class="closed-list" id="closed-pallets"></div>
+            </div>
+          </div>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  {{ boxes_data|json_script:"boxes-data" }}
+  {{ pallets_data|json_script:"pallets-data" }}
+  {{ order.display_number|default:order.number|json_script:"order-label" }}
+  <script>
+    (() => {
+      const boxesData = JSON.parse(document.getElementById('boxes-data').textContent || '[]');
+      const palletsData = JSON.parse(document.getElementById('pallets-data').textContent || '[]');
+      const orderLabel = JSON.parse(document.getElementById('order-label').textContent || '"-"');
+      const packingSlipMetaEl = document.getElementById('packing-slip-meta');
+      const packingSlipMeta = JSON.parse(packingSlipMetaEl?.textContent || '{}');
+      const remainingEl = document.getElementById('remaining-boxes');
+      const currentCodeEl = document.getElementById('current-pallet-code');
+      const currentStatusEl = document.getElementById('current-pallet-status');
+      const currentBadgeEl = document.getElementById('current-pallet-badge');
+      const currentBoxesEl = document.getElementById('current-pallet-boxes');
+      const boardEl = document.getElementById('pallet-board');
+      const closedEl = document.getElementById('closed-pallets');
+      const summaryEl = document.getElementById('summary-line');
+      const openPillEl = document.getElementById('open-pallet-pill');
+      const unassignedPillEl = document.getElementById('unassigned-pill');
+      const remainingCountEl = document.getElementById('remaining-count');
+      const currentCountEl = document.getElementById('current-count');
+      const boxesInput = document.getElementById('boxes-json');
+      const palletsInput = document.getElementById('pallets-json');
+      const slipGridEl = document.getElementById('packing-slip-grid');
+      const printerInputEl = document.getElementById('packing-slip-printer');
+      const printAllSlipsBtn = document.getElementById('print-all-slips-btn');
+      const slipModalEl = document.getElementById('packing-slip-modal');
+      const slipModalBodyEl = document.getElementById('packing-slip-modal-body');
+      const slipModalCaptionEl = document.getElementById('packing-slip-modal-caption');
+      const slipModalPrintEl = document.getElementById('packing-slip-modal-print');
+      const slipModalCloseEl = document.getElementById('packing-slip-modal-close');
+      const slipCaptureHostEl = document.getElementById('packing-slip-capture-host');
+      const csrfToken = document.querySelector('#packing-form input[name="csrfmiddlewaretoken"]')?.value || '';
+      const slipsEnabled = Boolean(
+        slipGridEl &&
+        printerInputEl &&
+        printAllSlipsBtn &&
+        slipModalEl &&
+        slipModalBodyEl &&
+        slipModalCaptionEl &&
+        slipModalPrintEl &&
+        slipModalCloseEl &&
+        slipCaptureHostEl
+      );
+
+      const state = {
+        boxes: Array.isArray(boxesData) ? boxesData.map((box, index) => ({
+          row_key: String(box?.row_key || `BOXROW-${index + 1}`),
+          code: String(box?.code || `BOX-${index + 1}`),
+          qty: Number(box?.qty || 0),
+          barcode_preview: String(box?.barcode_preview || '-'),
+          items: Array.isArray(box?.items) ? box.items : [],
+          pallet_code: String(box?.pallet_code || ''),
+          ui_index: Number(box?.ui_index || index + 1),
+        })) : [],
+        pallets: Array.isArray(palletsData) ? palletsData.map((pallet, index) => ({
+          code: String(pallet?.code || `PAL-${index + 1}`),
+          label: String(pallet?.label || pallet?.code || `Паллета ${index + 1}`),
+          sealed: true,
+        })) : [],
+        activePalletCode: '',
+        previewSlipKey: '',
+        printing: false,
+      };
+
+      const normalize = (value) => String(value || '').trim();
+      const boxRowKey = (box) => normalize(box?.row_key) || normalize(box?.code);
+      const boxChipLabel = (box) => {
+        const code = normalize(box?.code);
+        if (!code) return String(box?.ui_index || '');
+        const parts = code.split('-').filter(Boolean);
+        const candidate = parts.length >= 2 ? parts[parts.length - 2] : (parts[0] || code);
+        const cleaned = String(candidate || '').trim();
+        if (cleaned) return cleaned.slice(-6);
+        return code.slice(-6);
+      };
+      const boxNo = (box) => Number(box?.ui_index || 0) || 0;
+      const boxesForPallet = (code) => state.boxes.filter((box) => normalize(box.pallet_code) === normalize(code));
+      const unassignedBoxes = () => state.boxes.filter((box) => !normalize(box.pallet_code));
+      const usedCodes = () => new Set(state.boxes.map((box) => normalize(box.pallet_code)).filter(Boolean));
+      const getPallet = (code) => state.pallets.find((pallet) => normalize(pallet.code) === normalize(code)) || null;
+      const getActivePallet = () => getPallet(state.activePalletCode);
+      const getBox = (rowKey) => state.boxes.find((box) => boxRowKey(box) === normalize(rowKey)) || null;
+      const escapeHtml = (value) => String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+      const printJobUrl = '/orders/processing/print-jobs/';
+      const printerStorageKeys = ['shipping_packing_slip_printer', 'processing_label_printer', 'label_printer'];
+      const readStoredPrinter = () => {
+        for (const key of printerStorageKeys) {
+          const value = String(localStorage.getItem(key) || '').trim();
+          if (value) return value;
+        }
+        return '';
+      };
+      const persistPrinter = (value) => {
+        const normalizedValue = String(value || '').trim();
+        if (!normalizedValue) return;
+        printerStorageKeys.forEach((key) => localStorage.setItem(key, normalizedValue));
+      };
+      const baseSlipRows = (slip) => [
+        ['Номер паллеты', slip.pallet_label],
+        ['Тип поставки', slip.supply_type],
+        ['Кол-во паллет в поставке', slip.total_pallets],
+        ['Номер поставки', slip.supply_number],
+        ['ШК поставки', slip.shipping_barcode],
+        ['Кол-во коробов на паллете', slip.box_count],
+        ['Склад назначения', slip.destination_warehouse],
+        ['Транзитный склад', slip.transit_address],
+        ['Поставщик', slip.supplier_name],
+        ['Дата поставки', slip.delivery_date],
+      ];
+      const renderPackingSlipMarkup = (slip, mode = 'card') => {
+        const sizeMap = {
+          card: { width: 240, font: 12.4 },
+          modal: { width: 430, font: 22 },
+          capture: { width: 750, font: 38 },
+        };
+        const size = sizeMap[mode] || sizeMap.card;
+        const rowsMarkup = baseSlipRows(slip).map(([label, value]) => (
+          `<div class="packing-slip-row"><div class="packing-slip-label">${escapeHtml(label)}</div><div class="packing-slip-value${String(label).includes('короб') ? ' left' : ''}">${escapeHtml(value || '-')}</div></div>`
+        )).join('');
+        return `
+          <div class="packing-slip-sheet packing-slip-sheet-${mode}" style="width:${size.width}px;font-size:${size.font}px">
+            <div class="packing-slip-title">УПАКОВОЧНЫЙ ЛИСТ</div>
+            <div class="packing-slip-marketplace">${escapeHtml(slip.marketplace_name || '-')}</div>
+            <div class="packing-slip-rows">${rowsMarkup}</div>
+          </div>
+        `;
+      };
+      const packingSlips = () => {
+        const pallets = state.pallets.filter((pallet) => boxesForPallet(pallet.code).length > 0);
+        return pallets.map((pallet, index) => {
+          const boxes = boxesForPallet(pallet.code).sort((a, b) => boxNo(a) - boxNo(b));
+          return {
+            slip_key: normalize(pallet.code) || `PAL-${index + 1}`,
+            pallet_label: normalize(pallet.label) || normalize(pallet.code) || String(index + 1),
+            total_pallets: String(pallets.length),
+            box_count: String(boxes.length),
+            marketplace_name: String(packingSlipMeta.marketplace_name || '-').toUpperCase(),
+            supply_type: String(packingSlipMeta.supply_type || '-'),
+            supply_number: String(packingSlipMeta.supply_number || '-'),
+            shipping_barcode: String(packingSlipMeta.shipping_barcode || '-'),
+            destination_warehouse: String(packingSlipMeta.destination_warehouse || '-'),
+            transit_address: String(packingSlipMeta.transit_address || '-'),
+            supplier_name: String(packingSlipMeta.supplier_name || '-'),
+            delivery_date: String(packingSlipMeta.delivery_date || '-'),
+          };
+        });
+      };
+      const getSlip = (slipKey) => packingSlips().find((item) => normalize(item.slip_key) === normalize(slipKey)) || null;
+
+      const uniquePalletCode = () => {
+        const existing = new Set(state.pallets.map((item) => normalize(item.code)));
+        let index = state.pallets.length + 1;
+        let code = `PAL-${index}`;
+        while (existing.has(code)) { index += 1; code = `PAL-${index}`; }
+        return code;
+      };
+
+      const createPallet = () => {
+        const pallet = { code: uniquePalletCode(), label: `Паллета ${state.pallets.length + 1}`, sealed: false };
+        state.pallets.push(pallet);
+        state.activePalletCode = pallet.code;
+        return pallet;
+      };
+
+      const ensureOpenPallet = () => {
+        let active = getActivePallet();
+        if (!active) {
+          active = state.pallets.find((item) => !item.sealed) || null;
+          if (active) state.activePalletCode = active.code;
+        }
+        if (!active) active = createPallet();
+        state.pallets.forEach((item) => { item.sealed = normalize(item.code) !== normalize(active.code); });
+        return active;
+      };
+
+      const pruneEmptyPallets = () => {
+        const used = usedCodes();
+        state.pallets = state.pallets.filter((item) => used.has(normalize(item.code)) || normalize(item.code) === normalize(state.activePalletCode));
+      };
+
+      const assignToActive = (rowKey) => {
+        const pallet = ensureOpenPallet();
+        const box = getBox(rowKey);
+        if (box) box.pallet_code = pallet.code;
+      };
+
+      const unassignBox = (rowKey) => {
+        const box = getBox(rowKey);
+        if (box) box.pallet_code = '';
+      };
+
+      const closeActivePallet = () => {
+        const active = getActivePallet();
+        if (!active) return void ensureOpenPallet();
+        const activeBoxes = boxesForPallet(active.code);
+        if (!activeBoxes.length) {
+          state.pallets = state.pallets.filter((item) => normalize(item.code) !== normalize(active.code));
+          state.activePalletCode = '';
+          return void ensureOpenPallet();
+        }
+        active.sealed = true;
+        const next = createPallet();
+        state.pallets.forEach((item) => { item.sealed = normalize(item.code) !== normalize(next.code); });
+      };
+
+      const reopenPallet = (code) => {
+        const target = getPallet(code);
+        if (!target) return;
+        const active = getActivePallet();
+        if (active && normalize(active.code) !== normalize(target.code)) {
+          if (!boxesForPallet(active.code).length) state.pallets = state.pallets.filter((item) => normalize(item.code) !== normalize(active.code));
+          else active.sealed = true;
+        }
+        target.sealed = false;
+        state.activePalletCode = target.code;
+        ensureOpenPallet();
+      };
+
+      const removePallet = (code) => {
+        state.boxes.forEach((box) => { if (normalize(box.pallet_code) === normalize(code)) box.pallet_code = ''; });
+        state.pallets = state.pallets.filter((item) => normalize(item.code) !== normalize(code));
+        if (normalize(state.activePalletCode) === normalize(code)) state.activePalletCode = '';
+        ensureOpenPallet();
+      };
+
+      const syncInputs = () => {
+        boxesInput.value = JSON.stringify(state.boxes.map((box) => ({ row_key: box.row_key, code: box.code, qty: box.qty, barcode_preview: box.barcode_preview, pallet_code: box.pallet_code })));
+        palletsInput.value = JSON.stringify(state.pallets.map((pallet) => ({ code: pallet.code, label: pallet.label, sealed: !!pallet.sealed })));
+      };
+
+      const renderSummary = () => {
+        const packed = state.pallets.filter((pallet) => boxesForPallet(pallet.code).length > 0);
+        const active = ensureOpenPallet();
+        summaryEl.textContent = `По заявке ${orderLabel} доставлено ${state.boxes.length} коробов, собрано ${packed.length} паллет.`;
+        openPillEl.textContent = normalize(active.label) || active.code;
+        unassignedPillEl.textContent = String(unassignedBoxes().length);
+      };
+
+      const renderRemaining = () => {
+        const rows = unassignedBoxes().sort((a, b) => boxNo(a) - boxNo(b));
+        remainingCountEl.textContent = String(rows.length);
+        remainingEl.innerHTML = rows.length ? '' : '<tr><td colspan="4" class="muted">Все короба размещены по паллетам.</td></tr>';
+        rows.forEach((box) => {
+          const row = document.createElement('tr');
+          row.innerHTML = `<td><b>${box.code}</b></td><td>${box.qty}</td><td>${normalize(box.barcode_preview) || '-'}</td><td><button type="button" class="btn small" data-assign-row="${box.row_key}">В открытую паллету</button></td>`;
+          remainingEl.appendChild(row);
+        });
+        remainingEl.querySelectorAll('[data-assign-row]').forEach((btn) => btn.addEventListener('click', () => { assignToActive(btn.dataset.assignRow || ''); render(); }));
+      };
+
+      const renderCurrent = () => {
+        const active = ensureOpenPallet();
+        const boxes = boxesForPallet(active.code).sort((a, b) => boxNo(a) - boxNo(b));
+        currentCountEl.textContent = String(boxes.length);
+        currentCodeEl.textContent = normalize(active.label) || active.code;
+        currentStatusEl.textContent = `Открыта · ${boxes.length} коробов`;
+        currentBadgeEl.textContent = normalize(active.label) || active.code;
+        currentBoxesEl.innerHTML = boxes.length ? '' : '<div class="box-item muted">В открытую паллету пока не добавлены короба.</div>';
+        boxes.forEach((box) => {
+          const row = document.createElement('div');
+          row.className = 'box-item';
+          row.innerHTML = `<div><div><b>${box.code}</b></div><small>${normalize(box.barcode_preview) || '-'}</small></div><div style="display:flex;align-items:center;gap:8px;"><span class="qty">${box.qty} шт.</span><button type="button" class="btn small" data-unassign-row="${box.row_key}">Убрать</button></div>`;
+          currentBoxesEl.appendChild(row);
+        });
+        currentBoxesEl.querySelectorAll('[data-unassign-row]').forEach((btn) => btn.addEventListener('click', () => { unassignBox(btn.dataset.unassignRow || ''); render(); }));
+      };
+
+      const palletCard = (pallet) => {
+        const boxes = boxesForPallet(pallet.code).sort((a, b) => boxNo(a) - boxNo(b));
+        const active = normalize(pallet.code) === normalize(state.activePalletCode);
+        const open = !pallet.sealed;
+        const chips = boxes.map((box) => {
+          if (!open) {
+            return `<span class="box-chip closed" title="${box.code}"><span class="box-chip-number">${boxChipLabel(box)}</span><span class="box-chip-count">${box.qty}</span></span>`;
+          }
+          return `<button type="button" class="box-chip open" data-box-row="${box.row_key}" title="${box.code}"><span class="box-chip-number">${boxChipLabel(box)}</span><span class="box-chip-count">${box.qty}</span></button>`;
+        }).join('');
+        const card = document.createElement('div');
+        card.className = `pallet${open ? ' open' : ''}${active ? ' active' : ''}`;
+        card.innerHTML = `<div class="p-head"><div class="p-left"><div class="p-chip"><div class="p-chip-top">${open ? 'OPEN' : 'PAL'}</div><div class="p-chip-bottom">${boxes.length}</div></div><div><div class="p-code">${normalize(pallet.label) || pallet.code}</div><div class="p-status">${open ? 'Открытая паллета' : 'Закрытая паллета'}</div></div></div><div class="action-right">${open ? '' : `<button type="button" class="btn small" data-open="${pallet.code}">Открыть</button>`}<button type="button" class="btn small" data-delete="${pallet.code}">Удалить</button></div></div><div class="p-meta"><div>Коробов: <span>${boxes.length}</span></div><div>Количество: <span>${boxes.reduce((sum, box) => sum + Number(box.qty || 0), 0)}</span></div></div><div class="box-grid">${chips || '<div class="muted">Коробов нет.</div>'}</div>`;
+        return card;
+      };
+
+      const renderBoard = () => {
+        boardEl.innerHTML = state.pallets.length ? '' : '<div class="muted">Паллеты пока не созданы.</div>';
+        state.pallets.forEach((pallet) => boardEl.appendChild(palletCard(pallet)));
+        boardEl.querySelectorAll('[data-open]').forEach((btn) => btn.addEventListener('click', () => { reopenPallet(btn.dataset.open || ''); render(); }));
+        boardEl.querySelectorAll('[data-delete]').forEach((btn) => btn.addEventListener('click', () => { removePallet(btn.dataset.delete || ''); render(); }));
+        boardEl.querySelectorAll('[data-box-row]').forEach((btn) => btn.addEventListener('click', () => { unassignBox(btn.dataset.boxRow || ''); render(); }));
+      };
+
+      const renderClosed = () => {
+        const closed = state.pallets.filter((pallet) => pallet.sealed && boxesForPallet(pallet.code).length > 0);
+        closedEl.innerHTML = closed.length ? '' : '<div class="closed-row muted">Закрытых паллет пока нет.</div>';
+        closed.forEach((pallet) => {
+          const row = document.createElement('div');
+          const boxes = boxesForPallet(pallet.code);
+          row.className = 'closed-row';
+          row.innerHTML = `<div><div><b>${normalize(pallet.label) || pallet.code}</b></div><div class="muted">${boxes.length} коробов</div></div><button type="button" class="btn small" data-reopen="${pallet.code}">Открыть</button>`;
+          closedEl.appendChild(row);
+        });
+        closedEl.querySelectorAll('[data-reopen]').forEach((btn) => btn.addEventListener('click', () => { reopenPallet(btn.dataset.reopen || ''); render(); }));
+      };
+
+      const renderPreviewModal = () => {
+        if (!slipsEnabled) return;
+        const slip = getSlip(state.previewSlipKey);
+        if (!slip) {
+          slipModalEl?.classList.remove('is-open');
+          slipModalBodyEl.innerHTML = '';
+          slipModalCaptionEl.textContent = '-';
+          state.previewSlipKey = '';
+          return;
+        }
+        slipModalBodyEl.innerHTML = renderPackingSlipMarkup(slip, 'modal');
+        slipModalCaptionEl.textContent = `Паллета ${slip.pallet_label} · ${slip.box_count} коробов`;
+        slipModalEl?.classList.add('is-open');
+      };
+
+      const openPreviewModal = (slipKey) => {
+        if (!slipsEnabled) return;
+        state.previewSlipKey = normalize(slipKey);
+        renderPreviewModal();
+      };
+
+      const closePreviewModal = () => {
+        if (!slipsEnabled) return;
+        state.previewSlipKey = '';
+        renderPreviewModal();
+      };
+
+      const ensurePrinter = () => {
+        if (!slipsEnabled) return '';
+        const printer = String(printerInputEl?.value || '').trim() || readStoredPrinter();
+        if (!printer) {
+          alert('Укажи принтер этикеток для печати упаковочных листов.');
+          printerInputEl?.focus();
+          return '';
+        }
+        if (printerInputEl) {
+          printerInputEl.value = printer;
+        }
+        persistPrinter(printer);
+        return printer;
+      };
+
+      const captureSlipImage = async (slip) => {
+        if (!slipsEnabled) {
+          throw new Error('Страница упаковочных листов недоступна');
+        }
+        if (!window.html2canvas) {
+          throw new Error('html2canvas недоступен');
+        }
+        if (document.fonts?.ready) {
+          await document.fonts.ready.catch(() => null);
+        }
+        const wrapper = document.createElement('div');
+        wrapper.innerHTML = renderPackingSlipMarkup(slip, 'capture');
+        const root = wrapper.firstElementChild;
+        if (!root) {
+          throw new Error('Не удалось подготовить шаблон упаковочного листа');
+        }
+        slipCaptureHostEl.innerHTML = '';
+        slipCaptureHostEl.appendChild(root);
+        await new Promise((resolve) => window.requestAnimationFrame(resolve));
+        const canvas = await window.html2canvas(root, {
+          backgroundColor: '#ffffff',
+          scale: 2,
+          useCORS: true,
+          logging: false,
+        });
+        slipCaptureHostEl.innerHTML = '';
+        return canvas.toDataURL('image/png').replace(/^data:image\/png;base64,/, '');
+      };
+
+      const queueSlipPrint = async (slip) => {
+        const printer = ensurePrinter();
+        if (!printer) return false;
+        const image = await captureSlipImage(slip);
+        const response = await fetch(printJobUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': csrfToken,
+          },
+          body: JSON.stringify({
+            order_id: String(packingSlipMeta.order_number || orderLabel || ''),
+            card_id: String(slip.pallet_label || ''),
+            article: 'shipping_packing_slip',
+            barcode: `${String(packingSlipMeta.order_number || orderLabel || 'shipping')}::${String(slip.pallet_label || '')}`,
+            size: 'pallet',
+            printer_name: printer,
+            label_png_base64: image,
+            label_width_mm: 75,
+            label_height_mm: 120,
+          }),
+        });
+        if (!response.ok) {
+          const text = await response.text();
+          throw new Error(text || 'Не удалось поставить задание печати в очередь');
+        }
+        return true;
+      };
+
+      const withPrintLock = async (work) => {
+        if (state.printing) return;
+        state.printing = true;
+        printAllSlipsBtn?.setAttribute('disabled', 'disabled');
+        slipModalPrintEl?.setAttribute('disabled', 'disabled');
+        try {
+          await work();
+        } finally {
+          state.printing = false;
+          printAllSlipsBtn?.removeAttribute('disabled');
+          slipModalPrintEl?.removeAttribute('disabled');
+        }
+      };
+
+      const printSlip = async (slipKey) => withPrintLock(async () => {
+        const slip = getSlip(slipKey);
+        if (!slip) {
+          alert('Паллета для печати не найдена.');
+          return;
+        }
+        try {
+          await queueSlipPrint(slip);
+          alert(`Упаковочный лист паллеты ${slip.pallet_label} отправлен в печать.`);
+        } catch (error) {
+          alert(error?.message || 'Не удалось отправить упаковочный лист в печать.');
+        }
+      });
+
+      const printAllSlips = async () => withPrintLock(async () => {
+        const slips = packingSlips();
+        if (!slips.length) {
+          alert('Нет паллет с коробами для печати.');
+          return;
+        }
+        const printer = ensurePrinter();
+        if (!printer) {
+          return;
+        }
+        for (const slip of slips) {
+          try {
+            await queueSlipPrint(slip);
+          } catch (error) {
+            alert(`Печать остановлена на паллете ${slip.pallet_label}: ${error?.message || 'ошибка без описания'}`);
+            return;
+          }
+        }
+        alert(`В очередь печати отправлено ${slips.length} упаковочных листов.`);
+      });
+
+      const renderSlips = () => {
+        if (!slipsEnabled) return;
+        const slips = packingSlips();
+        slipGridEl.innerHTML = slips.length ? '' : '<div class="packing-slip-empty">Появятся после того, как хотя бы одна паллета получит короба.</div>';
+        slips.forEach((slip) => {
+          const card = document.createElement('div');
+          card.className = 'slip-card';
+          card.innerHTML = `
+            <div class="slip-card-head">
+              <div>
+                <div class="slip-card-title">Паллета ${escapeHtml(slip.pallet_label)}</div>
+                <div class="slip-card-meta">${escapeHtml(slip.box_count)} коробов · поставка ${escapeHtml(slip.supply_number)}</div>
+              </div>
+              <div class="slip-card-actions">
+                <button class="btn small" type="button" data-slip-preview="${escapeHtml(slip.slip_key)}">Предпросмотр</button>
+                <button class="btn small" type="button" data-slip-print="${escapeHtml(slip.slip_key)}">Печать</button>
+              </div>
+            </div>
+            ${renderPackingSlipMarkup(slip, 'card')}
+          `;
+          slipGridEl.appendChild(card);
+        });
+        slipGridEl.querySelectorAll('[data-slip-preview]').forEach((btn) => btn.addEventListener('click', () => openPreviewModal(btn.dataset.slipPreview || '')));
+        slipGridEl.querySelectorAll('[data-slip-print]').forEach((btn) => btn.addEventListener('click', () => { void printSlip(btn.dataset.slipPrint || ''); }));
+        renderPreviewModal();
+      };
+
+      const render = () => { pruneEmptyPallets(); ensureOpenPallet(); renderSummary(); renderRemaining(); renderCurrent(); renderBoard(); renderClosed(); renderSlips(); syncInputs(); };
+
+      document.getElementById('close-pallet-btn')?.addEventListener('click', () => { closeActivePallet(); render(); });
+      document.getElementById('close-current-pallet-btn')?.addEventListener('click', () => { closeActivePallet(); render(); });
+      printerInputEl && (printerInputEl.value = readStoredPrinter());
+      printerInputEl?.addEventListener('change', () => persistPrinter(printerInputEl.value));
+      printerInputEl?.addEventListener('blur', () => persistPrinter(printerInputEl.value));
+      printAllSlipsBtn?.addEventListener('click', () => { void printAllSlips(); });
+      slipModalCloseEl?.addEventListener('click', closePreviewModal);
+      slipModalEl?.addEventListener('click', (event) => {
+        if (event.target === slipModalEl) closePreviewModal();
+      });
+      slipModalPrintEl?.addEventListener('click', () => {
+        if (!state.previewSlipKey) return;
+        void printSlip(state.previewSlipKey);
+      });
+
+      document.getElementById('packing-form')?.addEventListener('submit', (event) => {
+        if (unassignedBoxes().length) { event.preventDefault(); alert('Нельзя завершить паллетизацию, пока все короба не размещены по паллетам.'); return; }
+        const active = getActivePallet();
+        if (active && !boxesForPallet(active.code).length) { state.pallets = state.pallets.filter((item) => normalize(item.code) !== normalize(active.code)); state.activePalletCode = ''; }
+        pruneEmptyPallets();
+        state.pallets.forEach((pallet) => { pallet.sealed = true; });
+        const used = usedCodes();
+        for (const pallet of state.pallets) {
+          if (!used.has(normalize(pallet.code))) continue;
+          if (!normalize(pallet.label)) { event.preventDefault(); alert('Укажите название для каждой паллеты, в которой есть короба.'); return; }
+        }
+        syncInputs();
+      });
+
+      render();
+    })();
+  </script>
+</body>
+</html>

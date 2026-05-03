@@ -1,0 +1,702 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ order.display_number|default:order.number }} | Отгрузка</title>
+  <link href="/static/vendor/bricolage-manrope.css" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #f2efe8;
+      --surface: #fffdf8;
+      --surface-2: #f7f2ea;
+      --ink: #1c1f1a;
+      --muted: #6b6f66;
+      --accent: #0e6b5b;
+      --sun: #f2b747;
+      --stroke: rgba(28,31,26,0.12);
+      --danger: #d4543c;
+      --shadow: 0 18px 45px rgba(15,23,42,0.12);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Manrope", system-ui, sans-serif;
+      color: var(--ink);
+      overflow: hidden;
+      background:
+        radial-gradient(1200px 540px at -10% -20%, rgba(242,183,71,0.22), transparent 60%),
+        radial-gradient(900px 520px at 110% 10%, rgba(14,107,91,0.18), transparent 55%),
+        var(--bg);
+      min-height: 100vh;
+    }
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 0;
+      background-image:
+        linear-gradient(rgba(28,31,26,0.06) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(28,31,26,0.06) 1px, transparent 1px);
+      background-size: 36px 36px;
+      opacity: 0.08;
+    }
+    a { color: inherit; text-decoration: none; }
+    .wrap { position: relative; z-index: 1; padding: 24px; }
+    .layout {
+      display: grid;
+      grid-template-columns: 260px minmax(0, 1fr);
+      gap: 20px;
+      min-height: calc(100vh - 96px);
+    }
+    .side {
+      background: var(--surface);
+      border: 1px solid var(--stroke);
+      border-radius: 22px;
+      padding: 18px;
+      box-shadow: var(--shadow);
+      display: grid;
+      gap: 16px;
+      max-height: calc(100vh - 96px);
+      overflow: auto;
+    }
+    .brand-title { font-family: "Bricolage Grotesque", "Manrope", sans-serif; font-size: 22px; letter-spacing: 0.6px; }
+    .profile {
+      display: grid;
+      gap: 6px;
+      padding: 12px;
+      border-radius: 16px;
+      background: var(--surface-2);
+      border: 1px solid var(--stroke);
+    }
+    .profile-value { font-weight: 600; }
+    .nav { display: grid; gap: 10px; }
+    .nav-link {
+      display: grid;
+      gap: 4px;
+      padding: 12px;
+      border-radius: 16px;
+      border: 1px solid var(--stroke);
+      background: var(--surface-2);
+      transition: transform .2s ease, box-shadow .2s ease, border-color .2s ease;
+    }
+    .nav-link:hover {
+      transform: translateY(-1px);
+      border-color: rgba(14,107,91,0.4);
+      box-shadow: 0 12px 24px rgba(14,107,91,0.12);
+    }
+    .nav-link.primary {
+      background: linear-gradient(135deg, rgba(242,183,71,0.45), rgba(14,107,91,0.15));
+      border-color: transparent;
+    }
+    .nav-title { font-weight: 700; }
+    .nav-sub { font-size: 12px; color: var(--muted); }
+    .btn {
+      padding: 10px 14px;
+      border-radius: 12px;
+      border: 1px solid var(--stroke);
+      background: rgba(28,31,26,0.04);
+      color: var(--ink);
+      font-weight: 700;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      cursor: pointer;
+      transition: transform .2s ease, box-shadow .2s ease, border-color .2s ease;
+      font-family: inherit;
+      font-size: 14px;
+    }
+    .btn:hover {
+      transform: translateY(-1px);
+      border-color: rgba(14,107,91,0.4);
+      box-shadow: 0 10px 24px rgba(14,107,91,0.14);
+    }
+    .btn.primary {
+      background: linear-gradient(120deg, var(--sun), #ffd88a);
+      border-color: transparent;
+      color: #2a2110;
+    }
+    .btn.ghost { background: transparent; }
+    .btn.warn { border-color: rgba(212,84,60,0.35); color: #7f1d1d; }
+    .content { display: grid; gap: 16px; max-height: calc(100vh - 96px); overflow: auto; padding-right: 4px; }
+    .panel {
+      background: var(--surface);
+      border: 1px solid var(--stroke);
+      border-radius: 22px;
+      box-shadow: var(--shadow);
+      padding: 18px;
+    }
+    .panel-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 14px;
+      flex-wrap: wrap;
+      margin-bottom: 14px;
+    }
+    .panel-title { margin: 0; font-family: "Bricolage Grotesque", "Manrope", sans-serif; font-size: 24px; }
+    .subtitle { color: var(--muted); font-size: 13px; }
+    .meta { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 8px; }
+    .order-summary {
+      margin-top: 16px;
+      overflow: auto;
+      border-radius: 18px;
+      border: 1px solid var(--stroke);
+      background:
+        linear-gradient(135deg, rgba(242,183,71,0.12), rgba(14,107,91,0.08)),
+        rgba(255,255,255,0.7);
+    }
+    .summary-table {
+      width: 100%;
+      min-width: 880px;
+      border-collapse: collapse;
+    }
+    .summary-table td {
+      padding: 10px 12px;
+      border-bottom: 1px solid rgba(28,31,26,0.08);
+      vertical-align: top;
+      font-size: 14px;
+    }
+    .summary-table tr:last-child td {
+      border-bottom: none;
+    }
+    .summary-table td.summary-head {
+      width: 13%;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+      font-weight: 700;
+      white-space: nowrap;
+    }
+    .summary-table td.summary-data {
+      width: 20.333%;
+      font-weight: 700;
+      line-height: 1.35;
+      word-break: break-word;
+    }
+    .summary-table td:nth-child(1),
+    .summary-table td:nth-child(2) {
+      background: rgba(242,183,71,0.08);
+    }
+    .summary-table td:nth-child(3),
+    .summary-table td:nth-child(4) {
+      background: rgba(14,107,91,0.07);
+    }
+    .summary-table td:nth-child(5),
+    .summary-table td:nth-child(6) {
+      background: rgba(15,23,42,0.04);
+    }
+    .messages { display: grid; gap: 8px; margin-bottom: 12px; }
+    .msg {
+      border-radius: 12px;
+      border: 1px solid transparent;
+      padding: 10px 12px;
+      font-size: 14px;
+    }
+    .msg.ok { border-color: rgba(14,107,91,0.35); background: rgba(14,107,91,0.12); color: #0b5246; }
+    .msg.err { border-color: rgba(212,84,60,0.35); background: rgba(212,84,60,0.14); color: #7f1d1d; }
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+    .actions form { margin: 0; }
+    .section {
+      border: 1px solid var(--stroke);
+      border-radius: 16px;
+      background: var(--surface-2);
+      padding: 14px;
+      margin-top: 12px;
+    }
+    .section h3 {
+      margin: 0 0 10px;
+      font-size: 17px;
+      font-family: "Bricolage Grotesque", "Manrope", sans-serif;
+    }
+    .table-wrap {
+      overflow: auto;
+      border-radius: 14px;
+      border: 1px solid var(--stroke);
+      background: rgba(15,23,42,0.03);
+    }
+    table { width: 100%; border-collapse: collapse; min-width: 860px; }
+    th, td {
+      padding: 9px;
+      border-bottom: 1px solid var(--stroke);
+      text-align: left;
+      vertical-align: middle;
+      font-size: 14px;
+    }
+    th {
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: var(--muted);
+      background: rgba(15,23,42,0.04);
+    }
+    tbody tr:last-child td { border-bottom: none; }
+    .form-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 10px;
+    }
+    .field { display: grid; gap: 6px; }
+    label { font-weight: 600; color: var(--muted); }
+    input, select, textarea {
+      width: 100%;
+      padding: 9px 10px;
+      border-radius: 10px;
+      border: 1px solid var(--stroke);
+      background: var(--surface);
+      color: var(--ink);
+      font-family: inherit;
+      font-size: 14px;
+    }
+    textarea { min-height: 78px; resize: vertical; }
+    .inline-form { display: inline; }
+    .hint { color: var(--muted); font-size: 12px; }
+    .empty {
+      padding: 12px;
+      text-align: center;
+      color: var(--muted);
+      border-radius: 12px;
+      border: 1px dashed var(--stroke);
+    }
+    .attachment-list {
+      display: grid;
+      gap: 8px;
+      margin-top: 10px;
+    }
+    .attachment-item {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      flex-wrap: wrap;
+      padding: 10px 12px;
+      border-radius: 12px;
+      border: 1px solid var(--stroke);
+      background: rgba(255,255,255,0.68);
+    }
+    .attachment-item a { font-weight: 700; }
+    @media (max-width: 1200px) {
+      body { overflow: auto; }
+      .layout { grid-template-columns: 1fr; }
+      .side, .content { max-height: none; overflow: visible; padding-right: 0; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="layout">
+      <aside class="side">
+        <div class="brand-title">FULLBOX</div>
+        <div class="profile">
+          <div class="profile-value">
+            {% if scope == "client" and selected_client %}
+              Кабинет клиента<br>
+              {{ selected_client.agn_name|default:selected_client.fio_agn|default:"клиента" }}
+            {% else %}
+              {% include "partials/current_user.html" %}
+            {% endif %}
+          </div>
+        </div>
+        <nav class="nav">
+          {% if scope == "client" and selected_client %}
+            <a class="nav-link" href="/client/dashboard/?client={{ selected_client.id }}">
+              <span class="nav-title">В кабинет</span>
+              <span class="nav-sub">Главная клиента</span>
+            </a>
+            <a class="nav-link" href="{% url 'shipping:list' %}?client={{ selected_client.id }}">
+              <span class="nav-title">Список отгрузок</span>
+              <span class="nav-sub">Журнал заявок</span>
+            </a>
+            <a class="nav-link" href="{% url 'shipping:create' %}?client={{ selected_client.id }}">
+              <span class="nav-title">Новая отгрузка</span>
+              <span class="nav-sub">Создать заявку</span>
+            </a>
+            <a class="nav-link" href="/sklad/journal/?client={{ selected_client.id }}">
+              <span class="nav-title">Складские остатки</span>
+              <span class="nav-sub">Доступный товар</span>
+            </a>
+          {% else %}
+            <a class="nav-link" href="{{ cabinet_url }}">
+              <span class="nav-title">В кабинет</span>
+              <span class="nav-sub">Главная роли</span>
+            </a>
+            <a class="nav-link primary" href="{% url 'shipping:list' %}">
+              <span class="nav-title">Список отгрузок</span>
+              <span class="nav-sub">Журнал заявок</span>
+            </a>
+            <a class="nav-link" href="{% url 'shipping:create' %}">
+              <span class="nav-title">Новая отгрузка</span>
+              <span class="nav-sub">Создать заявку</span>
+            </a>
+          {% endif %}
+        </nav>
+        <a class="btn ghost" href="/logout/">Выход</a>
+      </aside>
+
+      <main class="content">
+        <section class="panel">
+          <div class="panel-header">
+            <div>
+              <h1 class="panel-title">Заявка {{ order.display_number|default:order.number }}</h1>
+              <div class="subtitle">Клиент: <b>{{ order.agency.agn_name }}</b></div>
+              <div class="order-summary">
+                <table class="summary-table">
+                  <tbody>
+                    <tr>
+                      <td class="summary-head">Статус</td>
+                      <td class="summary-data">{{ order.ui_status_label|default:order.get_status_display }}</td>
+                      <td class="summary-head">Слот</td>
+                      <td class="summary-data">{% if order.slot_date %}{{ order.slot_date|date:"d.m.Y" }}{% else %}-{% endif %}{% if order.slot_time %} {{ order.slot_time|time:"H:i" }}{% endif %}</td>
+                      <td class="summary-head">Тип поставки</td>
+                      <td class="summary-data">{{ order.get_supply_type_display|default:"-" }}</td>
+                    </tr>
+                    <tr>
+                      <td class="summary-head">Создана</td>
+                      <td class="summary-data">{{ order.created_at|date:"d.m.Y H:i" }}</td>
+                      <td class="summary-head">Плановая дата / время отгрузки</td>
+                      <td class="summary-data">{% if order.eta_at %}{{ order.eta_at|date:"d.m.Y H:i" }}{% else %}-{% endif %}</td>
+                      <td class="summary-head">Транспорт</td>
+                      <td class="summary-data">{{ order.get_vehicle_type_display|default:"-" }}</td>
+                    </tr>
+                    <tr>
+                      <td class="summary-head">ШК поставки</td>
+                      <td class="summary-data">{{ order.shipping_barcode|default:"-" }}</td>
+                      <td class="summary-head">Склад назначения</td>
+                      <td class="summary-data">{{ order.destination_warehouse|default:"-" }}</td>
+                      <td class="summary-head">Паллет, кол-во</td>
+                      <td class="summary-data">{{ shipping_metrics.pallet_count|default:"0" }}</td>
+                    </tr>
+                    <tr>
+                      <td class="summary-head">Номер поставки</td>
+                      <td class="summary-data">{{ order.wb_supply_barcode|default:"-" }}</td>
+                      <td class="summary-head">Транзитный склад</td>
+                      <td class="summary-data">{% if order.wb_transit_warehouse %}Да{% else %}Нет{% endif %}</td>
+                      <td class="summary-head">Коробов, кол-во</td>
+                      <td class="summary-data">{{ shipping_metrics.box_count|default:"0" }}</td>
+                    </tr>
+                    <tr>
+                      <td class="summary-head">Маркетплейс</td>
+                      <td class="summary-data">{% if order.marketplace %}{{ order.marketplace.name }}{% else %}-{% endif %}</td>
+                      <td class="summary-head">Транзитный адрес</td>
+                      <td class="summary-data">{{ order.transit_address|default:"-" }}</td>
+                      <td class="summary-head">Номер авто</td>
+                      <td class="summary-data">{{ order.resolved_vehicle_number|default:"-" }}</td>
+                    </tr>
+                    <tr>
+                      <td class="summary-head"></td>
+                      <td class="summary-data"></td>
+                      <td class="summary-head"></td>
+                      <td class="summary-data"></td>
+                      <td class="summary-head">Водитель / телефон</td>
+                      <td class="summary-data">
+                        {% if order.resolved_driver_name or order.resolved_driver_phone %}
+                          {{ order.resolved_driver_name|default:"-" }} / {{ order.resolved_driver_phone|default:"-" }}
+                        {% else %}
+                          -
+                        {% endif %}
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          {% if messages %}
+            <div class="messages">
+              {% for message in messages %}
+                <div class="msg {% if message.tags == 'error' %}err{% else %}ok{% endif %}">{{ message }}</div>
+              {% endfor %}
+            </div>
+          {% endif %}
+
+          {% if can_write %}
+            <div class="actions">
+              {% if can_edit_order_form %}
+                <a class="btn" href="{{ edit_order_url }}">Отредактировать заявку</a>
+              {% endif %}
+              {% if can_submit_for_approval %}
+                <form method="post">{% csrf_token %}<button class="btn" name="action" value="submit">Отправить менеджеру на согласование</button></form>
+              {% endif %}
+              {% if can_manager_approve %}
+                <form method="post">{% csrf_token %}<button class="btn" name="action" value="reserve">Согласовать заявку (менеджер)</button></form>
+              {% endif %}
+              {% if can_manager_reopen %}
+                <form method="post">{% csrf_token %}<button class="btn" name="action" value="release_reserve">Вернуть на доработку</button></form>
+              {% endif %}
+              {% if can_storekeeper_accept %}
+                <form method="post">{% csrf_token %}<button class="btn primary" name="action" value="accept_storekeeper">Принять в работу</button></form>
+              {% endif %}
+              {% if can_storekeeper_pick %}
+                <form method="post">{% csrf_token %}<button class="btn" name="action" value="create_pick_tasks">Дать ричтраку доставку в OTG</button></form>
+              {% endif %}
+              {% if storekeeper_pick_unavailable_reason %}
+                <div class="hint" style="flex-basis:100%; color:#a35722;">{{ storekeeper_pick_unavailable_reason }}</div>
+              {% endif %}
+              {% if can_storekeeper_manage_packing %}
+                <a class="btn" href="{{ packing_url }}">
+                  {% if packing_summary %}
+                    Изменить раскладку по новым паллетам
+                  {% else %}
+                    Разложить короба по новым паллетам
+                  {% endif %}
+                </a>
+              {% endif %}
+              {% if can_view_packing_slips %}
+                <a class="btn" href="{{ packing_slips_url }}">Упаковочные листы</a>
+              {% endif %}
+              {% if can_manage_transport_note %}
+                <a class="btn" href="{{ transport_note_url }}">Сопроводительные документы</a>
+              {% endif %}
+              {% if can_cancel %}
+                <form method="post" onsubmit="return confirm('Отменить заявку?');">{% csrf_token %}<button class="btn warn" name="action" value="cancel">Отменить</button></form>
+              {% endif %}
+            </div>
+          {% endif %}
+
+          <div class="section">
+            <h3>Вложения</h3>
+            <div class="hint">Файлы доступны всем участникам процесса. Срок хранения на сервере: {{ attachment_retention_days }} дней.</div>
+            {% if attachments %}
+              <div class="attachment-list">
+                {% for attachment in attachments %}
+                  <div class="attachment-item">
+                    <div>
+                      <a href="{% url 'shipping:attachment-download' order.pk attachment.pk %}">{{ attachment.filename }}</a>
+                      <div class="hint">Загрузил: {{ attachment.uploaded_by|default:"-" }}</div>
+                    </div>
+                    <div class="hint">
+                      Загружен: {{ attachment.uploaded_at|date:"d.m.Y H:i" }}<br>
+                      Доступен до: {{ attachment.expires_at|date:"d.m.Y H:i" }}
+                    </div>
+                  </div>
+                {% endfor %}
+              </div>
+            {% else %}
+              <div class="empty" style="margin-top:10px;">Файлы не прикреплены.</div>
+            {% endif %}
+          </div>
+
+          <div class="section">
+            <h3>Позиции заявки</h3>
+            {% if items %}
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Артикул</th>
+                      <th>Наименование</th>
+                      <th>Размер</th>
+                      <th>ШК</th>
+                      <th>Тип</th>
+                      <th>Запрошено</th>
+                      <th>Резерв</th>
+                      <th>Отгружено</th>
+                      {% if can_edit_items %}<th></th>{% endif %}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {% for item in items %}
+                      <tr>
+                        <td>{{ item.sku_code }}</td>
+                        <td>{{ item.name }}</td>
+                        <td>{{ item.size|default:'-' }}</td>
+                        <td>{{ item.barcode|default:'-' }}</td>
+                        <td>{{ item.goods_type|default:'-' }}</td>
+                        <td>{{ item.qty_requested }}</td>
+                        <td>{{ item.qty_reserved }}</td>
+                        <td>{{ item.qty_shipped }}</td>
+                        {% if can_edit_items %}
+                          <td>
+                            <form method="post" onsubmit="return confirm('Удалить позицию?');">
+                              {% csrf_token %}
+                              <input type="hidden" name="action" value="remove_item">
+                              <input type="hidden" name="item_id" value="{{ item.id }}">
+                              <button class="btn" type="submit">Удалить</button>
+                            </form>
+                          </td>
+                        {% endif %}
+                      </tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </div>
+            {% else %}
+              <div class="empty">Позиции отсутствуют.</div>
+            {% endif %}
+          </div>
+
+          {% if packing_summary and scope != "client" %}
+            <div class="section">
+              <h3>Новые паллеты отгрузки</h3>
+              <div class="hint">Состав новых паллет зафиксирован отдельным актом паллетизации отгрузки.</div>
+              <div class="table-wrap" style="margin-top:10px;">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Паллета</th>
+                      <th>Код паллеты</th>
+                      <th>Коробов</th>
+                      <th>Количество</th>
+                      <th>Короба</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {% for pallet in packing_summary.pallets %}
+                      <tr>
+                        <td>{{ pallet.label }}</td>
+                        <td>{{ pallet.code|default:"-" }}</td>
+                        <td>{{ pallet.box_count }}</td>
+                        <td>{{ pallet.qty }}</td>
+                        <td>
+                          {% for box in pallet.boxes %}
+                            <div><b>{{ box.box_code }}</b> · {{ box.qty }} шт. · {{ box.barcode_preview|default:"-" }}</div>
+                          {% empty %}
+                            -
+                          {% endfor %}
+                        </td>
+                      </tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          {% endif %}
+
+          {% if can_view_dispatch_act %}
+            <div class="section">
+              <h3>Логистика и закрытие заявки</h3>
+              <div class="hint">После подготовки складом заявку закрывает не кладовщик, а логист и менеджер через акт отгрузки.</div>
+              {% if dispatch_stage.requires_trip and not dispatch_stage.has_trip and order.status == "packed" %}
+                <div class="msg err" style="margin-top:10px;">Для транспорта ФуллБокс сначала включите заявку в рейс и задайте порядок погрузки.</div>
+              {% endif %}
+              <div class="actions" style="margin-top:10px;">
+                {% if dispatch_trip_url and scope != "client" %}
+                  <a class="btn" href="{{ dispatch_trip_url }}">Открыть рейс {{ dispatch_stage.payload.trip_number|default:"логистики" }}</a>
+                {% endif %}
+                <a class="btn primary" href="{{ dispatch_act_url }}">Открыть акт отгрузки</a>
+              </div>
+              <div class="table-wrap" style="margin-top:12px;">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Этап</th>
+                      <th>Статус</th>
+                      <th>Детали</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td>Рейс / машина</td>
+                      <td>
+                        {% if dispatch_stage.has_trip %}
+                          Готов
+                        {% elif dispatch_stage.requires_trip %}
+                          Нужен рейс логиста
+                        {% else %}
+                          Транспорт клиента
+                        {% endif %}
+                      </td>
+                      <td>
+                        {% if dispatch_stage.has_trip %}
+                          {{ dispatch_stage.payload.trip_number|default:"-" }}
+                          · погрузка {{ dispatch_stage.payload.loading_sequence|default:"0" }}
+                          · доставка {{ dispatch_stage.payload.delivery_sequence|default:"0" }}
+                        {% else %}
+                          {{ dispatch_stage.payload.vehicle_type_label|default:"-" }}
+                        {% endif %}
+                      </td>
+                    </tr>
+                    <tr>
+                      <td>Подпись логиста</td>
+                      <td>{% if dispatch_stage.logistician_signed %}Подписан{% else %}Ожидается{% endif %}</td>
+                      <td>{{ dispatch_stage.logistician_signed_at_label|default:"-" }}</td>
+                    </tr>
+                    <tr>
+                      <td>Подпись менеджера</td>
+                      <td>{% if dispatch_stage.manager_signed %}Подписан{% else %}Ожидается{% endif %}</td>
+                      <td>{{ dispatch_stage.manager_signed_at_label|default:"-" }}</td>
+                    </tr>
+                    <tr>
+                      <td>Отправка клиенту</td>
+                      <td>{% if dispatch_stage.act_sent %}Отправлен{% else %}Ожидается{% endif %}</td>
+                      <td>{{ dispatch_stage.act_sent_at_label|default:"-" }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          {% endif %}
+
+          {% if can_edit_items %}
+            <div class="section">
+              <h3>Добавить позицию</h3>
+              <div class="hint">Добавление только из складского остатка и только кратно коробам.</div>
+              {% if stock_rows %}
+                <form method="post">
+                  {% csrf_token %}
+                  <input type="hidden" name="action" value="add_item">
+                  <div style="overflow:auto; border-radius:14px; border:1px solid var(--stroke); background:rgba(15,23,42,0.03); margin-top:8px;">
+                    <table style="width:100%; border-collapse:collapse; min-width:920px;">
+                      <thead>
+                        <tr>
+                          <th style="padding:8px;">Выбор</th>
+                          <th style="padding:8px;">Артикул</th>
+                          <th style="padding:8px;">Наименование</th>
+                          <th style="padding:8px;">Размер</th>
+                          <th style="padding:8px;">ШК</th>
+                          <th style="padding:8px;">Тип</th>
+                          <th style="padding:8px;">Ед. в коробе</th>
+                          <th style="padding:8px;">Доступно коробов</th>
+                          <th style="padding:8px;">К отгрузке (короба)</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {% for row in stock_rows %}
+                          <tr>
+                            <td style="padding:8px;">
+                              <input type="radio" name="stock_key" value="{{ row.key }}">
+                              <input type="hidden" name="stock_key_all[]" value="{{ row.key }}">
+                            </td>
+                            <td style="padding:8px;"><b>{{ row.sku_code }}</b></td>
+                            <td style="padding:8px;">{{ row.name|default:"-" }}</td>
+                            <td style="padding:8px;">{{ row.size|default:"-" }}</td>
+                            <td style="padding:8px;">{{ row.barcode|default:"-" }}</td>
+                            <td style="padding:8px;">{{ row.goods_type|default:"-" }}</td>
+                            <td style="padding:8px;">{{ row.box_qty }}</td>
+                            <td style="padding:8px;">{{ row.available_boxes }} ({{ row.available_qty }} шт)</td>
+                            <td style="padding:8px;">
+                              <input
+                                type="number"
+                                min="0"
+                                max="{{ row.available_boxes }}"
+                                value="0"
+                                name="stock_boxes"
+                                style="max-width:110px;"
+                              >
+                            </td>
+                          </tr>
+                        {% endfor %}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div style="margin-top:10px;"><button class="btn" type="submit">Добавить выбранную позицию</button></div>
+                </form>
+              {% else %}
+                <div class="empty" style="margin-top:8px;">Нет доступных коробов для добавления позиции.</div>
+              {% endif %}
+            </div>
+          {% endif %}
+
+        </section>
+      </main>
+    </div>
+  </div>
+</body>
+</html>

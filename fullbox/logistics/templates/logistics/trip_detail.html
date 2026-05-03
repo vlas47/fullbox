@@ -1,0 +1,1115 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ trip_display_number }} | Логистика | FULLBOX</title>
+  <link href="/static/vendor/bricolage-manrope.css" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #f3efe5;
+      --surface: #fffdf7;
+      --surface-2: #f7f1e7;
+      --ink: #23211d;
+      --muted: #756f65;
+      --stroke: rgba(35, 33, 29, 0.11);
+      --stroke-strong: rgba(35, 33, 29, 0.18);
+      --sun: #f1bf62;
+      --sun-2: #f6d695;
+      --shadow: 0 20px 55px rgba(15, 23, 42, 0.12);
+      --ok: #3b7a57;
+      --ok-bg: #dcefe1;
+      --warn: #9b7a2d;
+      --warn-bg: #f4e2b9;
+      --gray: #837a6d;
+      --gray-bg: #ece5d7;
+      --rose: #af6f73;
+      --rose-bg: #f3d6d7;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Manrope", system-ui, sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(1200px 560px at -15% -20%, rgba(241, 191, 98, 0.18), transparent 60%),
+        radial-gradient(900px 540px at 115% 8%, rgba(14, 107, 91, 0.12), transparent 52%),
+        var(--bg);
+      min-height: 100vh;
+    }
+    .wrap { padding: 24px; }
+    .layout {
+      display: grid;
+      grid-template-columns: 260px minmax(0, 1fr);
+      gap: 20px;
+      min-height: calc(100vh - 48px);
+    }
+    .side,
+    .shell,
+    .table-shell {
+      background: var(--surface);
+      border: 1px solid var(--stroke);
+      border-radius: 24px;
+      box-shadow: var(--shadow);
+    }
+    .side {
+      padding: 18px;
+      display: grid;
+      gap: 14px;
+      align-content: start;
+    }
+    .brand {
+      font-family: "Bricolage Grotesque", "Manrope", sans-serif;
+      font-size: 24px;
+    }
+    .profile,
+    .nav-link,
+    .info-board {
+      border: 1px solid var(--stroke);
+      border-radius: 16px;
+      background: var(--surface-2);
+      padding: 12px;
+    }
+    .nav {
+      display: grid;
+      gap: 10px;
+    }
+    .nav-link {
+      display: grid;
+      gap: 4px;
+      text-decoration: none;
+      color: inherit;
+    }
+    .nav-link.primary {
+      background: linear-gradient(135deg, rgba(241, 191, 98, 0.38), rgba(14, 107, 91, 0.12));
+      border-color: transparent;
+    }
+    .info-board {
+      display: grid;
+      gap: 10px;
+      margin-top: 6px;
+    }
+    .loading-form {
+      display: grid;
+      gap: 10px;
+      margin-top: 4px;
+    }
+    .field-stack {
+      display: grid;
+      gap: 6px;
+    }
+    .field-stack label {
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--muted);
+    }
+    .info-title {
+      margin: 0;
+      font-family: "Bricolage Grotesque", "Manrope", sans-serif;
+      font-size: 15px;
+    }
+    .info-stats {
+      display: grid;
+      gap: 8px;
+    }
+    .info-stat {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 10px;
+      padding: 10px 12px;
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.65);
+      border: 1px solid rgba(35, 33, 29, 0.08);
+    }
+    .info-stat strong {
+      font-family: "Bricolage Grotesque", "Manrope", sans-serif;
+      font-size: 24px;
+      line-height: 1;
+    }
+    .nav-title { font-weight: 700; }
+    .nav-sub,
+    .muted,
+    .hint {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.45;
+    }
+    .btn {
+      border: 1px solid var(--stroke);
+      border-radius: 14px;
+      background: rgba(35, 33, 29, 0.04);
+      color: var(--ink);
+      padding: 10px 12px;
+      font-weight: 700;
+      cursor: pointer;
+      text-decoration: none;
+      display: inline-flex;
+      justify-content: center;
+      align-items: center;
+      gap: 8px;
+    }
+    .btn.full { width: 100%; }
+    .btn.primary {
+      background: linear-gradient(120deg, var(--sun), var(--sun-2));
+      border-color: transparent;
+      color: #2d2312;
+    }
+    .btn.danger {
+      color: #7e4347;
+      background: rgba(243, 214, 215, 0.65);
+      border-color: rgba(175, 111, 115, 0.28);
+    }
+    .icon-btn {
+      width: 40px;
+      min-width: 40px;
+      min-height: 40px;
+      padding: 0;
+    }
+    .icon-btn svg {
+      width: 18px;
+      height: 18px;
+      display: block;
+    }
+    .shell {
+      padding: 14px;
+      display: grid;
+      gap: 12px;
+      align-content: start;
+    }
+    .sr-only {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
+    }
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      min-height: 32px;
+      padding: 6px 12px;
+      border-radius: 999px;
+      border: 1px solid transparent;
+      font-size: 12px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+    .chip.ok {
+      background: var(--ok-bg);
+      color: var(--ok);
+      border-color: rgba(59, 122, 87, 0.15);
+    }
+    .chip.warn {
+      background: var(--warn-bg);
+      color: var(--warn);
+      border-color: rgba(155, 122, 45, 0.15);
+    }
+    .chip.default {
+      background: var(--gray-bg);
+      color: var(--gray);
+      border-color: rgba(131, 122, 109, 0.15);
+    }
+    .messages-strip {
+      display: grid;
+      gap: 8px;
+      align-content: start;
+    }
+    .msg {
+      border-radius: 14px;
+      padding: 11px 12px;
+      font-size: 13px;
+      line-height: 1.45;
+      border: 1px solid var(--stroke);
+      background: rgba(255, 255, 255, 0.75);
+      align-self: start;
+    }
+    .msg.error {
+      border-color: rgba(175, 111, 115, 0.28);
+      background: rgba(243, 214, 215, 0.7);
+      color: #7e4347;
+    }
+    .msg.success {
+      border-color: rgba(59, 122, 87, 0.22);
+      background: rgba(220, 239, 225, 0.75);
+      color: #2f6d4b;
+    }
+    input[type="number"],
+    input[type="text"],
+    select {
+      width: 100%;
+      border: 1px solid var(--stroke);
+      border-radius: 14px;
+      background: var(--surface);
+      color: var(--ink);
+      padding: 10px 12px;
+      font: inherit;
+    }
+    .readonly-field {
+      width: 100%;
+      min-height: 42px;
+      display: flex;
+      align-items: center;
+      padding: 10px 12px;
+      border: 1px solid var(--stroke);
+      border-radius: 14px;
+      background: rgba(35, 33, 29, 0.035);
+      color: var(--ink);
+      line-height: 1.4;
+    }
+    .plate-input-hidden {
+      display: none;
+    }
+    .plate-editor {
+      width: 100%;
+      min-height: 36px;
+      display: flex;
+      align-items: center;
+      gap: 0;
+      padding: 6px 10px;
+      border-radius: 14px;
+      border: 2px solid #101010;
+      background: linear-gradient(180deg, #ffffff, #f7f7f7);
+      box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.72);
+      color: #111;
+      white-space: nowrap;
+      cursor: text;
+    }
+    .plate-editor:focus {
+      outline: none;
+      box-shadow:
+        inset 0 0 0 1px rgba(255, 255, 255, 0.72),
+        0 0 0 3px rgba(241, 191, 98, 0.2);
+    }
+    .plate-editor.is-empty::before {
+      content: attr(data-placeholder);
+      color: rgba(17, 17, 17, 0.3);
+      font-weight: 600;
+      letter-spacing: 0.03em;
+    }
+    .plate-token {
+      font-family: "Bricolage Grotesque", "Manrope", sans-serif;
+      font-size: 15px;
+      line-height: 1;
+      text-transform: uppercase;
+    }
+    .plate-token.letter {
+      font-weight: 800;
+      letter-spacing: 0.05em;
+    }
+    .plate-token.digit {
+      font-weight: 600;
+      letter-spacing: 0.03em;
+    }
+    .plate-token.space {
+      width: 10px;
+      flex: 0 0 10px;
+    }
+    .phone-input {
+      font-variant-numeric: tabular-nums;
+    }
+    .table-shell {
+      padding: 0;
+      overflow: hidden;
+    }
+    .status-banner {
+      display: grid;
+      gap: 4px;
+      padding: 14px 16px;
+      border-radius: 18px;
+      border: 1px solid rgba(59, 122, 87, 0.22);
+      background: rgba(220, 239, 225, 0.78);
+      color: #2f6d4b;
+    }
+    .status-banner-title {
+      font-weight: 800;
+    }
+    .table-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+      padding: 18px 20px 14px;
+      border-bottom: 1px solid var(--stroke);
+      background: linear-gradient(180deg, rgba(247, 241, 231, 0.9), rgba(255, 253, 247, 0.9));
+    }
+    .table-title {
+      margin: 0;
+      font-family: "Bricolage Grotesque", "Manrope", sans-serif;
+      font-size: 18px;
+    }
+    .table-wrap {
+      overflow: auto;
+    }
+    .trip-table tbody tr.is-dragging {
+      opacity: 0.55;
+    }
+    .trip-table tbody tr.drag-target {
+      outline: 2px dashed rgba(241, 191, 98, 0.65);
+      outline-offset: -2px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 1200px;
+    }
+    th,
+    td {
+      padding: 12px 14px;
+      border-bottom: 1px solid rgba(35, 33, 29, 0.08);
+      text-align: left;
+      vertical-align: middle;
+      font-size: 14px;
+    }
+    th {
+      background: rgba(247, 241, 231, 0.85);
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+    tbody tr:hover {
+      background: rgba(247, 241, 231, 0.55);
+    }
+    .order-link {
+      font-weight: 800;
+      text-decoration: none;
+    }
+    .route-cell {
+      min-width: 150px;
+    }
+    .route-tools {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .route-pos {
+      min-width: 28px;
+      font-weight: 800;
+      color: var(--muted);
+      text-align: center;
+    }
+    .drag-handle {
+      width: 34px;
+      min-width: 34px;
+      min-height: 34px;
+      border-radius: 10px;
+      border: 1px dashed var(--stroke-strong);
+      background: var(--surface);
+      color: var(--muted);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      cursor: grab;
+      font-size: 16px;
+      font-weight: 700;
+      user-select: none;
+    }
+    .drag-handle:active {
+      cursor: grabbing;
+    }
+    .move-buttons {
+      display: grid;
+      gap: 4px;
+    }
+    .move-btn {
+      width: 28px;
+      min-width: 28px;
+      height: 18px;
+      border-radius: 8px;
+      border: 1px solid var(--stroke);
+      background: rgba(35, 33, 29, 0.04);
+      color: var(--muted);
+      cursor: pointer;
+      font-size: 11px;
+      line-height: 1;
+      padding: 0;
+    }
+    .subtext {
+      display: block;
+      margin-top: 3px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .mini-input { max-width: 92px; }
+    .table-actions {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      padding: 16px 20px 18px;
+      border-top: 1px solid var(--stroke);
+      background: rgba(247, 241, 231, 0.6);
+    }
+    .empty-note {
+      border-radius: 14px;
+      padding: 12px;
+      background: var(--surface-2);
+      border: 1px dashed var(--stroke);
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.5;
+    }
+    @media (max-width: 1280px) {
+      .layout { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 860px) {
+      .wrap { padding: 14px; }
+      .shell { padding: 14px; }
+      .table-head,
+      .table-actions {
+        flex-direction: column;
+        align-items: stretch;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="layout">
+      <aside class="side">
+        <div class="brand">FULLBOX</div>
+        <div class="profile">
+          <div style="font-weight:700;">{% include "partials/current_user.html" %}</div>
+          <div class="muted">Формирование рейса</div>
+        </div>
+        <nav class="nav">
+          <a class="nav-link" href="/logistics/">
+            <span class="nav-title">Заявки</span>
+            <span class="nav-sub">Подбор заявок для новых рейсов</span>
+          </a>
+          <a class="nav-link primary" href="/logistics/trips/">
+            <span class="nav-title">Все рейсы</span>
+            <span class="nav-sub">Журнал созданных рейсов</span>
+          </a>
+          <a class="nav-link" href="{{ cabinet_url }}">
+            <span class="nav-title">В кабинет</span>
+            <span class="nav-sub">Назад в основной кабинет роли</span>
+          </a>
+        </nav>
+        <a class="btn full" href="/logout/">Выход</a>
+        <section class="info-board">
+          <h2 class="info-title">Параметры загрузки</h2>
+          <div class="info-stats">
+            <div class="info-stat">
+              <span class="muted">Количество паллет</span>
+              <strong>{{ trip_total_pallets }}</strong>
+            </div>
+            <div class="info-stat">
+              <span class="muted">Количество коробов</span>
+              <strong>{{ trip_total_boxes }}</strong>
+            </div>
+          </div>
+          <form method="post" class="loading-form" id="loading-params-form">
+            {% csrf_token %}
+            <input type="hidden" id="loading-form-action" name="action" value="update_loading_params">
+            <div class="field-stack">
+              <label for="carrier-id-input">Перевозчик</label>
+              {% if can_edit_trip %}
+                <select id="carrier-id-input" name="carrier_id">
+                  <option value="">Не выбран</option>
+                  {% for carrier in carrier_options %}
+                    <option value="{{ carrier.id }}"{% if trip.carrier_id == carrier.id %} selected{% endif %}>{{ carrier.short_name|default:carrier.name }}</option>
+                  {% endfor %}
+                </select>
+                <div class="hint" id="carrier-selected-label">
+                  {% if trip.carrier %}{{ trip.carrier.short_name|default:trip.carrier.name }}{% else %}Не выбран{% endif %}
+                </div>
+              {% else %}
+                <div class="readonly-field">{% if trip.carrier %}{{ trip.carrier.short_name|default:trip.carrier.name }}{% else %}-{% endif %}</div>
+              {% endif %}
+            </div>
+            <div class="field-stack">
+              <label>Отправитель</label>
+              <div class="readonly-field">{{ shipper_name }}</div>
+            </div>
+            <div class="field-stack">
+              <label>Заказчик</label>
+              <div class="readonly-field">{{ customer_name }}</div>
+            </div>
+            <div class="field-stack">
+              <label>Получатель</label>
+              <div class="readonly-field">{{ consignee_name }}</div>
+            </div>
+            <div class="field-stack">
+              <label for="vehicle-number-input">Номер машины</label>
+              <input
+                id="vehicle-number-input"
+                class="plate-input-hidden"
+                type="hidden"
+                name="vehicle_number"
+                value="{{ trip.vehicle_number }}"
+              >
+              <div
+                id="vehicle-number-editor"
+                class="plate-editor"
+                contenteditable="{% if can_edit_trip %}true{% else %}false{% endif %}"
+                spellcheck="false"
+                data-placeholder="А 123 АА 777"
+                aria-label="Номер машины"
+                role="textbox"
+              ></div>
+            </div>
+            <div class="field-stack">
+              <label for="driver-name-input">ФИО водителя</label>
+              <input
+                id="driver-name-input"
+                type="text"
+                name="driver_name"
+                value="{{ trip.driver_name }}"
+                placeholder="Иванов Иван Иванович"
+                maxlength="255"
+                {% if not can_edit_trip %}readonly{% endif %}
+              >
+            </div>
+            <div class="field-stack">
+              <label for="driver-phone-input">Телефон водителя</label>
+              <input
+                id="driver-phone-input"
+                class="phone-input"
+                type="text"
+                name="driver_phone"
+                value="{{ trip.driver_phone }}"
+                placeholder="+7 900 000-00-00"
+                inputmode="tel"
+                maxlength="18"
+                {% if not can_edit_trip %}readonly{% endif %}
+              >
+            </div>
+            {% if can_edit_trip %}
+              <div class="hint">Параметры сохраняются автоматически после выхода из блока.</div>
+              {% if can_finalize_trip %}
+                <button
+                  class="btn primary full"
+                  type="submit"
+                  onclick="document.getElementById('loading-form-action').value='finalize_trip';"
+                >Сформировать рейс</button>
+                <div class="hint">После формирования рейс перейдет к кладовщику как задача ожидания машины и погрузки.</div>
+              {% else %}
+                <div class="hint">Рейс уже сформирован и находится в складском контуре.</div>
+              {% endif %}
+            {% elif can_return_trip %}
+              <div class="hint">Рейс передан кладовщику и заблокирован от редактирования. Если в составе или маршруте нужны изменения, сначала верни его логисту на доработку.</div>
+              <button
+                class="btn full"
+                type="submit"
+                onclick="document.getElementById('loading-form-action').value='return_to_logistic';"
+              >Вернуть логисту на доработку</button>
+              <div class="hint">После возврата складская задача закроется, а логист снова сможет менять состав рейса и параметры загрузки.</div>
+            {% else %}
+              <div class="hint">Рейс передан в складской контур и заблокирован для любых правок.</div>
+            {% endif %}
+          </form>
+        </section>
+      </aside>
+
+      <main class="shell">
+        <h1 class="sr-only">{{ trip_display_number }} · Логистический контур</h1>
+
+        {% if messages %}
+          <div class="messages-strip">
+            {% for message in messages %}
+              <div class="msg {{ message.tags }}">{{ message }}</div>
+            {% endfor %}
+          </div>
+        {% endif %}
+
+        {% if trip_is_departed %}
+          <section class="status-banner" aria-label="Статус рейса">
+            <div class="status-banner-title">Погрузка завершена</div>
+            <div class="muted" style="color:#2f6d4b;">Рейс уже переведен в статус «В рейсе». На этой странице доступен только просмотр состава рейса и печать документов.</div>
+          </section>
+        {% endif %}
+
+        <section class="table-shell">
+          <div class="table-head">
+            <div>
+              <h2 class="table-title">Заявки в рейсе</h2>
+              <div class="muted" style="margin-top:4px;">
+                {% if trip_is_departed %}
+                  Погрузка уже завершена. Состав рейса и порядок заявок доступны только для просмотра.
+                {% else %}
+                  Здесь логист задает два независимых правила: очередность маршрута и очередность физической погрузки в машину.
+                {% endif %}
+              </div>
+            </div>
+            {% if show_loading_entrypoint and not can_start_loading %}
+              <form method="post" style="margin:0;">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="start_loading">
+                <button class="btn primary" type="submit">Приступить к погрузке</button>
+              </form>
+            {% elif can_start_loading %}
+              <a class="btn primary" href="{{ trip_loading_url }}">Приступить к погрузке</a>
+            {% endif %}
+          </div>
+
+          <form method="post" id="trip-sequences-form">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="update_sequences">
+            <div id="trip-order-sequence-inputs">
+              {% for row in trip_orders %}
+                <input type="hidden" name="ordered_trip_item_ids" value="{{ row.item.id }}">
+              {% endfor %}
+            </div>
+            <div class="table-wrap">
+              <table class="trip-table">
+                <thead>
+                  <tr>
+                    <th>Маршрут</th>
+                    <th>№ заявки</th>
+                    <th>Клиент</th>
+                    <th>Склад назначения</th>
+                    <th>Дата слота</th>
+                    <th>Паллет</th>
+                    <th>Коробов</th>
+                    <th>Статус</th>
+                    <th>Комментарий логиста</th>
+                    <th>Печать</th>
+                    <th>Убрать</th>
+                  </tr>
+                </thead>
+                <tbody id="trip-order-body">
+                  {% for row in trip_orders %}
+                    <tr{% if can_edit_trip %} draggable="true"{% endif %} data-trip-item-id="{{ row.item.id }}">
+                      <td class="route-cell">
+                        <div class="route-tools">
+                          <span class="route-pos">{{ forloop.counter }}</span>
+                          {% if can_edit_trip %}
+                            <span class="drag-handle" title="Перетащить строку">::</span>
+                            <div class="move-buttons">
+                              <button class="move-btn" type="button" data-move="up" title="Поднять выше">▲</button>
+                              <button class="move-btn" type="button" data-move="down" title="Опустить ниже">▼</button>
+                            </div>
+                          {% endif %}
+                        </div>
+                      </td>
+                      <td>
+                        <a class="order-link" href="/shipping/{{ row.order.pk }}/">{{ row.display_number }}</a>
+                      </td>
+                      <td>{{ row.agency_name }}</td>
+                      <td>{{ row.order.destination_warehouse|default:row.order.destination_address|default:"-" }}</td>
+                      <td>{% if row.order.slot_date %}{{ row.order.slot_date|date:"d.m.Y" }}{% else %}-{% endif %}</td>
+                      <td>{{ row.pallet_count }}</td>
+                      <td>{{ row.box_count }}</td>
+                      <td><span class="chip ok">{{ row.status_label }}</span></td>
+                      <td><input type="text" name="comment_{{ row.item.id }}" value="{{ row.item.comment }}" placeholder="Особенности по погрузке или маршруту" {% if not can_edit_trip %}readonly{% endif %}></td>
+                      <td>
+                        <a
+                          class="btn icon-btn"
+                          href="/shipping/{{ row.order.pk }}/documents/"
+                          title="Печать документов"
+                          aria-label="Печать документов по заявке {{ row.display_number }}"
+                        >
+                          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M7 9V4h10v5" />
+                            <path d="M6 17H5a2 2 0 0 1-2-2v-4a3 3 0 0 1 3-3h12a3 3 0 0 1 3 3v4a2 2 0 0 1-2 2h-1" />
+                            <rect x="7" y="14" width="10" height="6" rx="1" />
+                            <circle cx="17.5" cy="11.5" r=".5" fill="currentColor" stroke="none" />
+                          </svg>
+                        </a>
+                      </td>
+                      <td>
+                        {% if can_edit_trip %}
+                          <button
+                            class="btn danger"
+                            type="submit"
+                            name="action"
+                            value="remove_order"
+                            formaction="/logistics/trips/{{ trip.pk }}/"
+                            formmethod="post"
+                            onclick="document.getElementById('trip-order-id').value='{{ row.item.id }}';"
+                          >Убрать</button>
+                        {% else %}
+                          <span class="muted">-</span>
+                        {% endif %}
+                      </td>
+                    </tr>
+                  {% empty %}
+                    <tr><td colspan="10" class="empty-note">В рейсе пока нет заявок.</td></tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+            <input type="hidden" id="trip-order-id" name="trip_order_id" value="">
+            <div class="table-actions">
+              <div class="muted">
+                {% if can_edit_trip %}
+                  Порядок маршрута задается фактическим порядком строк. Строки можно перетаскивать мышкой или двигать стрелками, изменения сохраняются автоматически.
+                {% elif can_return_trip %}
+                  Во время складской работы маршрут заблокирован. Сначала верни рейс логисту на доработку, если нужно что-то поменять.
+                {% else %}
+                  Рейс передан в складской контур и доступен только для просмотра.
+                {% endif %}
+              </div>
+            </div>
+          </form>
+        </section>
+
+        {% if can_edit_trip %}
+          <section class="table-shell">
+            <div class="table-head">
+              <div>
+                <h2 class="table-title">Добавить готовые заявки</h2>
+                <div class="muted" style="margin-top:4px;">Если рейс еще не собран полностью, сюда можно добрать другие готовые заявки, не привязанные к активным рейсам.</div>
+              </div>
+            </div>
+            <form method="post">
+              {% csrf_token %}
+              <input type="hidden" name="action" value="add_orders">
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th></th>
+                      <th>№ заявки</th>
+                      <th>Клиент</th>
+                      <th>Склад назначения</th>
+                      <th>Дата слота</th>
+                      <th>Паллет</th>
+                      <th>Коробов</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {% for row in available_ready_orders %}
+                      <tr>
+                        <td><input type="checkbox" name="order_ids" value="{{ row.order.id }}"></td>
+                        <td>
+                          <a class="order-link" href="/shipping/{{ row.order.pk }}/">{{ row.display_number }}</a>
+                        </td>
+                        <td>{{ row.agency_name }}</td>
+                        <td>{{ row.order.destination_warehouse|default:row.order.destination_address|default:"-" }}</td>
+                        <td>{% if row.order.slot_date %}{{ row.order.slot_date|date:"d.m.Y" }}{% else %}-{% endif %}</td>
+                        <td>{{ row.pallet_count }}</td>
+                        <td>{{ row.box_count }}</td>
+                      </tr>
+                    {% empty %}
+                      <tr><td colspan="7" class="empty-note">Нет дополнительных готовых заявок.</td></tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </div>
+              <div class="table-actions">
+                <div class="muted">Этот блок нужен только если после создания рейса требуется добавить еще готовые заявки в ту же машину.</div>
+                <button class="btn" type="submit">Добавить выбранные заявки</button>
+              </div>
+            </form>
+          </section>
+        {% endif %}
+      </main>
+    </div>
+  </div>
+  <script>
+    (function () {
+      const canEditTrip = {{ can_edit_trip|yesno:"true,false" }};
+      const loadingForm = document.getElementById("loading-params-form");
+      const sequenceForm = document.getElementById("trip-sequences-form");
+      const vehicleNumberInput = document.getElementById("vehicle-number-input");
+      const vehicleNumberEditor = document.getElementById("vehicle-number-editor");
+      const carrierSelect = document.getElementById("carrier-id-input");
+      const carrierSelectedLabel = document.getElementById("carrier-selected-label");
+      const cyrMap = { A: "А", B: "В", E: "Е", K: "К", M: "М", H: "Н", O: "О", P: "Р", C: "С", T: "Т", Y: "У", X: "Х" };
+      const allowedLetters = new Set(["А", "В", "Е", "К", "М", "Н", "О", "Р", "С", "Т", "У", "Х"]);
+
+      function syncCarrierLabel() {
+        if (!carrierSelect || !carrierSelectedLabel) return;
+        const selectedOption = carrierSelect.options[carrierSelect.selectedIndex];
+        const text = selectedOption ? String(selectedOption.textContent || "").trim() : "";
+        carrierSelectedLabel.textContent = text || "Не выбран";
+      }
+
+      function normalizePlate(value) {
+        return String(value || "")
+          .toUpperCase()
+          .replace(/[^0-9A-ZА-Я]/g, "")
+          .split("")
+          .map((char) => cyrMap[char] || char)
+          .join("");
+      }
+
+      function splitPlate(value) {
+        const raw = normalizePlate(value);
+        const letters = raw.split("").filter((char) => allowedLetters.has(char));
+        const digits = raw.replace(/\D/g, "");
+        return [
+          letters.slice(0, 1).join(""),
+          digits.slice(0, 3),
+          letters.slice(1, 3).join(""),
+          digits.slice(3, 6),
+        ];
+      }
+
+      function renderPlateEditor(parts) {
+        if (!vehicleNumberEditor || !vehicleNumberInput) return;
+        const [first, second, third, fourth] = parts;
+        vehicleNumberInput.value = [first, second, third, fourth].join("");
+        vehicleNumberEditor.innerHTML = "";
+        const tokens = [];
+        if (first) tokens.push({ type: "letter", value: first });
+        if (second) tokens.push({ type: "digit", value: second });
+        if (third) tokens.push({ type: "letter", value: third });
+        if (fourth) tokens.push({ type: "digit", value: fourth });
+
+        if (!tokens.length) {
+          vehicleNumberEditor.classList.add("is-empty");
+          return;
+        }
+
+        vehicleNumberEditor.classList.remove("is-empty");
+        tokens.forEach((token, index) => {
+          if (index > 0) {
+            const spacer = document.createElement("span");
+            spacer.className = "plate-token space";
+            spacer.textContent = " ";
+            vehicleNumberEditor.appendChild(spacer);
+          }
+          const span = document.createElement("span");
+          span.className = `plate-token ${token.type}`;
+          span.textContent = token.value;
+          vehicleNumberEditor.appendChild(span);
+        });
+      }
+
+      function moveCaretToEnd(element) {
+        if (!element) return;
+        const selection = window.getSelection();
+        const range = document.createRange();
+        range.selectNodeContents(element);
+        range.collapse(false);
+        selection.removeAllRanges();
+        selection.addRange(range);
+      }
+
+      function serializeForm(form) {
+        return new URLSearchParams(new FormData(form)).toString();
+      }
+
+      function submitForm(form) {
+        if (!form || form.dataset.submitting === "1") return;
+        form.dataset.submitting = "1";
+        HTMLFormElement.prototype.submit.call(form);
+      }
+
+      function createAutosave(form) {
+        if (!form) {
+          return {
+            saveIfChanged() {},
+            updateSnapshot() {},
+          };
+        }
+        let snapshot = serializeForm(form);
+        let inFlight = false;
+        let queued = false;
+
+        async function saveIfChanged() {
+          const current = serializeForm(form);
+          if (current === snapshot) return;
+          if (inFlight) {
+            queued = true;
+            return;
+          }
+          inFlight = true;
+          form.dataset.autosaving = "1";
+          try {
+            const response = await fetch(form.action || window.location.pathname, {
+              method: form.method || "post",
+              body: new FormData(form),
+              credentials: "same-origin",
+              headers: { "X-Requested-With": "XMLHttpRequest" },
+            });
+            if (!response.ok) {
+              throw new Error(`Autosave failed with status ${response.status}`);
+            }
+            snapshot = current;
+          } catch (error) {
+            console.error(error);
+          } finally {
+            delete form.dataset.autosaving;
+            inFlight = false;
+            if (queued) {
+              queued = false;
+              saveIfChanged();
+            }
+          }
+        }
+
+        return {
+          saveIfChanged,
+          updateSnapshot() {
+            snapshot = serializeForm(form);
+          },
+        };
+      }
+
+      const sequenceAutosave = createAutosave(sequenceForm);
+      let sequenceAutosaveTimer = null;
+
+      function scheduleSequenceAutosave(delay) {
+        clearTimeout(sequenceAutosaveTimer);
+        sequenceAutosaveTimer = window.setTimeout(() => {
+          sequenceAutosave.saveIfChanged();
+        }, delay);
+      }
+
+      if (vehicleNumberInput && vehicleNumberEditor) {
+        renderPlateEditor(splitPlate(vehicleNumberInput.value));
+
+        if (canEditTrip) {
+          const syncEditorValue = () => {
+            renderPlateEditor(splitPlate(vehicleNumberEditor.textContent || ""));
+            moveCaretToEnd(vehicleNumberEditor);
+          };
+
+          vehicleNumberEditor.addEventListener("focus", () => {
+            if (vehicleNumberEditor.classList.contains("is-empty")) {
+              vehicleNumberEditor.textContent = "";
+            }
+            moveCaretToEnd(vehicleNumberEditor);
+          });
+
+          vehicleNumberEditor.addEventListener("input", syncEditorValue);
+          vehicleNumberEditor.addEventListener("paste", (event) => {
+            event.preventDefault();
+            const text = (event.clipboardData || window.clipboardData).getData("text");
+            vehicleNumberEditor.textContent = text;
+            syncEditorValue();
+          });
+
+          vehicleNumberEditor.addEventListener("keydown", (event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+            }
+          });
+        }
+      }
+
+      if (loadingForm) {
+        loadingForm.addEventListener("submit", () => {
+          loadingForm.dataset.submitting = "1";
+        });
+      }
+
+      if (loadingForm && canEditTrip) {
+        let loadingSnapshot = serializeForm(loadingForm);
+
+        syncCarrierLabel();
+
+        loadingForm.addEventListener("change", (event) => {
+          if (event.target && event.target.name === "carrier_id") {
+            syncCarrierLabel();
+            const current = serializeForm(loadingForm);
+            if (current === loadingSnapshot) return;
+            loadingSnapshot = current;
+            window.setTimeout(() => submitForm(loadingForm), 0);
+          }
+        });
+
+        loadingForm.addEventListener("focusout", (event) => {
+          const nextTarget = event.relatedTarget;
+          if (nextTarget && loadingForm.contains(nextTarget)) return;
+          const current = serializeForm(loadingForm);
+          if (current === loadingSnapshot) return;
+          loadingSnapshot = current;
+          window.setTimeout(() => submitForm(loadingForm), 0);
+        });
+      }
+
+      const body = document.getElementById("trip-order-body");
+      const inputs = document.getElementById("trip-order-sequence-inputs");
+      if (!body || !inputs || !sequenceForm || !canEditTrip) return;
+
+      let draggingRow = null;
+
+      function rows() {
+        return Array.from(body.querySelectorAll("tr[data-trip-item-id]"));
+      }
+
+      function syncOrder() {
+        const orderedRows = rows();
+        inputs.innerHTML = "";
+        orderedRows.forEach((row, index) => {
+          const hidden = document.createElement("input");
+          hidden.type = "hidden";
+          hidden.name = "ordered_trip_item_ids";
+          hidden.value = row.dataset.tripItemId;
+          inputs.appendChild(hidden);
+          const pos = row.querySelector(".route-pos");
+          if (pos) pos.textContent = String(index + 1);
+        });
+      }
+
+      function moveRow(row, direction) {
+        if (!row) return;
+        const sibling = direction === "up" ? row.previousElementSibling : row.nextElementSibling;
+        if (!sibling || !sibling.dataset.tripItemId) return;
+        if (direction === "up") {
+          body.insertBefore(row, sibling);
+        } else {
+          body.insertBefore(sibling, row);
+        }
+        syncOrder();
+      }
+
+      body.addEventListener("click", (event) => {
+        const button = event.target.closest(".move-btn");
+        if (!button) return;
+        const row = button.closest("tr[data-trip-item-id]");
+        moveRow(row, button.dataset.move);
+        scheduleSequenceAutosave(150);
+      });
+
+      body.addEventListener("dragstart", (event) => {
+        const row = event.target.closest("tr[data-trip-item-id]");
+        if (!row) return;
+        draggingRow = row;
+        row.classList.add("is-dragging");
+        if (event.dataTransfer) {
+          event.dataTransfer.effectAllowed = "move";
+          event.dataTransfer.setData("text/plain", row.dataset.tripItemId || "");
+        }
+      });
+
+      body.addEventListener("dragend", () => {
+        rows().forEach((row) => row.classList.remove("is-dragging", "drag-target"));
+        draggingRow = null;
+        syncOrder();
+        scheduleSequenceAutosave(150);
+      });
+
+      body.addEventListener("dragover", (event) => {
+        event.preventDefault();
+        const targetRow = event.target.closest("tr[data-trip-item-id]");
+        rows().forEach((row) => row.classList.toggle("drag-target", row === targetRow && row !== draggingRow));
+      });
+
+      body.addEventListener("drop", (event) => {
+        event.preventDefault();
+        const targetRow = event.target.closest("tr[data-trip-item-id]");
+        if (!draggingRow || !targetRow || draggingRow === targetRow) return;
+        const rect = targetRow.getBoundingClientRect();
+        const insertBefore = event.clientY < rect.top + rect.height / 2;
+        body.insertBefore(draggingRow, insertBefore ? targetRow : targetRow.nextElementSibling);
+        rows().forEach((row) => row.classList.remove("drag-target"));
+        syncOrder();
+        scheduleSequenceAutosave(150);
+      });
+
+      sequenceForm.addEventListener("focusout", (event) => {
+        const commentInput = event.target.closest('input[name^="comment_"]');
+        if (!commentInput) return;
+        scheduleSequenceAutosave(250);
+      });
+
+      syncOrder();
+      sequenceAutosave.updateSnapshot();
+    })();
+  </script>
+</body>
+</html>
