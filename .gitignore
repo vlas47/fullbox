@@ -19,4 +19,6 @@ fullbox_agent/**/bin/
 fullbox_agent/**/obj/
 fullbox/static/agents/*.exe
 fullbox/static/agents/*.zip
+fullbox/staticfiles/agents/*.exe
+fullbox/staticfiles/agents/*.zip
 fullbox_agent/fullbox_agent_bundle.zip
