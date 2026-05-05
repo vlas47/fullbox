@@ -10,6 +10,8 @@ from django.shortcuts import redirect
 from audit.models import OrderAuditEntry, log_order_action
 from employees.access import get_employee_for_user, get_request_employee, get_request_role, resolve_cabinet_url
 from sklad.models import WarehouseOperation, WarehouseOperationTask
+from sklad.services.warehouse_state import WarehouseGoodsStateResolver
+from sklad.services.warehouse_transitions import WarehouseStateCode
 from sku.models import Agency, SKUBarcode
 from sklad.services.warehouse_stock_rows import snapshot_stock_rows
 from sklad.services.warehouse_write_path import WarehouseWritePathService
@@ -21,6 +23,7 @@ from .move_requests import (
     _find_pallet_by_code as find_pallet_by_code_service,
     _latest_moves_by_pallet as latest_moves_by_pallet_service,
     _location_label,
+    _move_instruction as move_request_instruction_service,
     _move_payload_matches_selectors as move_payload_matches_selectors_service,
     _normalize_zone_code,
     _parse_explicit_requested_rows as parse_explicit_requested_rows_service,
@@ -29,6 +32,8 @@ from .move_requests import (
     sync_task_status_by_legacy_order_id,
 )
 from .pallet_ops import (
+    MOVE_MODE_BOX_FULL,
+    MOVE_MODE_BOX_PARTIAL,
     MOVE_MODE_PALLET_FULL,
     _box_execution_plan as box_execution_plan_service,
     _matching_stock_boxes_for_pallet as matching_stock_boxes_for_pallet_service,
@@ -93,6 +98,178 @@ def _pallet_count_label(count: int) -> str:
     else:
         suffix = "паллет"
     return f"{count} {suffix}"
+
+
+def _processing_request_item_selectors(request_items: list[dict], explicit_requested_rows: list[dict] | None = None) -> list[dict]:
+    selectors: list[dict] = []
+    seen: set[tuple[str, str, tuple[str, ...]]] = set()
+
+    def push(raw_article, raw_goods_type, raw_barcodes) -> None:
+        article = str(raw_article or "").strip().lower()
+        goods_type = _normalize_goods_type(raw_goods_type)
+        if isinstance(raw_barcodes, list):
+            barcode_values = raw_barcodes
+        else:
+            barcode_values = _parse_json_list(raw_barcodes)
+        barcodes = tuple(
+            sorted(
+                {
+                    str(value).strip().lower()
+                    for value in (barcode_values or [])
+                    if str(value or "").strip()
+                }
+            )
+        )
+        if not article and not barcodes:
+            return
+        key = (article, goods_type, barcodes)
+        if key in seen:
+            return
+        seen.add(key)
+        selectors.append(
+            {
+                "article": article,
+                "goods_type": goods_type,
+                "barcodes": set(barcodes),
+            }
+        )
+
+    for item in request_items or []:
+        if not isinstance(item, dict):
+            continue
+        push(
+            item.get("requested_article") or item.get("requested_sku"),
+            item.get("requested_goods_type"),
+            item.get("requested_barcodes"),
+        )
+    for row in explicit_requested_rows or []:
+        if not isinstance(row, dict):
+            continue
+        push(
+            row.get("requested_article") or row.get("requested_sku"),
+            row.get("requested_goods_type"),
+            row.get("requested_barcodes"),
+        )
+    return selectors
+
+
+def _move_request_item_matches_selector(item: MoveRequestItem, selector: dict) -> bool:
+    selector_article = str(selector.get("article") or "").strip().lower()
+    selector_goods_type = _normalize_goods_type(selector.get("goods_type"))
+    selector_barcodes = {
+        str(value).strip().lower()
+        for value in (selector.get("barcodes") or set())
+        if str(value or "").strip()
+    }
+    item_article = str(getattr(item, "sku_code", "") or "").strip().lower()
+    item_barcode = str(getattr(item, "barcode", "") or "").strip().lower()
+    item_goods_type = _normalize_goods_type(getattr(item, "goods_type", "") or "")
+    if selector_goods_type and item_goods_type and selector_goods_type != item_goods_type:
+        return False
+    sku_matched = bool(selector_article and item_article and selector_article == item_article)
+    barcode_matched = bool(selector_barcodes and item_barcode and item_barcode in selector_barcodes)
+    if selector_article and selector_barcodes:
+        return sku_matched or barcode_matched
+    if selector_article:
+        return sku_matched
+    return barcode_matched
+
+
+def _processing_snapshot_matches_selector(snapshot, selector: dict) -> bool:
+    selector_article = str(selector.get("article") or "").strip().lower()
+    selector_goods_type = _normalize_goods_type(selector.get("goods_type"))
+    selector_barcodes = {
+        str(value).strip().lower()
+        for value in (selector.get("barcodes") or set())
+        if str(value or "").strip()
+    }
+    if not selector_article and not selector_barcodes:
+        return False
+    snapshot_article = str(getattr(snapshot, "sku_code", "") or "").strip().lower()
+    snapshot_barcode = str(getattr(snapshot, "barcode", "") or "").strip().lower()
+    snapshot_goods_type = _normalize_goods_type(getattr(snapshot, "goods_type", "") or "")
+    if selector_goods_type and snapshot_goods_type and selector_goods_type != snapshot_goods_type:
+        return False
+    sku_matched = bool(selector_article and snapshot_article and selector_article == snapshot_article)
+    barcode_matched = bool(selector_barcodes and snapshot_barcode and snapshot_barcode in selector_barcodes)
+    if selector_article and selector_barcodes:
+        return sku_matched or barcode_matched
+    if selector_article:
+        return sku_matched
+    return barcode_matched
+
+
+def _existing_processing_obr_request_state(
+    processing_order_id: str,
+    request_items: list[dict],
+    explicit_requested_rows: list[dict] | None = None,
+) -> str:
+    order_key = str(processing_order_id or "").strip()
+    if not order_key:
+        return ""
+    selectors = _processing_request_item_selectors(request_items, explicit_requested_rows)
+    if not selectors:
+        return ""
+    existing_requests = (
+        MoveRequest.objects.prefetch_related("items")
+        .filter(
+            context_type=MoveRequest.CONTEXT_PROCESSING,
+            context_id=order_key,
+            destination_zone="OBR",
+        )
+        .exclude(status__in={MoveRequest.STATUS_CANCELED, MoveRequest.STATUS_BLOCKED})
+        .order_by("-created_at")
+    )
+    for move_request in existing_requests:
+        items = list(move_request.items.all())
+        if not items:
+            continue
+        for selector in selectors:
+            if any(_move_request_item_matches_selector(item, selector) for item in items):
+                if move_request.status == MoveRequest.STATUS_DONE:
+                    return "done"
+                return "active"
+    return ""
+
+
+def _processing_obr_truth_state(
+    *,
+    processing_order_id: str,
+    agency,
+    request_items: list[dict],
+    explicit_requested_rows: list[dict] | None = None,
+) -> str:
+    order_key = str(processing_order_id or "").strip()
+    if not order_key or not agency:
+        return ""
+    selectors = _processing_request_item_selectors(request_items, explicit_requested_rows)
+    if not selectors:
+        return ""
+    snapshots = WarehouseGoodsStateResolver._processing_snapshots(
+        agency=agency,
+        order_id=order_key,
+    )
+    relevant_snapshots = [
+        snapshot
+        for snapshot in snapshots
+        if any(_processing_snapshot_matches_selector(snapshot, selector) for selector in selectors)
+    ]
+    if not relevant_snapshots:
+        return ""
+    dominant_code = WarehouseGoodsStateResolver._dominant_state_code(
+        [snapshot.warehouse_state_code for snapshot in relevant_snapshots],
+        priority=WarehouseGoodsStateResolver._PROCESSING_STATE_PRIORITY,
+    )
+    if dominant_code in {
+        WarehouseStateCode.IN_PROCESSING_ZONE,
+        WarehouseStateCode.PROCESSING_IN_PROGRESS,
+        WarehouseStateCode.PLACED_AFTER_PROCESSING,
+        WarehouseStateCode.STORED,
+    }:
+        return "done"
+    if dominant_code == WarehouseStateCode.MOVING_TO_PROCESSING:
+        return "active"
+    return ""
 
 
 def _mobile_request_type_short_label(source_type: str) -> str:
@@ -350,6 +527,70 @@ def _move_instruction(payload: dict) -> str:
     if explicit_instruction:
         return explicit_instruction
     return "Переместить товар по заданию."
+
+
+def _canonical_move_instruction(payload: dict) -> str:
+    normalized_payload = dict(payload or {})
+    normalized_payload.pop("instruction", None)
+    return move_request_instruction_service(normalized_payload)
+
+
+def _normalize_stale_partial_move_payload(
+    payload: dict,
+    pallet_code: str,
+    *,
+    agency_id: int | None = None,
+) -> tuple[dict, bool, list[dict]]:
+    normalized_payload = dict(payload or {})
+    pallet_plan = pallet_box_plan_service(
+        normalized_payload,
+        pallet_code,
+        agency_id=agency_id,
+    )
+    move_mode = _normalize_move_mode(
+        normalized_payload.get("move_mode"),
+        normalized_payload.get("pick_mode"),
+    )
+    if move_mode != MOVE_MODE_BOX_PARTIAL:
+        return normalized_payload, False, pallet_plan
+
+    requested_rows = _requested_partial_rows(normalized_payload)
+    if not requested_rows:
+        return normalized_payload, False, pallet_plan
+
+    box_qty_by_code = {
+        str(row.get("box_code") or "").strip().lower(): _parse_int_value(row.get("qty"))
+        for row in pallet_plan
+        if str(row.get("box_code") or "").strip()
+    }
+    selected_codes: list[str] = []
+    selected_keys: set[str] = set()
+    full_boxes = True
+    for row in requested_rows:
+        box_code = str(row.get("box_code") or "").strip()
+        requested_qty = _parse_int_value(row.get("qty"))
+        box_key = box_code.lower()
+        box_qty = _parse_int_value(box_qty_by_code.get(box_key))
+        if not box_code or requested_qty <= 0 or box_qty <= 0 or requested_qty < box_qty:
+            full_boxes = False
+            break
+        if box_key not in selected_keys:
+            selected_keys.add(box_key)
+            selected_codes.append(box_code)
+    if not full_boxes or not selected_codes:
+        return normalized_payload, False, pallet_plan
+
+    normalized_payload["move_mode"] = MOVE_MODE_BOX_FULL
+    normalized_payload["pick_mode"] = "box_full"
+    normalized_payload["requested_boxes"] = selected_codes
+    normalized_payload["requested_box"] = selected_codes[0] if len(selected_codes) == 1 else ""
+    normalized_payload["instruction"] = _canonical_move_instruction(normalized_payload)
+    pallet_plan = pallet_box_plan_service(
+        normalized_payload,
+        pallet_code,
+        agency_id=agency_id,
+    )
+    return normalized_payload, True, pallet_plan
 
 
 def _latest_moves_by_pallet(
@@ -684,6 +925,58 @@ def create_move_request_response(request):
             {"ok": False, "error": "Клиент не найден."},
             status=400,
         )
+    if processing_order_id and zone == "OBR":
+        duplicate_state = _existing_processing_obr_request_state(
+            processing_order_id,
+            request_items,
+            explicit_requested_rows,
+        )
+        if duplicate_state == "done":
+            return JsonResponse(
+                {
+                    "ok": False,
+                    "error": "Товар по этой заявке уже доставлен в OBR.",
+                    "tasks_created": 0,
+                    "status": "done",
+                },
+                status=400,
+            )
+        if duplicate_state == "active":
+            return JsonResponse(
+                {
+                    "ok": False,
+                    "error": "Для этого товара уже есть активное задание ричтракеру в OBR.",
+                    "tasks_created": 0,
+                    "status": "active",
+                },
+                status=400,
+            )
+        truth_state = _processing_obr_truth_state(
+            processing_order_id=processing_order_id,
+            agency=agency,
+            request_items=request_items,
+            explicit_requested_rows=explicit_requested_rows,
+        )
+        if truth_state == "done":
+            return JsonResponse(
+                {
+                    "ok": False,
+                    "error": "Товар по этой заявке уже находится в OBR или обработке.",
+                    "tasks_created": 0,
+                    "status": "done",
+                },
+                status=400,
+            )
+        if truth_state == "active":
+            return JsonResponse(
+                {
+                    "ok": False,
+                    "error": "Товар по этой заявке уже доставляется в OBR.",
+                    "tasks_created": 0,
+                    "status": "active",
+                },
+                status=400,
+            )
     employee = get_employee_for_user(request.user)
     if employee and employee.full_name:
         requested_by_name = employee.full_name
@@ -1259,6 +1552,25 @@ def collect_moves(employee_id: int | None, driver_view: bool) -> tuple[list[dict
         request_context_id = str(getattr(move_request, "context_id", "") or "").strip()
         task_payload = dict(move_task.payload or {}) if move_task and isinstance(move_task.payload, dict) else {}
         effective_payload = {**payload, **task_payload}
+        pallet_code = display_scan_text(effective_payload.get("pallet_code"))
+        effective_payload, payload_normalized, pallet_plan = _normalize_stale_partial_move_payload(
+            effective_payload,
+            pallet_code,
+            agency_id=agency_id,
+        )
+        if payload_normalized and move_task and isinstance(move_task.payload, dict):
+            task_payload.update(
+                {
+                    "move_mode": effective_payload.get("move_mode") or "",
+                    "pick_mode": effective_payload.get("pick_mode") or "",
+                    "requested_boxes": effective_payload.get("requested_boxes") or [],
+                    "requested_box": effective_payload.get("requested_box") or "",
+                    "instruction": effective_payload.get("instruction") or "",
+                }
+            )
+            move_task.payload = task_payload
+            move_task.move_mode = str(effective_payload.get("move_mode") or move_task.move_mode or "")
+            move_task.save(update_fields=["payload", "move_mode", "updated_at"])
         status = str(
             (move_task.status if move_task else "")
             or effective_payload.get("status")
@@ -1275,7 +1587,6 @@ def collect_moves(employee_id: int | None, driver_view: bool) -> tuple[list[dict
                 MoveTask.STATUS_FAILED: "Ошибка",
             }.get(status, status or "-")
         )
-        pallet_code = display_scan_text(effective_payload.get("pallet_code"))
         from_location = effective_payload.get("from_location") or {}
         to_location = effective_payload.get("to_location") or {}
         assigned_to_id = _resolved_move_assignee_employee_id(move_task, effective_payload)
@@ -1324,11 +1635,6 @@ def collect_moves(employee_id: int | None, driver_view: bool) -> tuple[list[dict
             "requested_box": _single_requested_box(effective_payload),
             "instruction": _move_instruction(effective_payload),
         }
-        pallet_plan = pallet_box_plan_service(
-            effective_payload,
-            move["pallet_code"],
-            agency_id=agency_id,
-        )
         move["pallet_box_plan"] = pallet_plan
         move["box_execution_plan"] = box_execution_plan_service(
             effective_payload,

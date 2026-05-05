@@ -194,6 +194,83 @@ class ProcessingWorkflowService:
         }
 
     @classmethod
+    def _processing_snapshot_matches_card(cls, snapshot, selector: dict) -> bool:
+        card_article = str(selector.get("article") or "").strip().lower()
+        card_goods_type = cls._normalize_goods_type_token(selector.get("goods_type"))
+        card_barcodes = {
+            str(value).strip().lower()
+            for value in (selector.get("barcodes") or set())
+            if str(value or "").strip()
+        }
+        if not card_article and not card_barcodes:
+            return False
+        snapshot_article = str(getattr(snapshot, "sku_code", "") or "").strip().lower()
+        snapshot_barcode = str(getattr(snapshot, "barcode", "") or "").strip().lower()
+        snapshot_goods_type = cls._normalize_goods_type_token(getattr(snapshot, "goods_type", "") or "")
+        if card_goods_type and snapshot_goods_type and card_goods_type != snapshot_goods_type:
+            return False
+        sku_matched = bool(card_article and snapshot_article and card_article == snapshot_article)
+        barcode_matched = bool(card_barcodes and snapshot_barcode and snapshot_barcode in card_barcodes)
+        if card_article and card_barcodes:
+            return sku_matched or barcode_matched
+        if card_article:
+            return sku_matched
+        return barcode_matched
+
+    @classmethod
+    def _processing_card_truth_state(
+        cls,
+        *,
+        selector: dict,
+        truth_snapshots: list | None,
+    ) -> dict | None:
+        if not truth_snapshots:
+            return None
+        relevant_snapshots = [
+            snapshot
+            for snapshot in truth_snapshots
+            if cls._processing_snapshot_matches_card(snapshot, selector)
+        ]
+        if not relevant_snapshots:
+            return None
+        dominant_code = WarehouseGoodsStateResolver._dominant_state_code(
+            [snapshot.warehouse_state_code for snapshot in relevant_snapshots],
+            priority=WarehouseGoodsStateResolver._PROCESSING_STATE_PRIORITY,
+        )
+        if dominant_code in {
+            WarehouseStateCode.IN_PROCESSING_ZONE,
+            WarehouseStateCode.PROCESSING_IN_PROGRESS,
+            WarehouseStateCode.PLACED_AFTER_PROCESSING,
+            WarehouseStateCode.STORED,
+        }:
+            return {
+                "delivery_has_active": False,
+                "delivery_ready": True,
+                "delivery_status_lines": [],
+                "delivery_state_code": "done",
+                "truth_state_code": dominant_code.value,
+            }
+        if dominant_code == WarehouseStateCode.MOVING_TO_PROCESSING:
+            return {
+                "delivery_has_active": True,
+                "delivery_ready": False,
+                "delivery_status_lines": ["Доставка в зону обработки (ричтрак)"],
+                "delivery_state_code": "active",
+                "truth_state_code": dominant_code.value,
+            }
+        if dominant_code == WarehouseStateCode.RESERVED_FOR_PROCESSING:
+            return {
+                "delivery_has_active": False,
+                "delivery_ready": False,
+                "delivery_status_lines": [],
+                "delivery_state_code": "pending",
+                "truth_state_code": dominant_code.value,
+            }
+        return {
+            "truth_state_code": dominant_code.value,
+        }
+
+    @classmethod
     def _processing_task_matches_card(cls, task: MoveTask, selector: dict) -> bool:
         payload = task.payload if isinstance(task.payload, dict) else {}
         card_article = str(selector.get("article") or "").strip().lower()
@@ -205,18 +282,37 @@ class ProcessingWorkflowService:
         }
         if not card_article and not card_barcodes:
             return False
+        task_goods_types = set()
         task_goods_type = cls._normalize_goods_type_token(
             payload.get("requested_goods_type") or payload.get("requested_goods_type_label")
         )
-        if card_goods_type and task_goods_type and card_goods_type != task_goods_type:
-            return False
+        if task_goods_type:
+            task_goods_types.add(task_goods_type)
+        task_articles = set()
         task_article = str(payload.get("requested_sku") or "").strip().lower()
+        if task_article:
+            task_articles.add(task_article)
         task_barcodes = {
             str(value).strip().lower()
             for value in cls._parse_json_list(payload.get("requested_barcodes"))
             if str(value or "").strip()
         }
-        sku_matched = bool(card_article and task_article and card_article == task_article)
+        request_obj = getattr(task, "request", None)
+        request_items = getattr(request_obj, "items", None)
+        if request_items is not None:
+            for item in request_items.all():
+                item_article = str(getattr(item, "sku_code", "") or "").strip().lower()
+                if item_article:
+                    task_articles.add(item_article)
+                item_barcode = str(getattr(item, "barcode", "") or "").strip().lower()
+                if item_barcode:
+                    task_barcodes.add(item_barcode)
+                item_goods_type = cls._normalize_goods_type_token(getattr(item, "goods_type", "") or "")
+                if item_goods_type:
+                    task_goods_types.add(item_goods_type)
+        if card_goods_type and task_goods_types and card_goods_type not in task_goods_types:
+            return False
+        sku_matched = bool(card_article and card_article in task_articles)
         barcode_matched = bool(card_barcodes and task_barcodes and card_barcodes.intersection(task_barcodes))
         if card_article and card_barcodes:
             return sku_matched or barcode_matched
@@ -233,16 +329,21 @@ class ProcessingWorkflowService:
         card_payload: dict,
         processing_views,
         tasks: list[MoveTask] | None = None,
+        truth_snapshots: list | None = None,
     ) -> dict:
         selector = cls._processing_card_delivery_selector(card_payload, processing_views)
         requested_qty = int(selector.get("requested_qty") or 0)
+        truth_state = cls._processing_card_truth_state(
+            selector=selector,
+            truth_snapshots=truth_snapshots,
+        )
         active_tasks = tasks
         if active_tasks is None:
             if not agency or not str(order_id or "").strip():
                 active_tasks = []
             else:
                 active_tasks = list(
-                    MoveTask.objects.select_related("request")
+                    MoveTask.objects.select_related("request").prefetch_related("request__items")
                     .filter(
                         request__agency=agency,
                         request__context_type="processing",
@@ -253,6 +354,8 @@ class ProcessingWorkflowService:
                 )
         relevant = [task for task in active_tasks if cls._processing_task_matches_card(task, selector)]
         if not relevant:
+            if truth_state is not None:
+                return truth_state
             return {
                 "delivery_has_active": False,
                 "delivery_ready": False,
@@ -329,6 +432,34 @@ class ProcessingWorkflowService:
         elif not lines:
             lines = ["Задание на перемещение создано."]
 
+        truth_state_code = str((truth_state or {}).get("truth_state_code") or "").strip().lower()
+        if truth_state_code in {
+            WarehouseStateCode.IN_PROCESSING_ZONE.value,
+            WarehouseStateCode.PROCESSING_IN_PROGRESS.value,
+            WarehouseStateCode.PLACED_AFTER_PROCESSING.value,
+            WarehouseStateCode.STORED.value,
+        }:
+            return {
+                "delivery_has_active": False,
+                "delivery_ready": True,
+                "delivery_status_lines": [],
+                "delivery_state_code": "done",
+            }
+        if truth_state_code == WarehouseStateCode.MOVING_TO_PROCESSING.value and not has_active:
+            return {
+                "delivery_has_active": True,
+                "delivery_ready": False,
+                "delivery_status_lines": ["Доставка в зону обработки (ричтрак)"],
+                "delivery_state_code": "active",
+            }
+        if truth_state_code == WarehouseStateCode.RESERVED_FOR_PROCESSING.value and not has_active:
+            return {
+                "delivery_has_active": False,
+                "delivery_ready": False,
+                "delivery_status_lines": [],
+                "delivery_state_code": "pending",
+            }
+
         state_code = "pending"
         if has_active:
             state_code = "active"
@@ -358,9 +489,10 @@ class ProcessingWorkflowService:
         if not isinstance(cards_payload, list) or not cards_payload:
             return cards_payload
         tasks = []
+        truth_snapshots = []
         if agency and str(order_id or "").strip():
             tasks = list(
-                MoveTask.objects.select_related("request")
+                MoveTask.objects.select_related("request").prefetch_related("request__items")
                 .filter(
                     request__agency=agency,
                     request__context_type="processing",
@@ -368,6 +500,10 @@ class ProcessingWorkflowService:
                     to_zone="OBR",
                 )
                 .order_by("id")
+            )
+            truth_snapshots = WarehouseGoodsStateResolver._processing_snapshots(
+                agency=agency,
+                order_id=str(order_id or "").strip(),
             )
         annotated: list[dict] = []
         for raw_card in cards_payload:
@@ -382,6 +518,7 @@ class ProcessingWorkflowService:
                     card_payload=card_payload,
                     processing_views=processing_views,
                     tasks=tasks,
+                    truth_snapshots=truth_snapshots,
                 )
             )
             annotated.append(card_payload)

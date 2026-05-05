@@ -13,7 +13,7 @@ from django.utils import timezone
 from audit.models import AuditEntry, OrderAuditEntry
 from employees.models import Employee
 from marking.models import MarkingCode
-from reachtruck.models import MoveRequest, MoveTask
+from reachtruck.models import MoveRequest, MoveRequestItem, MoveTask
 from sklad.models import WarehouseOperation, WarehouseReserve, WarehouseStockSnapshot
 from sklad.services import WarehouseStateCode
 from sklad.services.stock_availability import StockAvailabilityService
@@ -1232,6 +1232,129 @@ class ProcessingWorkflowServiceTests(TestCase):
         self.assertFalse(cards[0]["delivery_ready"])
         self.assertEqual(cards[0]["delivery_state_code"], "active")
         self.assertEqual(cards[0]["delivery_status_lines"], ["Взята в работу · 1 палл."])
+
+    def test_build_processing_work_page_context_matches_obr_delivery_by_request_items(self):
+        order_id = "6191-REQUEST-ITEMS"
+        entries = self._create_ready_processing_entries(order_id)
+        move_request = MoveRequest.objects.create(
+            context_type=MoveRequest.CONTEXT_PROCESSING,
+            context_id=order_id,
+            agency=self.agency,
+            requested_by=self.user,
+            requested_by_role="processing_head",
+            requested_by_name="Processing Service User",
+            destination_zone="OBR",
+            status=MoveRequest.STATUS_CREATED,
+        )
+        MoveRequestItem.objects.create(
+            request=move_request,
+            sku_code="SKU-A",
+            barcode="200000000100",
+            goods_type="gv",
+            qty_requested=10,
+            qty_planned=10,
+        )
+        MoveTask.objects.create(
+            request=move_request,
+            pallet_code="PAL-OBR-REQUEST",
+            from_zone="OS",
+            to_zone="OBR",
+            move_mode=MoveTask.MODE_BOX_FULL,
+            qty_planned=10,
+            status=MoveTask.STATUS_CREATED,
+            payload={
+                "status": "created",
+                "status_label": "Передано ричтракеру",
+                "processing_order_id": order_id,
+            },
+        )
+        request = self.request_factory.get(f"/orders/processing/{order_id}/work/")
+        request.user = self.user
+
+        context = ProcessingWorkflowService.build_processing_work_page_context(
+            order_id=order_id,
+            entries=entries,
+            payload=_processing_work_payload_from_entries(entries),
+            agency=self.agency,
+            request=request,
+        )
+
+        cards = context["draft_payload"]["cards"]
+        self.assertEqual(len(cards), 1)
+        self.assertTrue(cards[0]["delivery_has_active"])
+        self.assertFalse(cards[0]["delivery_ready"])
+        self.assertEqual(cards[0]["delivery_state_code"], "active")
+        self.assertEqual(cards[0]["delivery_status_lines"], ["Передана водителю · 1 палл."])
+
+    def test_build_processing_work_page_context_uses_warehouse_truth_for_obr_delivery(self):
+        order_id = "6191-TRUTH-DONE"
+        entries = [
+            OrderAuditEntry.objects.create(
+                order_id=order_id,
+                order_type="processing",
+                action="status",
+                agency=self.agency,
+                payload={
+                    "status": "processing_in_work",
+                    "status_label": "Взята в работу",
+                    "cards": [
+                        {
+                            "id": "card-a",
+                            "article": "SKU-PROC",
+                            "goods_type": "gv",
+                            "rows": [{"size": "42", "barcode": f"BC-{order_id}", "qty": "10"}],
+                        },
+                    ],
+                    "processed_cards": ["card-a"],
+                    "processing_results": [
+                        {
+                            "card_id": "card-a",
+                            "article": "SKU-PROC",
+                            "size": "42",
+                            "destination": "-",
+                            "processed": "10",
+                        },
+                    ],
+                },
+            ),
+            OrderAuditEntry.objects.create(
+                order_id=order_id,
+                order_type="processing",
+                action="status",
+                agency=self.agency,
+                payload={
+                    "act": "placement",
+                    "act_state": "closed",
+                    "act_boxes": [{"code": "BOX-TRUTH-1", "items": [{"sku": "SKU-PROC", "qty": 10}]}],
+                    "act_pallets": [
+                        {
+                            "code": "PAL-TRUTH-1",
+                            "boxes": ["BOX-TRUTH-1"],
+                            "items": [],
+                            "location": {"zone": "OBR", "row": "", "section": "", "tier": "", "cell": ""},
+                        }
+                    ],
+                },
+            ),
+        ]
+        self._create_processing_snapshot(order_id=order_id, state_code="processing_in_progress")
+        request = self.request_factory.get(f"/orders/processing/{order_id}/work/")
+        request.user = self.user
+
+        context = ProcessingWorkflowService.build_processing_work_page_context(
+            order_id=order_id,
+            entries=entries,
+            payload=_processing_work_payload_from_entries(entries),
+            agency=self.agency,
+            request=request,
+        )
+
+        cards = context["draft_payload"]["cards"]
+        self.assertEqual(len(cards), 1)
+        self.assertFalse(cards[0]["delivery_has_active"])
+        self.assertTrue(cards[0]["delivery_ready"])
+        self.assertEqual(cards[0]["delivery_state_code"], "done")
+        self.assertEqual(cards[0]["delivery_status_lines"], [])
 
     def test_build_processing_work_page_context_reopens_card_move_after_obr_cancel(self):
         order_id = "6192"

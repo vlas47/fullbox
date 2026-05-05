@@ -21,7 +21,7 @@ from sklad.models import (
 from sklad.services.warehouse_transitions import WarehouseStateCode
 from sklad.services.warehouse_write_path import WarehouseWritePathService
 from sklad.services.stock_operations import OperationalStockService
-from .models import MoveRequest, MoveTask
+from .models import MoveRequest, MoveRequestItem, MoveTask
 from .services import (
     build_mobile_execution_snapshot,
     build_mobile_request_execution_snapshot,
@@ -36,6 +36,7 @@ from .services import (
 from .services.task_commands import (
     display_scan_text,
     _location_scan_code,
+    _same_box_code_scan,
     _same_location_scan,
     _same_pallet_code_scan,
     _same_scan_value,
@@ -322,6 +323,13 @@ class ReachtruckHelpersTests(SimpleTestCase):
         expected = "ТДТ-3004-247635-gv"
         mojibake_gbk = expected.encode("utf-8").decode("gb18030")
         self.assertEqual(display_scan_text(mojibake_gbk), expected)
+
+    def test_same_box_code_scan_accepts_matching_tail_when_prefix_is_garbled(self):
+        expected = "ТДТ-0405-020070-op"
+        garbled_scan = "BAD�-0405-020070-op"
+
+        self.assertTrue(_same_box_code_scan(garbled_scan, expected))
+        self.assertFalse(_same_box_code_scan("BAD-0405-020070-op", expected))
 
     def test_location_scan_code_uses_stockmap_os_format(self):
         self.assertEqual(
@@ -856,6 +864,114 @@ class ReachtruckMoveRequestTests(TestCase):
         self.assertEqual(processing_operation.status, WarehouseOperation.STATUS_IN_PROGRESS)
         self.assertEqual(snapshot.warehouse_state_code, "processing_in_progress")
         self.assertEqual(snapshot.active_operation_id, processing_operation.id)
+
+    def test_create_move_request_blocks_duplicate_processing_delivery_when_item_already_in_obr(self):
+        existing_request = MoveRequest.objects.create(
+            context_type=MoveRequest.CONTEXT_PROCESSING,
+            context_id="PROC-DONE-OBR",
+            agency=self.agency,
+            requested_by=self.user,
+            requested_by_role="processing_head",
+            requested_by_name="Руководитель Обработки",
+            destination_zone="OBR",
+            status=MoveRequest.STATUS_DONE,
+        )
+        MoveRequestItem.objects.create(
+            request=existing_request,
+            sku_code="SKU-100",
+            barcode="200000000100",
+            goods_type="gv",
+            qty_requested=5,
+            qty_planned=5,
+            qty_done=5,
+        )
+
+        response = self.client.post(
+            "/reachtruck/requests/create/",
+            data={
+                "processing_order_id": "PROC-DONE-OBR",
+                "to_zone": "OBR",
+                "agency_id": str(self.agency.id),
+                "request_items_json": json.dumps(
+                    [
+                        {
+                            "requested_article": "SKU-100",
+                            "requested_goods_type": "gv",
+                            "requested_qty": 5,
+                            "requested_barcodes": ["200000000100"],
+                        }
+                    ]
+                ),
+            },
+        )
+
+        self.assertEqual(response.status_code, 400)
+        payload = response.json()
+        self.assertFalse(payload.get("ok"))
+        self.assertEqual(int(payload.get("tasks_created") or 0), 0)
+        self.assertEqual(payload.get("status"), "done")
+        self.assertIn("уже доставлен в OBR", payload.get("error") or "")
+        self.assertEqual(MoveRequest.objects.filter(context_type="processing", context_id="PROC-DONE-OBR").count(), 1)
+
+    def test_create_move_request_blocks_duplicate_processing_delivery_by_warehouse_truth(self):
+        snapshot = create_warehouse_snapshot_row(
+            agency=self.agency,
+            order_type="legacy_stock",
+            order_id="PROC-TRUTH-OBR",
+            sku="SKU-100",
+            barcode="200000000100",
+            goods_type="gv",
+            qty=12,
+            available_qty=0,
+            processing_reserved_qty=12,
+            pallet_code="PAL-TRUTH-OBR",
+            zone="OBR",
+            location="OBR · Зона обработки",
+        )
+        snapshot.warehouse_state_code = "processing_in_progress"
+        snapshot.save(update_fields=["warehouse_state_code", "updated_at"])
+        WarehouseReserve.objects.create(
+            agency=self.agency,
+            reserve_type=WarehouseReserve.TYPE_PROCESSING,
+            context_type="processing",
+            context_id="PROC-TRUTH-OBR",
+            sku_code="SKU-100",
+            size=str(snapshot.size or ""),
+            barcode="200000000100",
+            goods_type="gv",
+            qty_reserved=5,
+            status=WarehouseReserve.STATUS_ACTIVE,
+            source_document_type="processing_order",
+            source_document_id="PROC-TRUTH-OBR",
+            created_by=self.user,
+        )
+
+        response = self.client.post(
+            "/reachtruck/requests/create/",
+            data={
+                "processing_order_id": "PROC-TRUTH-OBR",
+                "to_zone": "OBR",
+                "agency_id": str(self.agency.id),
+                "request_items_json": json.dumps(
+                    [
+                        {
+                            "requested_article": "SKU-100",
+                            "requested_goods_type": "gv",
+                            "requested_qty": 5,
+                            "requested_barcodes": ["200000000100"],
+                        }
+                    ]
+                ),
+            },
+        )
+
+        self.assertEqual(response.status_code, 400)
+        payload = response.json()
+        self.assertFalse(payload.get("ok"))
+        self.assertEqual(int(payload.get("tasks_created") or 0), 0)
+        self.assertEqual(payload.get("status"), "done")
+        self.assertIn("уже находится в OBR", payload.get("error") or "")
+        self.assertEqual(MoveRequest.objects.filter(context_type="processing", context_id="PROC-TRUTH-OBR").count(), 0)
 
     def test_create_move_request_partial_when_qty_short(self):
         response = self.client.post(
@@ -2304,6 +2420,62 @@ class ReachtruckMobileFlowTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Взять заявку в работу")
 
+    def test_mobile_request_task_card_can_take_move_without_extra_preview_step(self):
+        self._create_placement(
+            pallet_code="PAL-MOBILE-DIRECT-1",
+            boxes=[("BOX-MOBILE-DIRECT-1", "200000000023", 10)],
+        )
+        move_id = create_stock_move_task(
+            user=self.manager_user,
+            agency=self.agency,
+            description="Короб целиком без лишнего шага",
+            requested_by_name="Менеджер",
+            requested_by_role="manager",
+            payload={
+                "status": "created",
+                "status_label": "Ожидает отбора коробов",
+                "receiving_order_id": "19",
+                "pallet_code": "PAL-MOBILE-DIRECT-1",
+                "from_location": {"zone": "OS", "row": 1, "section": 1, "tier": 1, "cell": 1},
+                "to_location": {"zone": "OBR"},
+                "from_label": "OS · Ряд 1 · Секция 1 · Ярус 1 · Ячейка 1",
+                "to_label": "OBR · Зона обработки",
+                "move_mode": MOVE_MODE_BOX_FULL,
+                "pick_mode": "box_full",
+                "requested_boxes": ["BOX-MOBILE-DIRECT-1"],
+            },
+        )
+
+        response = self.client.get("/reachtruck/?mobile_category=movement&mobile_request=receiving:19")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'name="action" value="take_move"', html=False)
+        self.assertContains(response, f'name="mobile_task" value="{move_id}"', html=False)
+        self.assertContains(response, "Взять в работу")
+        self.assertNotContains(
+            response,
+            f'href="/reachtruck/?mobile_category=movement&amp;mobile_request=receiving:19&amp;mobile_task={move_id}"',
+            html=False,
+        )
+
+        response = self.client.post(
+            "/reachtruck/",
+            data={
+                "action": "take_move",
+                "order_id": move_id,
+                "mobile_task": move_id,
+                "mobile_category": "movement",
+                "mobile_request": "receiving:19",
+            },
+            follow=True,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Подтвердить скан")
+        self.assertContains(response, "Подтверждение паллеты")
+        self.assertContains(response, "Содержимое паллеты")
+        self.assertEqual(MoveTask.objects.get(legacy_order_id=move_id).status, MoveTask.STATUS_IN_PROGRESS)
+
     def test_storekeeper_reachtruck_dashboard_uses_storekeeper_identity_and_source_link(self):
         self.client.force_login(self.storekeeper_user)
         self._create_placement(
@@ -3672,3 +3844,67 @@ class ReachtruckMobileFlowTests(TestCase):
         )
         self.assertTrue(result.ok, result.error)
         self.assertTrue(result.completed)
+
+    def test_mobile_box_pick_accepts_box_scan_with_garbled_prefix_and_matching_tail(self):
+        self._create_placement(
+            pallet_code="PAL-MOBILE-GARBLED",
+            boxes=[("ТДТ-0405-020070-op", "200000000131", 10)],
+        )
+        move_id = create_stock_move_task(
+            user=self.manager_user,
+            agency=self.agency,
+            description="Отбор короба с битым префиксом скана",
+            requested_by_name="Менеджер",
+            requested_by_role="manager",
+            payload={
+                "status": "created",
+                "status_label": "Ожидает отбора коробов",
+                "pallet_code": "PAL-MOBILE-GARBLED",
+                "from_location": {"zone": "OS", "row": 1, "section": 1, "tier": 1, "cell": 1},
+                "to_location": {"zone": "OBR"},
+                "from_label": "OS · Ряд 1 · Секция 1 · Ярус 1 · Ячейка 1",
+                "to_label": "OBR · Зона обработки",
+                "move_mode": MOVE_MODE_BOX_FULL,
+                "pick_mode": "box_full",
+                "requested_boxes": ["ТДТ-0405-020070-op"],
+            },
+        )
+        take_result = take_move_task(
+            legacy_order_id=move_id,
+            user=self.driver_user,
+            employee_id=self.driver_employee.id,
+            employee_name=self.driver_employee.full_name,
+        )
+        self.assertTrue(take_result.ok, take_result.error)
+
+        self.assertTrue(
+            scan_move_task_step(
+                legacy_order_id=move_id,
+                scan_value="OS-1-1-1-1",
+                user=self.driver_user,
+                employee_id=self.driver_employee.id,
+                employee_name=self.driver_employee.full_name,
+            ).ok
+        )
+        self.assertTrue(
+            scan_move_task_step(
+                legacy_order_id=move_id,
+                scan_value="PAL-MOBILE-GARBLED",
+                user=self.driver_user,
+                employee_id=self.driver_employee.id,
+                employee_name=self.driver_employee.full_name,
+            ).ok
+        )
+
+        result = scan_move_task_step(
+            legacy_order_id=move_id,
+            scan_value="BAD�-0405-020070-op",
+            user=self.driver_user,
+            employee_id=self.driver_employee.id,
+            employee_name=self.driver_employee.full_name,
+        )
+
+        self.assertTrue(result.ok, result.error)
+        self.assertIn("Короб ТДТ-0405-020070-op подтвержден.", result.message)
+        task = MoveTask.objects.get(legacy_order_id=move_id)
+        self.assertEqual((task.payload or {}).get("mobile_execution", {}).get("last_scan"), "ТДТ-0405-020070-op")
