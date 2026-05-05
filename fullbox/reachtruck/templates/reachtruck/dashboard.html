@@ -650,9 +650,14 @@
       border: 2px solid rgba(255,253,248,0.5);
       background: rgba(255,253,248,0.96);
     }
+    .scan-input:focus {
+      outline: none;
+      border-color: rgba(255, 247, 209, 0.94);
+      box-shadow: 0 0 0 3px rgba(255, 247, 209, 0.24);
+    }
     .scan-input.mobile-capture {
-      caret-color: transparent;
-      user-select: none;
+      caret-color: currentColor;
+      user-select: text;
     }
     .scan-actions {
       display: grid;
@@ -1536,6 +1541,14 @@
       const scanPanel = scanInput ? scanInput.closest('.scan-panel') : null;
       const mobileScanMode = Boolean(scanInput && window.matchMedia('(max-width: 900px)').matches);
       if (mobileScanMode && scanInput && scanForm) {
+        const nonScanInteractiveSelector = 'a, button, input:not(.scan-input), textarea, select, [contenteditable="true"], summary';
+        let scanSubmitting = false;
+        let fallbackScanBuffer = '';
+        let scanFocusTimer = 0;
+        const isNonScanInteractive = (value) => (
+          value instanceof HTMLElement
+          && Boolean(value.closest(nonScanInteractiveSelector))
+        );
         const hideVirtualKeyboard = () => {
           try {
             if (navigator.virtualKeyboard && typeof navigator.virtualKeyboard.hide === 'function') {
@@ -1545,6 +1558,9 @@
           }
         };
         const focusScanInput = () => {
+          if (!document.body.contains(scanInput)) {
+            return;
+          }
           try {
             scanInput.focus({ preventScroll: true });
           } catch (e) {
@@ -1552,9 +1568,44 @@
           }
           window.setTimeout(hideVirtualKeyboard, 0);
         };
+        const scheduleScanFocus = (delay = 30) => {
+          window.clearTimeout(scanFocusTimer);
+          scanFocusTimer = window.setTimeout(() => {
+            if (scanSubmitting || !document.body.contains(scanInput)) {
+              return;
+            }
+            const active = document.activeElement;
+            if (active === scanInput) {
+              hideVirtualKeyboard();
+              return;
+            }
+            if (isNonScanInteractive(active)) {
+              return;
+            }
+            focusScanInput();
+          }, delay);
+        };
+        const submitScanValue = (scanValue) => {
+          const normalized = String(scanValue || '').trim();
+          if (!normalized || scanSubmitting) {
+            return;
+          }
+          scanSubmitting = true;
+          fallbackScanBuffer = '';
+          scanInput.value = normalized;
+          if (typeof scanForm.requestSubmit === 'function') {
+            scanForm.requestSubmit();
+          } else {
+            scanForm.submit();
+          }
+        };
         scanInput.classList.add('mobile-capture');
         scanInput.addEventListener('focus', () => {
           hideVirtualKeyboard();
+          fallbackScanBuffer = String(scanInput.value || '');
+        });
+        scanInput.addEventListener('blur', () => {
+          scheduleScanFocus(20);
         });
         scanInput.addEventListener('pointerdown', () => {
           window.setTimeout(hideVirtualKeyboard, 0);
@@ -1575,26 +1626,74 @@
           });
         }
         scanForm.addEventListener('submit', () => {
+          scanSubmitting = true;
+          fallbackScanBuffer = '';
           scanInput.value = String(scanInput.value || '').trim();
+        });
+        scanInput.addEventListener('input', () => {
+          fallbackScanBuffer = String(scanInput.value || '');
+          hideVirtualKeyboard();
         });
         scanInput.addEventListener('keydown', (event) => {
           const key = String(event.key || '');
           if (key === 'Enter' || key === 'NumpadEnter' || key === 'Tab') {
-            const scanValue = String(scanInput.value || '').trim();
-            if (!scanValue) {
+            event.preventDefault();
+            submitScanValue(scanInput.value);
+          }
+        });
+        document.addEventListener('keydown', (event) => {
+          if (scanSubmitting || event.defaultPrevented || event.ctrlKey || event.altKey || event.metaKey) {
+            return;
+          }
+          if (document.activeElement === scanInput) {
+            return;
+          }
+          const target = event.target;
+          const active = document.activeElement;
+          if (isNonScanInteractive(target) || isNonScanInteractive(active)) {
+            return;
+          }
+          const key = String(event.key || '');
+          if (!key) {
+            return;
+          }
+          if (key === 'Enter' || key === 'NumpadEnter' || key === 'Tab') {
+            if (!fallbackScanBuffer.trim()) {
               return;
             }
             event.preventDefault();
-            scanInput.value = scanValue;
-            if (typeof scanForm.requestSubmit === 'function') {
-              scanForm.requestSubmit();
-            } else {
-              scanForm.submit();
-            }
+            submitScanValue(fallbackScanBuffer);
+            return;
+          }
+          if (key === 'Escape') {
+            fallbackScanBuffer = '';
+            scanInput.value = '';
+            return;
+          }
+          if (key === 'Backspace') {
+            fallbackScanBuffer = fallbackScanBuffer.slice(0, -1);
+            scanInput.value = fallbackScanBuffer;
+            event.preventDefault();
+            return;
+          }
+          if (key.length !== 1) {
+            return;
+          }
+          fallbackScanBuffer += key;
+          scanInput.value = fallbackScanBuffer;
+          event.preventDefault();
+          scheduleScanFocus(0);
+        }, true);
+        window.addEventListener('focus', () => {
+          scheduleScanFocus(20);
+        });
+        document.addEventListener('visibilitychange', () => {
+          if (!document.hidden) {
+            scheduleScanFocus(20);
           }
         });
         focusScanInput();
-        window.setTimeout(hideVirtualKeyboard, 50);
+        scheduleScanFocus(50);
       } else if (scanInput && window.matchMedia('(max-width: 900px)').matches) {
         try {
           scanInput.focus({ preventScroll: true });

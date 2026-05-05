@@ -2833,6 +2833,9 @@ class ReachtruckMobileFlowTests(TestCase):
         self.assertContains(response, 'virtualkeyboardpolicy="manual"')
         self.assertContains(response, 'autocomplete="off"')
         self.assertContains(response, 'navigator.virtualKeyboard.hide')
+        self.assertContains(response, "scanInput.addEventListener('blur'")
+        self.assertContains(response, "document.addEventListener('visibilitychange'")
+        self.assertContains(response, "document.addEventListener('keydown'")
         self.assertNotContains(response, 'scanInput.readOnly = true;')
         self.assertNotContains(response, "Продолжить приемка №83_PR")
 
