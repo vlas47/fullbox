@@ -5,6 +5,7 @@
   .task-col-header { display:flex; justify-content:space-between; align-items:center; padding:10px 12px; border-bottom:1px dashed var(--stroke); font-weight:600; }
   .task-col-body { display:grid; gap:8px; padding:10px; align-content:start; align-items:start; }
   .task-card { padding:10px; border:1px solid var(--stroke); border-radius:12px; background:var(--card, rgba(255,255,255,0.02)); }
+  .task-card.has-status { position: relative; overflow: hidden; }
   .task-card.clickable { cursor:pointer; transition: transform 0.16s ease, box-shadow 0.16s ease; }
   .task-card.clickable:hover,
   .task-card.clickable:focus-visible {
@@ -31,8 +32,52 @@
   .task-meta-label { color:var(--muted); }
   .task-meta-value { color:#0e6b5b; font-weight:600; }
   .task-meta-value.accent { color:#b45309; font-weight:700; }
-  .task-meta-value.status-waiting { color:#d14343; }
-  .task-meta-value.status-done { color:#1f9d55; }
+  .task-status-row { display:grid; gap:4px; margin-top:6px; }
+  .task-status-pill {
+    display:inline-flex;
+    align-items:center;
+    gap:6px;
+    width:max-content;
+    max-width:100%;
+    min-height:28px;
+    padding:4px 10px;
+    border-radius:999px;
+    border:1px solid var(--stroke);
+    font-size:12px;
+    font-weight:700;
+    line-height:1.25;
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,0.18);
+  }
+  .task-status-pill.status-tone-neutral {
+    background: rgba(100, 116, 139, 0.12);
+    border-color: rgba(100, 116, 139, 0.25);
+    color: #475569;
+  }
+  .task-status-pill.status-tone-pending {
+    background: rgba(217, 119, 6, 0.14);
+    border-color: rgba(217, 119, 6, 0.24);
+    color: #9a5a00;
+  }
+  .task-status-pill.status-tone-moving {
+    background: rgba(37, 99, 235, 0.14);
+    border-color: rgba(37, 99, 235, 0.24);
+    color: #1d4ed8;
+  }
+  .task-status-pill.status-tone-active {
+    background: rgba(14, 107, 91, 0.14);
+    border-color: rgba(14, 107, 91, 0.24);
+    color: #0e6b5b;
+  }
+  .task-status-pill.status-tone-done {
+    background: rgba(34, 197, 94, 0.14);
+    border-color: rgba(34, 197, 94, 0.24);
+    color: #1f7a52;
+  }
+  .task-status-pill.status-tone-danger {
+    background: rgba(220, 38, 38, 0.14);
+    border-color: rgba(220, 38, 38, 0.24);
+    color: #b42318;
+  }
   .task-tags { display:flex; gap:6px; flex-wrap:wrap; margin-top:6px; }
   .task-tag { padding:3px 8px; border-radius:999px; border:1px solid var(--stroke); font-size:11px; text-transform:uppercase; letter-spacing:0.4px; }
   .task-empty { color:var(--muted); font-size:12px; border:1px dashed var(--stroke); border-radius:10px; padding:10px; text-align:center; }
@@ -147,7 +192,7 @@
         <div class="task-col-body">
           {% if column.tasks %}
             {% for task in column.tasks %}
-              <div class="task-card clickable{% if task.route and "/orders/receiving/" in task.route %} order-receiving{% elif task.route and "/orders/processing/" in task.route %} order-processing{% endif %}{% if task_panel_attention_employee_id and task.assigned_to_id == task_panel_attention_employee_id %}{% if task_panel_role == "manager" and task.status == "done" %}{% elif task.route and "/orders/receiving/" in task.route and "/act/print/" not in task.route %}{% else %} attention{% endif %}{% endif %}"{% if task.panel_url %} onclick="window.location.href='{{ task.panel_url }}'"{% endif %}>
+              <div class="task-card clickable{% if task.order_status_label %} has-status{% endif %}{% if task.route and "/orders/receiving/" in task.route %} order-receiving{% elif task.route and "/orders/processing/" in task.route %} order-processing{% endif %}{% if task_panel_attention_employee_id and task.assigned_to_id == task_panel_attention_employee_id %}{% if task_panel_role == "manager" and task.status == "done" %}{% elif task.route and "/orders/receiving/" in task.route and "/act/print/" not in task.route %}{% else %} attention{% endif %}{% endif %}"{% if task.panel_url %} onclick="window.location.href='{{ task.panel_url }}'"{% endif %}>
                 <div class="task-title"><a href="{{ task.panel_url }}">{{ task.panel_title }}</a></div>
                 {% if task_panel_role == "storekeeper" and task.route %}
                   {% if "/orders/receiving/" in task.route or "/orders/processing/" in task.route %}
@@ -222,28 +267,10 @@
                   </div>
                 {% endif %}
                 {% if task.order_status_label %}
-                  {% with status_lower=task.order_status_label|lower %}
-                    {% if "в ожидании" in status_lower %}
-                      {% with status_class="status-waiting" %}
-                  <div class="task-meta">
+                  <div class="task-status-row">
                     <span class="task-meta-label">{{ task.status_meta_label|default:"Статус заявки" }}:</span>
-                    <span class="task-meta-value {{ status_class }}">{{ task.order_status_label }}</span>
+                    <span class="task-status-pill status-tone-{{ task.order_status_tone|default:'neutral' }}">{{ task.order_status_label }}</span>
                   </div>
-                      {% endwith %}
-                    {% elif "выполн" in status_lower %}
-                      {% with status_class="status-done" %}
-                  <div class="task-meta">
-                    <span class="task-meta-label">{{ task.status_meta_label|default:"Статус заявки" }}:</span>
-                    <span class="task-meta-value {{ status_class }}">{{ task.order_status_label }}</span>
-                  </div>
-                      {% endwith %}
-                    {% else %}
-                  <div class="task-meta">
-                    <span class="task-meta-label">{{ task.status_meta_label|default:"Статус заявки" }}:</span>
-                    <span class="task-meta-value">{{ task.order_status_label }}</span>
-                  </div>
-                    {% endif %}
-                  {% endwith %}
                 {% endif %}
                 {% if task.order_client_label %}
                   <div class="task-meta">

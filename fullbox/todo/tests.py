@@ -690,6 +690,7 @@ class TodoDisplayTitleTests(TestCase):
         ).render(Context({}))
 
         self.assertIn("Доставка в зону обработки (ричтрак)", html)
+        self.assertIn("status-tone-moving", html)
         self.assertNotIn("Передано в обработку", html)
 
     def test_processing_head_task_panel_uses_processing_label_for_reserved_order(self):
@@ -755,6 +756,7 @@ class TodoDisplayTitleTests(TestCase):
         ).render(Context({}))
 
         self.assertIn("Ожидает доставки в зону обработки", html)
+        self.assertIn("status-tone-pending", html)
         self.assertNotIn("Передано в обработку", html)
 
     def test_manager_processing_task_panel_keeps_waiting_status_before_approval_even_with_reserve(self):

@@ -127,6 +127,67 @@ def _normalize_limit(limit, default=6):
         return default
 
 
+def _status_tone_from_label(label: str | None) -> str:
+    normalized = str(label or "").strip().lower()
+    if not normalized:
+        return "neutral"
+    if any(token in normalized for token in ("ошиб", "отмен", "разноглас", "спор", "просроч", "невер", "заблок")):
+        return "danger"
+    if any(
+        token in normalized
+        for token in (
+            "доставка",
+            "ричтрак",
+            "подготовка к рейсу",
+            "загружено",
+            "передано ричтраку",
+            "в пути",
+        )
+    ):
+        return "moving"
+    if any(
+        token in normalized
+        for token in (
+            "в работе",
+            "взята в работу",
+            "в обработке",
+            "начать обработку",
+            "размещение открыто",
+            "раскороб",
+            "паллетизац",
+        )
+    ):
+        return "active"
+    if any(
+        token in normalized
+        for token in (
+            "ждет",
+            "ожидает",
+            "в ожидании",
+            "на согласовании",
+            "черновик",
+            "подтверждени",
+        )
+    ):
+        return "pending"
+    if any(
+        token in normalized
+        for token in (
+            "выполн",
+            "заверш",
+            "готов",
+            "размещен",
+            "размещение завершено",
+            "возвращен на склад",
+            "отгруж",
+            "принято складом",
+            "акт отправлен клиенту",
+        )
+    ):
+        return "done"
+    return "neutral"
+
+
 def _extract_receiving_order_id(route: str | None) -> str | None:
     if not route:
         return None
@@ -625,9 +686,11 @@ def task_panel(context, role=None, limit=6, show_meta=True, include_created_by=T
         task.status_meta_label = "Статус заявки"
         task.filter_type = _task_filter_type(task)
         task.order_client_id = None
+        task.order_status_tone = "neutral"
         order_id = _extract_receiving_order_id(task.route)
         if order_id:
             task.order_status_label = receiving_status_by_order.get(order_id)
+            task.order_status_tone = _status_tone_from_label(task.order_status_label)
             task.order_client_label = receiving_client_by_order.get(order_id)
             entry = (
                 OrderAuditEntry.objects.filter(order_type="receiving", order_id=order_id)
@@ -645,6 +708,7 @@ def task_panel(context, role=None, limit=6, show_meta=True, include_created_by=T
         order_id = _extract_processing_order_id(task.route)
         if order_id:
             task.order_status_label = processing_status_by_order.get(order_id)
+            task.order_status_tone = _status_tone_from_label(task.order_status_label)
             task.order_client_label = processing_client_by_order.get(order_id)
             entry = (
                 OrderAuditEntry.objects.filter(order_type="processing", order_id=order_id)
@@ -673,6 +737,7 @@ def task_panel(context, role=None, limit=6, show_meta=True, include_created_by=T
         shipping_pk = _extract_shipping_order_pk(task.route)
         if shipping_pk is not None:
             task.order_status_label = shipping_status_by_pk.get(shipping_pk)
+            task.order_status_tone = _status_tone_from_label(task.order_status_label)
             task.order_client_label = shipping_client_by_pk.get(shipping_pk)
             shipping_order = shipping_orders_by_pk.get(shipping_pk)
             task.order_client_id = int(shipping_order.agency_id or 0) if shipping_order and shipping_order.agency_id else None
@@ -683,6 +748,7 @@ def task_panel(context, role=None, limit=6, show_meta=True, include_created_by=T
         trip_pk = _extract_logistics_trip_pk(task.route)
         if trip_pk is not None:
             task.order_status_label = logistics_status_by_pk.get(trip_pk)
+            task.order_status_tone = _status_tone_from_label(task.order_status_label)
             task.order_client_label = None
             task.executor_label = task.assigned_to.full_name if task.assigned_to else None
             task.panel_url = task.route
