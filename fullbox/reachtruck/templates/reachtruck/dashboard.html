@@ -649,6 +649,7 @@
       border-radius: 14px;
       border: 2px solid rgba(255,253,248,0.5);
       background: rgba(255,253,248,0.96);
+      ime-mode: disabled;
     }
     .scan-input:focus {
       outline: none;
@@ -1542,6 +1543,19 @@
       const mobileScanMode = Boolean(scanInput && window.matchMedia('(max-width: 900px)').matches);
       if (mobileScanMode && scanInput && scanForm) {
         const nonScanInteractiveSelector = 'a, button, input:not(.scan-input), textarea, select, [contenteditable="true"], summary';
+        const scanCodeCharMap = {
+          Minus: '-',
+          NumpadSubtract: '-',
+          Slash: '/',
+          NumpadDivide: '/',
+          Backslash: '\\',
+          Space: ' ',
+          Period: '.',
+          NumpadDecimal: '.',
+          Comma: ',',
+          Semicolon: ';',
+          Equal: '=',
+        };
         let scanSubmitting = false;
         let fallbackScanBuffer = '';
         let scanFocusTimer = 0;
@@ -1549,6 +1563,33 @@
           value instanceof HTMLElement
           && Boolean(value.closest(nonScanInteractiveSelector))
         );
+        const scanCharFromEvent = (event) => {
+          const code = String(event.code || '');
+          const key = String(event.key || '');
+          if (/^Digit[0-9]$/.test(code)) {
+            return code.slice(5);
+          }
+          if (/^Numpad[0-9]$/.test(code)) {
+            return code.slice(6);
+          }
+          if (/^Key[A-Z]$/.test(code)) {
+            return code.slice(3).toUpperCase();
+          }
+          if (scanCodeCharMap[code]) {
+            return scanCodeCharMap[code];
+          }
+          if (key.length !== 1) {
+            return '';
+          }
+          const normalized = key.normalize('NFKC');
+          if (/^[0-9A-Za-z]$/.test(normalized)) {
+            return normalized.toUpperCase();
+          }
+          if (/^[-_\\/ .,:;=]$/.test(normalized)) {
+            return normalized;
+          }
+          return '';
+        };
         const hideVirtualKeyboard = () => {
           try {
             if (navigator.virtualKeyboard && typeof navigator.virtualKeyboard.hide === 'function') {
@@ -1584,6 +1625,10 @@
             }
             focusScanInput();
           }, delay);
+        };
+        const syncScanInput = () => {
+          scanInput.value = fallbackScanBuffer;
+          hideVirtualKeyboard();
         };
         const submitScanValue = (scanValue) => {
           const normalized = String(scanValue || '').trim();
@@ -1631,21 +1676,49 @@
           scanInput.value = String(scanInput.value || '').trim();
         });
         scanInput.addEventListener('input', () => {
-          fallbackScanBuffer = String(scanInput.value || '');
+          const nextValue = String(scanInput.value || '');
+          if (nextValue !== fallbackScanBuffer) {
+            fallbackScanBuffer = nextValue;
+          }
           hideVirtualKeyboard();
         });
-        scanInput.addEventListener('keydown', (event) => {
+        const handleScanKeydown = (event) => {
+          if (scanSubmitting || event.defaultPrevented || event.ctrlKey || event.altKey || event.metaKey) {
+            return false;
+          }
           const key = String(event.key || '');
           if (key === 'Enter' || key === 'NumpadEnter' || key === 'Tab') {
             event.preventDefault();
-            submitScanValue(scanInput.value);
+            submitScanValue(fallbackScanBuffer || scanInput.value);
+            return true;
           }
+          if (key === 'Escape') {
+            fallbackScanBuffer = '';
+            syncScanInput();
+            event.preventDefault();
+            return true;
+          }
+          if (key === 'Backspace') {
+            fallbackScanBuffer = fallbackScanBuffer.slice(0, -1);
+            syncScanInput();
+            event.preventDefault();
+            return true;
+          }
+          const scanChar = scanCharFromEvent(event);
+          if (!scanChar) {
+            return false;
+          }
+          fallbackScanBuffer += scanChar;
+          syncScanInput();
+          event.preventDefault();
+          scheduleScanFocus(0);
+          return true;
+        };
+        scanInput.addEventListener('keydown', (event) => {
+          handleScanKeydown(event);
         });
         document.addEventListener('keydown', (event) => {
-          if (scanSubmitting || event.defaultPrevented || event.ctrlKey || event.altKey || event.metaKey) {
-            return;
-          }
-          if (document.activeElement === scanInput) {
+          if (scanSubmitting || document.activeElement === scanInput) {
             return;
           }
           const target = event.target;
@@ -1653,36 +1726,7 @@
           if (isNonScanInteractive(target) || isNonScanInteractive(active)) {
             return;
           }
-          const key = String(event.key || '');
-          if (!key) {
-            return;
-          }
-          if (key === 'Enter' || key === 'NumpadEnter' || key === 'Tab') {
-            if (!fallbackScanBuffer.trim()) {
-              return;
-            }
-            event.preventDefault();
-            submitScanValue(fallbackScanBuffer);
-            return;
-          }
-          if (key === 'Escape') {
-            fallbackScanBuffer = '';
-            scanInput.value = '';
-            return;
-          }
-          if (key === 'Backspace') {
-            fallbackScanBuffer = fallbackScanBuffer.slice(0, -1);
-            scanInput.value = fallbackScanBuffer;
-            event.preventDefault();
-            return;
-          }
-          if (key.length !== 1) {
-            return;
-          }
-          fallbackScanBuffer += key;
-          scanInput.value = fallbackScanBuffer;
-          event.preventDefault();
-          scheduleScanFocus(0);
+          handleScanKeydown(event);
         }, true);
         window.addEventListener('focus', () => {
           scheduleScanFocus(20);
