@@ -6,12 +6,9 @@ from django.utils import timezone
 
 from audit.models import OrderAuditEntry
 from reachtruck.models import MoveTask
-from shipping.models import ShippingOrder, ShippingOrderItem, ShippingReserve
 from sku.models import Agency
 from sku.models import SKU, SKUBarcode
 from sklad.models import (
-    InventoryState,
-    StockPalletState,
     WarehouseContainer,
     WarehouseEvent,
     WarehouseLocation,
@@ -31,6 +28,7 @@ from sklad.services import (
     WarehouseWritePathService,
 )
 from sklad.services.stock_availability import StockAvailabilityService
+from sklad.services.warehouse_stock_rows import snapshot_stock_rows
 from sklad.ui_services import build_inventory_journal_page
 from .stock_state import (
     _apply_processing_source_deductions,
@@ -41,9 +39,94 @@ from .stock_state import (
     _normalize_location,
     _receiving_removed_qty_map,
     refresh_materialized_stock_state_for_agency,
-    rebuild_stock_snapshot_for_agency,
     _shipping_shipped_qty_map,
 )
+
+
+def create_warehouse_snapshot_row(
+    *,
+    agency: Agency,
+    order_type: str = "receiving",
+    order_id: str,
+    sku: str,
+    name: str,
+    size: str,
+    barcode: str = "",
+    marking_code: str = "",
+    goods_type: str,
+    qty: int,
+    available_qty: int | None = None,
+    processing_reserved_qty: int = 0,
+    shipping_reserved_qty: int = 0,
+    box_code: str = "",
+    pallet_code: str = "",
+    zone: str = "OS",
+    row: int = 1,
+    section: int = 1,
+    tier: int = 1,
+    cell: int = 1,
+    warehouse_state_code: str = WarehouseStateCode.STORED.value,
+) -> WarehouseStockSnapshot:
+    location = WarehouseWritePathService.ensure_location(
+        warehouse_code="MSK",
+        zone_code=zone,
+        row_no=row,
+        section_no=section,
+        tier_no=tier,
+        cell_no=cell,
+    )
+    parent_container = None
+    container = None
+    if pallet_code:
+        parent_container, _ = WarehouseContainer.objects.get_or_create(
+            agency=agency,
+            container_code=pallet_code,
+            defaults={
+                "container_type": WarehouseContainer.TYPE_PALLET,
+                "current_location": location,
+                "source_context_type": order_type,
+                "source_context_id": str(order_id),
+            },
+        )
+    if box_code:
+        container, _ = WarehouseContainer.objects.get_or_create(
+            agency=agency,
+            container_code=box_code,
+            defaults={
+                "container_type": WarehouseContainer.TYPE_BOX,
+                "parent_container": parent_container,
+                "current_location": location,
+                "source_context_type": order_type,
+                "source_context_id": str(order_id),
+            },
+        )
+        if parent_container and container.parent_container_id != parent_container.id:
+            container.parent_container = parent_container
+            container.save(update_fields=["parent_container", "updated_at"])
+    elif parent_container:
+        container = parent_container
+    return WarehouseStockSnapshot.objects.create(
+        agency=agency,
+        source_context_type=order_type,
+        source_context_id=order_id,
+        sku_code=sku,
+        name=name,
+        size=size,
+        barcode=barcode,
+        marking_code=marking_code,
+        goods_type=goods_type,
+        qty=qty,
+        available_qty=qty if available_qty is None else available_qty,
+        processing_reserved_qty=processing_reserved_qty,
+        shipping_reserved_qty=shipping_reserved_qty,
+        container=container,
+        container_code=container.container_code if container else "",
+        parent_container=parent_container if container and container.container_type == WarehouseContainer.TYPE_BOX else None,
+        location=location,
+        zone_code=location.zone_code,
+        zone_kind=location.zone_kind,
+        warehouse_state_code=warehouse_state_code,
+    )
 
 
 class StockStateHelpersTests(SimpleTestCase):
@@ -53,11 +136,11 @@ class StockStateHelpersTests(SimpleTestCase):
         self.assertEqual(_inventory_key(" SKU-1 ", " 42 ", " OP "), ("sku-1", "42", "оптовый"))
 
     def test_goods_type_label_prefers_explicit_label(self):
-        self.assertEqual(_goods_type_label("op", "Мой тип", "Оптовый"), "Мой тип")
-        self.assertEqual(_goods_type_label("gv", "", "Оптовый"), "Готовый")
-        self.assertEqual(_goods_type_label("", "", "Оптовый"), "Оптовый")
+        self.assertEqual(_goods_type_label("receiving", {"goods_type_label": "Мой тип"}), "Мой тип")
+        self.assertEqual(_goods_type_label("processing", {}), "Готовый")
+        self.assertEqual(_goods_type_label("receiving", {}), "Оптовый")
 
-    def test_apply_processing_source_deductions_uses_older_rows_first(self):
+    def test_legacy_processing_source_deductions_are_disabled(self):
         rows = [
             {
                 "sku": "SKU-1",
@@ -87,13 +170,9 @@ class StockStateHelpersTests(SimpleTestCase):
         key = _inventory_key("SKU-1", "42", "Оптовый")
         adjusted = _apply_processing_source_deductions(rows, {key: 60}, {key: 10})
 
-        self.assertEqual(len(adjusted), 2)
-        self.assertEqual(adjusted[0]["goods_type"], "Оптовый")
-        self.assertEqual(adjusted[0]["qty"], 30)
-        self.assertEqual(adjusted[1]["goods_type"], "Готовый")
-        self.assertEqual(adjusted[1]["qty"], 40)
+        self.assertIsNone(adjusted)
 
-    def test_receiving_removed_qty_map_uses_expected_minus_factual(self):
+    def test_legacy_audit_qty_maps_do_not_rebuild_stock(self):
         entry = SimpleNamespace(
             order_type="receiving",
             order_id="9",
@@ -108,73 +187,69 @@ class StockStateHelpersTests(SimpleTestCase):
                 "act_pallets": [],
             },
         )
-        latest = {("receiving", "9"): entry}
-        removed = _receiving_removed_qty_map(latest, {})
+        shipped = SimpleNamespace(
+            order_type="shipping",
+            order_id="SO-1",
+            payload={
+                "shipping_state": "shipped",
+                "shipped_items": [
+                    {"sku": "SKU-1", "size": "42", "goods_type": "Готовый", "qty": 10},
+                ],
+            },
+        )
 
-        self.assertEqual(removed.get(("sku-1", "42", "оптовый")), 3)
+        self.assertEqual(_receiving_removed_qty_map([entry]), {})
+        self.assertEqual(_shipping_shipped_qty_map([shipped]), {})
 
     def test_location_normalization_and_defaulting(self):
-        normalized = _normalize_location(
-            {"location": {"zone": "основной склад", "row": "2", "section": "3", "tier": "4", "cell": "5"}},
-            "PR",
-        )
+        normalized = _normalize_location({"zone": "os", "row": "2", "section": "3", "tier": "4", "cell": "5"})
         self.assertEqual(normalized["zone"], "OS")
-        self.assertEqual(normalized["location"], "OS · Ряд 2 · Секция 3 · Ярус 4 · Ячейка 5")
+        self.assertEqual(normalized["row"], 2)
+        self.assertEqual(normalized["section"], 3)
+        self.assertEqual(normalized["tier"], 4)
+        self.assertEqual(normalized["cell"], 5)
 
-        row = _ensure_pallet_location({"pallet_code": "P-1", "order_type": "processing"})
+        row = _ensure_pallet_location({"pallet_code": "P-1"}, default_zone="OBR")
         self.assertEqual(row["zone"], "OBR")
-        self.assertEqual(row["location"], "OBR · Зона обработки")
-
-    def test_shipping_shipped_qty_map_uses_latest_shipped_payload(self):
-        entries = [
-            SimpleNamespace(
-                order_type="shipping",
-                order_id="SO-1",
-                payload={
-                    "shipping_state": "reserved",
-                    "shipped_items": [
-                        {"sku": "SKU-1", "size": "42", "goods_type": "Готовый", "qty": 99},
-                    ],
-                },
-            ),
-            SimpleNamespace(
-                order_type="shipping",
-                order_id="SO-1",
-                payload={
-                    "shipping_state": "shipped",
-                    "shipped_items": [
-                        {"sku": "SKU-1", "size": "42", "goods_type": "Готовый", "qty": 10},
-                    ],
-                },
-            ),
-        ]
-        shipped_map = _shipping_shipped_qty_map(entries)
-        self.assertEqual(shipped_map, {("sku-1", "42", "готовый"): 10})
 
 
 class StockAvailabilityServiceTests(TestCase):
     def setUp(self):
         self.agency = Agency.objects.create(agn_name="Availability Agency")
-        StockPalletState.objects.create(
+        self.location = WarehouseWritePathService.ensure_location(
+            warehouse_code="MSK",
+            zone_code="OS",
+            row_no=1,
+            section_no=1,
+            tier_no=1,
+            cell_no=1,
+        )
+        self.snapshot = WarehouseStockSnapshot.objects.create(
             agency=self.agency,
-            order_type="receiving",
-            order_id="1000",
-            sku="SKU-1",
+            source_context_type="receiving",
+            source_context_id="1000",
+            sku_code="SKU-1",
             name="Товар 1",
             size="42",
             goods_type="Не обработанный",
             qty=50,
-            state=StockPalletState.STATE_WAREHOUSE,
+            available_qty=0,
+            processing_reserved_qty=50,
+            location=self.location,
+            zone_code=self.location.zone_code,
+            zone_kind=self.location.zone_kind,
+            warehouse_state_code=WarehouseStateCode.STORED.value,
         )
-        InventoryState.objects.create(
+        WarehouseReserve.objects.create(
             agency=self.agency,
-            order_type="processing",
-            order_id="2000",
-            sku="SKU-1",
+            reserve_type=WarehouseReserve.TYPE_PROCESSING,
+            context_type="processing",
+            context_id="2000",
+            sku_code="SKU-1",
             size="42",
             goods_type="Не обработанный",
-            qty=50,
-            state=InventoryState.STATE_PROCESSING,
+            qty_reserved=50,
+            status=WarehouseReserve.STATUS_ACTIVE,
         )
 
     def test_inventory_items_for_agency_excludes_current_processing_reserve(self):
@@ -189,20 +264,7 @@ class StockAvailabilityServiceTests(TestCase):
         self.assertEqual(with_exclusion[0]["sku"], "SKU-1")
         self.assertEqual(with_exclusion[0]["qty"], 50)
 
-    def test_inventory_items_for_agency_prefers_warehouse_processing_reserve_over_inventory_state(self):
-        InventoryState.objects.filter(agency=self.agency).delete()
-        WarehouseReserve.objects.create(
-            agency=self.agency,
-            reserve_type=WarehouseReserve.TYPE_PROCESSING,
-            context_type="processing",
-            context_id="2000",
-            sku_code="SKU-1",
-            size="42",
-            goods_type="Не обработанный",
-            qty_reserved=50,
-            status=WarehouseReserve.STATUS_ACTIVE,
-        )
-
+    def test_inventory_items_for_agency_uses_warehouse_processing_reserve(self):
         without_exclusion = StockAvailabilityService.inventory_items_for_agency(self.agency)
         self.assertEqual(without_exclusion, [])
 
@@ -215,28 +277,22 @@ class StockAvailabilityServiceTests(TestCase):
         self.assertEqual(with_exclusion[0]["qty"], 50)
 
     def test_inventory_items_for_agency_excludes_shipping_reserve(self):
-        InventoryState.objects.filter(agency=self.agency).delete()
-        shipping_order = ShippingOrder.objects.create(
-            number="SO-TEST-1",
-            agency=self.agency,
-            status=ShippingOrder.STATUS_SUBMITTED,
+        WarehouseReserve.objects.filter(agency=self.agency).delete()
+        WarehouseStockSnapshot.objects.filter(agency=self.agency).update(
+            available_qty=30,
+            processing_reserved_qty=0,
+            shipping_reserved_qty=20,
         )
-        shipping_item = ShippingOrderItem.objects.create(
-            order=shipping_order,
-            sku_code="SKU-1",
-            name="Товар 1",
-            size="42",
-            goods_type="Не обработанный",
-            qty_requested=20,
-        )
-        ShippingReserve.objects.create(
-            order=shipping_order,
-            item=shipping_item,
+        WarehouseReserve.objects.create(
             agency=self.agency,
+            reserve_type=WarehouseReserve.TYPE_SHIPPING,
+            context_type="shipping",
+            context_id="SO-TEST-1",
             sku_code="SKU-1",
             size="42",
             goods_type="Не обработанный",
-            qty=20,
+            qty_reserved=20,
+            status=WarehouseReserve.STATUS_ACTIVE,
         )
 
         items = StockAvailabilityService.inventory_items_for_agency(self.agency)
@@ -246,7 +302,7 @@ class StockAvailabilityServiceTests(TestCase):
         self.assertEqual(items[0]["qty"], 30)
 
     def test_inventory_items_for_agency_does_not_rebuild_from_audit_when_stock_empty(self):
-        StockPalletState.objects.filter(agency=self.agency).delete()
+        WarehouseStockSnapshot.objects.filter(agency=self.agency).delete()
         OrderAuditEntry.objects.create(
             order_id="R-AUDIT-1",
             order_type="receiving",
@@ -269,51 +325,21 @@ class StockAvailabilityServiceTests(TestCase):
         items = StockAvailabilityService.inventory_items_for_agency(self.agency)
 
         self.assertEqual(items, [])
-        self.assertFalse(StockPalletState.objects.filter(agency=self.agency).exists())
+        self.assertFalse(WarehouseStockSnapshot.objects.filter(agency=self.agency).exists())
 
     def test_inventory_items_for_agency_uses_warehouse_snapshot_when_legacy_rows_missing(self):
-        StockPalletState.objects.filter(agency=self.agency).delete()
-        InventoryState.objects.filter(agency=self.agency).delete()
-        location = WarehouseLocation.objects.create(
-            warehouse_code="MSK",
-            zone_code="OS",
-            zone_kind=WarehouseLocation.ZONE_KIND_STORAGE,
-            row_no=1,
-            section_no=1,
-            tier_no=1,
-            cell_no=1,
-            display_name="OS · Ряд 1 · Секция 1 · Ярус 1 · Ячейка 1",
-        )
-        pallet = WarehouseContainer.objects.create(
+        WarehouseStockSnapshot.objects.filter(agency=self.agency).delete()
+        WarehouseReserve.objects.filter(agency=self.agency).delete()
+        create_warehouse_snapshot_row(
             agency=self.agency,
-            container_type=WarehouseContainer.TYPE_PALLET,
-            container_code="PAL-INV-1",
-            current_location=location,
-        )
-        box = WarehouseContainer.objects.create(
-            agency=self.agency,
-            container_type=WarehouseContainer.TYPE_BOX,
-            container_code="BOX-INV-1",
-            parent_container=pallet,
-            current_location=location,
-        )
-        WarehouseStockSnapshot.objects.create(
-            agency=self.agency,
-            source_context_type="receiving",
-            source_context_id="R-SNAP-INV",
-            sku_code="SKU-1",
+            order_id="R-SNAP-INV",
+            sku="SKU-1",
             name="Товар 1",
             size="42",
             goods_type="Не обработанный",
             qty=50,
-            available_qty=50,
-            container=box,
-            container_code=box.container_code,
-            parent_container=pallet,
-            location=location,
-            zone_code="OS",
-            zone_kind=location.zone_kind,
-            warehouse_state_code=WarehouseStateCode.STORED.value,
+            box_code="BOX-INV-1",
+            pallet_code="PAL-INV-1",
         )
 
         items = StockAvailabilityService.inventory_items_for_agency(self.agency)
@@ -367,27 +393,6 @@ class StockAvailabilityServiceTests(TestCase):
 class WarehouseActionPolicyTests(TestCase):
     def setUp(self):
         self.agency = Agency.objects.create(agn_name="Policy Availability Agency")
-        StockPalletState.objects.create(
-            agency=self.agency,
-            order_type="receiving",
-            order_id="1000",
-            sku="SKU-1",
-            name="Товар 1",
-            size="42",
-            goods_type="Не обработанный",
-            qty=50,
-            state=StockPalletState.STATE_WAREHOUSE,
-        )
-        InventoryState.objects.create(
-            agency=self.agency,
-            order_type="processing",
-            order_id="2000",
-            sku="SKU-1",
-            size="42",
-            goods_type="Не обработанный",
-            qty=50,
-            state=InventoryState.STATE_PROCESSING,
-        )
 
     def _state(self, code: WarehouseStateCode):
         return SimpleNamespace(code=code)
@@ -492,27 +497,6 @@ class WarehouseCommandServiceTests(TestCase):
     def setUp(self):
         self.user = get_user_model().objects.create_user(username="warehouse_command_user", password="pwd")
         self.agency = Agency.objects.create(agn_name="Warehouse Command Agency")
-        StockPalletState.objects.create(
-            agency=self.agency,
-            order_type="receiving",
-            order_id="1000",
-            sku="SKU-1",
-            name="Товар 1",
-            size="42",
-            goods_type="Не обработанный",
-            qty=50,
-            state=StockPalletState.STATE_WAREHOUSE,
-        )
-        InventoryState.objects.create(
-            agency=self.agency,
-            order_type="processing",
-            order_id="2000",
-            sku="SKU-1",
-            size="42",
-            goods_type="Не обработанный",
-            qty=50,
-            state=InventoryState.STATE_PROCESSING,
-        )
 
     def _create_processing_snapshot(self, order_id: str, state_code: str):
         location = WarehouseWritePathService.ensure_location(
@@ -744,6 +728,82 @@ class WarehouseCommandServiceTests(TestCase):
         self.assertEqual((task.payload or {}).get("warehouse_operation_id"), operation.id)
         self.assertEqual((task.payload or {}).get("warehouse_operation_task_id"), warehouse_task.id)
 
+    def test_create_receiving_putaway_tasks_skips_reserved_os_destination(self):
+        SKU.objects.create(agency=self.agency, sku_code="SKU-RESERVED-CMD", name="Товар резерва", size="42")
+        WarehouseWritePathService.create_receiving_placement(
+            agency=self.agency,
+            order_id="RCV-RESERVED-1",
+            performed_by=self.user,
+            items=[
+                {
+                    "sku_code": "SKU-RESERVED-CMD",
+                    "name": "Товар резерва",
+                    "size": "42",
+                    "barcode": "BR-RES-1",
+                    "goods_type": "gv",
+                    "qty": 5,
+                    "pallet_code": "PAL-RESERVED-1",
+                }
+            ],
+        )
+        WarehouseWritePathService.request_putaway_for_receiving(
+            agency=self.agency,
+            order_id="RCV-RESERVED-1",
+            container_codes=["PAL-RESERVED-1"],
+            destination_zone_code="OS",
+            destination_row_no=2,
+            destination_section_no=1,
+            destination_tier_no=1,
+            destination_cell_no=3,
+            requested_by=self.user,
+            requested_by_role="storekeeper",
+        )
+
+        result = WarehouseCommandService.create_receiving_putaway_tasks(
+            order_id="RCV-RESERVED-2",
+            agency=self.agency,
+            role="storekeeper",
+            placement_payload={
+                "act": "placement",
+                "act_state": "closed",
+                "act_boxes": [
+                    {
+                        "code": "BOX-RESERVED-CMD-2",
+                        "sealed": True,
+                        "items": [
+                            {
+                                "sku": "SKU-RESERVED-CMD",
+                                "name": "Товар резерва",
+                                "size": "42",
+                                "barcode": "BR-RES-2",
+                                "qty": 5,
+                            }
+                        ],
+                    }
+                ],
+                "act_pallets": [
+                    {
+                        "code": "PAL-RESERVED-CMD-2",
+                        "sealed": True,
+                        "boxes": ["BOX-RESERVED-CMD-2"],
+                        "items": [],
+                        "location": {"zone": "OS", "row": 2, "section": 1, "tier": 1, "cell": 3},
+                    }
+                ],
+            },
+            requested_by=self.user,
+            requested_by_name="Исполнитель склада",
+            requested_by_role="storekeeper",
+            latest_moves_by_pallet={},
+            flow_closed=True,
+            not_created_count=1,
+        )
+
+        self.assertEqual(result.status, "noop")
+        self.assertEqual(result.created_count, 0)
+        self.assertEqual(result.skipped_existing_count, 1)
+        self.assertFalse(MoveTask.objects.exists())
+
     def test_open_receiving_placement_command_clears_contexts(self):
         order_id = "RCV-3006"
         self._create_receiving_snapshot(order_id, "placed_in_receiving")
@@ -782,14 +842,6 @@ class WarehouseCommandServiceTests(TestCase):
                 agency=self.agency,
                 source_context_type="receiving",
                 source_context_id=order_id,
-            ).exists()
-        )
-        self.assertFalse(
-            StockPalletState.objects.filter(
-                agency=self.agency,
-                order_type="receiving",
-                order_id=order_id,
-                state=StockPalletState.STATE_WAREHOUSE,
             ).exists()
         )
 
@@ -904,20 +956,6 @@ class WarehouseCommandServiceTests(TestCase):
         self.assertEqual(placement_payload.get("act_state"), "closed")
         self.assertEqual(len(placement_payload.get("act_units") or []), 1)
 
-        stock_row = StockPalletState.objects.get(
-            agency=self.agency,
-            order_type="receiving",
-            order_id=order_id,
-            marking_code="CZ-3008-1",
-        )
-        self.assertEqual(stock_row.sku, "SKU-RCV-COMP")
-        self.assertEqual(stock_row.qty, 1)
-        self.assertEqual(stock_row.available_qty, 1)
-        self.assertEqual(stock_row.box_code, "BOX-COMP-1")
-        self.assertEqual(stock_row.pallet_code, "PAL-COMP-1")
-        self.assertEqual(stock_row.zone, "PR")
-        self.assertEqual(stock_row.location, "PR · Зона приемки")
-
         snapshot = WarehouseStockSnapshot.objects.get(
             agency=self.agency,
             source_context_type="receiving",
@@ -927,7 +965,9 @@ class WarehouseCommandServiceTests(TestCase):
         self.assertEqual(snapshot.sku_code, "SKU-RCV-COMP")
         self.assertEqual(snapshot.qty, 1)
         self.assertEqual(snapshot.available_qty, 1)
-        self.assertEqual(snapshot.container_code, "PAL-COMP-1")
+        self.assertEqual(snapshot.container_code, "BOX-COMP-1")
+        self.assertEqual(snapshot.container.container_code, "BOX-COMP-1")
+        self.assertEqual(snapshot.parent_container.container_code, "PAL-COMP-1")
         self.assertEqual(snapshot.zone_code, "PR")
         self.assertEqual(snapshot.warehouse_state_code, "placed_in_receiving")
 
@@ -940,20 +980,6 @@ class WarehouseCommandServiceTests(TestCase):
             size="43",
         )
         self._create_receiving_snapshot(order_id, "placed_in_receiving")
-        StockPalletState.objects.create(
-            agency=self.agency,
-            order_type="receiving",
-            order_id=order_id,
-            sku="SKU-OLD",
-            name="Старый товар",
-            size="41",
-            goods_type="Оптовый",
-            qty=3,
-            available_qty=3,
-            zone="PR",
-            location="PR · Зона приемки",
-            state=StockPalletState.STATE_WAREHOUSE,
-        )
 
         result = WarehouseCommandService.close_receiving_placement(
             order_id=order_id,
@@ -1011,24 +1037,13 @@ class WarehouseCommandServiceTests(TestCase):
         self.assertEqual(result.payload_update.get("status_label"), "Товар принят и размещен на складе")
         self.assertTrue(result.meta.get("placement_previously_closed"))
         self.assertFalse(
-            StockPalletState.objects.filter(
+            WarehouseStockSnapshot.objects.filter(
                 agency=self.agency,
-                order_type="receiving",
-                order_id=order_id,
-                sku="SKU-OLD",
+                source_context_type="receiving",
+                source_context_id=order_id,
+                sku_code="SKU-RCV",
             ).exists()
         )
-
-        stock_row = StockPalletState.objects.get(
-            agency=self.agency,
-            order_type="receiving",
-            order_id=order_id,
-            sku="SKU-RCV-CLOSE",
-        )
-        self.assertEqual(stock_row.qty, 4)
-        self.assertEqual(stock_row.available_qty, 4)
-        self.assertEqual(stock_row.pallet_code, "PAL-CLOSE-1")
-        self.assertEqual(stock_row.zone, "PR")
 
         snapshots = list(
             WarehouseStockSnapshot.objects.filter(
@@ -1040,7 +1055,9 @@ class WarehouseCommandServiceTests(TestCase):
         self.assertEqual(len(snapshots), 1)
         self.assertEqual(snapshots[0].sku_code, "SKU-RCV-CLOSE")
         self.assertEqual(snapshots[0].qty, 4)
-        self.assertEqual(snapshots[0].container_code, "PAL-CLOSE-1")
+        self.assertEqual(snapshots[0].container_code, "BOX-CLOSE-1")
+        self.assertEqual(snapshots[0].container.container_code, "BOX-CLOSE-1")
+        self.assertEqual(snapshots[0].parent_container.container_code, "PAL-CLOSE-1")
         self.assertEqual(snapshots[0].zone_code, "PR")
         self.assertEqual(snapshots[0].warehouse_state_code, "placed_in_receiving")
 
@@ -1090,47 +1107,50 @@ class WarehouseCommandServiceTests(TestCase):
         self.assertEqual(result.status, "denied")
         self.assertEqual(result.reason, "state_forbidden")
 
-    def test_refresh_materialized_stock_state_updates_reserved_and_available_qty(self):
-        InventoryState.objects.filter(agency=self.agency).delete()
-        shipping_order = ShippingOrder.objects.create(
-            number="SO-TEST-2",
+    def test_refresh_materialized_stock_state_reports_warehouse_core_totals(self):
+        create_warehouse_snapshot_row(
             agency=self.agency,
-            status=ShippingOrder.STATUS_SUBMITTED,
-        )
-        shipping_item = ShippingOrderItem.objects.create(
-            order=shipping_order,
-            sku_code="SKU-1",
+            order_id="1000",
+            sku="SKU-1",
             name="Товар 1",
             size="42",
             goods_type="Не обработанный",
-            qty_requested=20,
+            qty=50,
+            available_qty=30,
+            shipping_reserved_qty=20,
+            pallet_code="PAL-1000",
         )
-        ShippingReserve.objects.create(
-            order=shipping_order,
-            item=shipping_item,
+        WarehouseReserve.objects.create(
             agency=self.agency,
+            reserve_type=WarehouseReserve.TYPE_SHIPPING,
+            context_type="shipping",
+            context_id="SO-TEST-2",
             sku_code="SKU-1",
             size="42",
             goods_type="Не обработанный",
-            qty=20,
+            qty_reserved=20,
+            status=WarehouseReserve.STATUS_ACTIVE,
         )
 
-        refresh_materialized_stock_state_for_agency(self.agency)
+        result = refresh_materialized_stock_state_for_agency(self.agency)
 
-        row = StockPalletState.objects.get(agency=self.agency, sku="SKU-1", size="42")
-        self.assertEqual(row.qty, 50)
-        self.assertEqual(row.processing_reserved_qty, 0)
-        self.assertEqual(row.shipping_reserved_qty, 20)
-        self.assertEqual(row.available_qty, 30)
+        self.assertEqual(result["source"], "warehouse_core")
+        self.assertEqual(result["snapshot_count"], 1)
+        self.assertEqual(result["qty"], 50)
+        self.assertEqual(result["available_qty"], 30)
+        self.assertEqual(result["processing_reserved_qty"], 0)
+        self.assertEqual(result["shipping_reserved_qty"], 20)
+        self.assertEqual(result["reserve_count"], 1)
 
     def test_occupied_os_cells_deduplicates_coordinates(self):
-        StockPalletState.objects.create(
+        create_warehouse_snapshot_row(
             agency=self.agency,
             order_type="receiving",
             order_id="3000",
             sku="SKU-2",
             name="Товар 2",
             size="43",
+            goods_type="Оптовый",
             qty=10,
             pallet_code="PAL-3000",
             zone="OS",
@@ -1138,16 +1158,15 @@ class WarehouseCommandServiceTests(TestCase):
             section=2,
             tier=3,
             cell=4,
-            location="OS · Ряд 1 · Секция 2 · Ярус 3 · Ячейка 4",
-            state=StockPalletState.STATE_WAREHOUSE,
         )
-        StockPalletState.objects.create(
+        create_warehouse_snapshot_row(
             agency=self.agency,
             order_type="processing",
             order_id="3001",
             sku="SKU-3",
             name="Товар 3",
             size="44",
+            goods_type="Готовый",
             qty=5,
             pallet_code="PAL-3001",
             zone="OS",
@@ -1155,16 +1174,15 @@ class WarehouseCommandServiceTests(TestCase):
             section=2,
             tier=3,
             cell=4,
-            location="OS · Ряд 1 · Секция 2 · Ярус 3 · Ячейка 4",
-            state=StockPalletState.STATE_WAREHOUSE,
         )
-        StockPalletState.objects.create(
+        create_warehouse_snapshot_row(
             agency=self.agency,
             order_type="processing",
             order_id="3002",
             sku="SKU-4",
             name="Товар 4",
             size="45",
+            goods_type="Готовый",
             qty=7,
             pallet_code="PAL-3002",
             zone="OS",
@@ -1172,8 +1190,6 @@ class WarehouseCommandServiceTests(TestCase):
             section=2,
             tier=3,
             cell=5,
-            location="OS · Ряд 1 · Секция 2 · Ярус 3 · Ячейка 5",
-            state=StockPalletState.STATE_WAREHOUSE,
         )
 
         occupied_cells = StockAvailabilityService.occupied_os_cells()
@@ -1186,13 +1202,14 @@ class WarehouseCommandServiceTests(TestCase):
         )
 
     def test_occupied_os_cells_excludes_current_order(self):
-        StockPalletState.objects.create(
+        create_warehouse_snapshot_row(
             agency=self.agency,
             order_type="processing",
             order_id="4001",
             sku="SKU-5",
             name="Товар 5",
             size="46",
+            goods_type="Готовый",
             qty=9,
             pallet_code="PAL-4001",
             zone="OS",
@@ -1200,8 +1217,6 @@ class WarehouseCommandServiceTests(TestCase):
             section=1,
             tier=1,
             cell=1,
-            location="OS · Ряд 2 · Секция 1 · Ярус 1 · Ячейка 1",
-            state=StockPalletState.STATE_WAREHOUSE,
         )
 
         keys = StockAvailabilityService.occupied_os_cell_keys(
@@ -1210,14 +1225,40 @@ class WarehouseCommandServiceTests(TestCase):
         )
         self.assertNotIn((2, 1, 1, 1), keys)
 
+    def test_occupied_os_cells_include_active_putaway_destinations(self):
+        destination = WarehouseWritePathService.ensure_location(
+            warehouse_code="MSK",
+            zone_code="OS",
+            row_no=4,
+            section_no=2,
+            tier_no=1,
+            cell_no=3,
+        )
+        WarehouseOperation.objects.create(
+            agency=self.agency,
+            operation_type=WarehouseOperation.TYPE_PUTAWAY,
+            context_type="receiving",
+            context_id="PUTAWAY-RESERVED-1",
+            destination_location=destination,
+            destination_zone_code="OS",
+            status=WarehouseOperation.STATUS_PLANNED,
+        )
+
+        keys = StockAvailabilityService.occupied_os_cell_keys()
+        sections = StockAvailabilityService.occupied_os_section_agencies()
+
+        self.assertIn((4, 2, 1, 3), keys)
+        self.assertEqual(sections[(4, 2)], {self.agency.id})
+
     def test_occupied_os_cells_excludes_pallet_code(self):
-        StockPalletState.objects.create(
+        create_warehouse_snapshot_row(
             agency=self.agency,
             order_type="receiving",
             order_id="5001",
             sku="SKU-6",
             name="Товар 6",
             size="47",
+            goods_type="Оптовый",
             qty=4,
             pallet_code="PAL-KEEP",
             zone="OS",
@@ -1225,16 +1266,15 @@ class WarehouseCommandServiceTests(TestCase):
             section=1,
             tier=1,
             cell=1,
-            location="OS · Ряд 3 · Секция 1 · Ярус 1 · Ячейка 1",
-            state=StockPalletState.STATE_WAREHOUSE,
         )
-        StockPalletState.objects.create(
+        create_warehouse_snapshot_row(
             agency=self.agency,
             order_type="receiving",
             order_id="5002",
             sku="SKU-7",
             name="Товар 7",
             size="48",
+            goods_type="Оптовый",
             qty=4,
             pallet_code="PAL-EXCLUDE",
             zone="OS",
@@ -1242,8 +1282,6 @@ class WarehouseCommandServiceTests(TestCase):
             section=1,
             tier=1,
             cell=2,
-            location="OS · Ряд 3 · Секция 1 · Ярус 1 · Ячейка 2",
-            state=StockPalletState.STATE_WAREHOUSE,
         )
 
         keys = StockAvailabilityService.occupied_os_cell_keys(exclude_pallet_code="PAL-EXCLUDE")
@@ -1252,13 +1290,14 @@ class WarehouseCommandServiceTests(TestCase):
 
     def test_suggest_os_cell_prefers_same_client_section(self):
         other_agency = Agency.objects.create(agn_name="Другой клиент")
-        StockPalletState.objects.create(
+        create_warehouse_snapshot_row(
             agency=self.agency,
             order_type="receiving",
             order_id="6001",
             sku="SKU-A",
             name="Товар A",
             size="42",
+            goods_type="Оптовый",
             qty=4,
             pallet_code="PAL-A",
             zone="OS",
@@ -1266,16 +1305,15 @@ class WarehouseCommandServiceTests(TestCase):
             section=1,
             tier=1,
             cell=1,
-            location="OS · Ряд 1 · Секция 1 · Ярус 1 · Ячейка 1",
-            state=StockPalletState.STATE_WAREHOUSE,
         )
-        StockPalletState.objects.create(
+        create_warehouse_snapshot_row(
             agency=other_agency,
             order_type="receiving",
             order_id="6002",
             sku="SKU-B",
             name="Товар B",
             size="42",
+            goods_type="Оптовый",
             qty=4,
             pallet_code="PAL-B",
             zone="OS",
@@ -1283,8 +1321,6 @@ class WarehouseCommandServiceTests(TestCase):
             section=2,
             tier=1,
             cell=1,
-            location="OS · Ряд 1 · Секция 2 · Ярус 1 · Ячейка 1",
-            state=StockPalletState.STATE_WAREHOUSE,
         )
 
         suggestion = StockAvailabilityService.suggest_os_cell_for_agency(
@@ -1303,13 +1339,14 @@ class WarehouseCommandServiceTests(TestCase):
 
     def test_suggest_os_cell_prefers_empty_section_before_other_client_section(self):
         other_agency = Agency.objects.create(agn_name="Клиент B")
-        StockPalletState.objects.create(
+        create_warehouse_snapshot_row(
             agency=other_agency,
             order_type="receiving",
             order_id="7001",
             sku="SKU-C",
             name="Товар C",
             size="42",
+            goods_type="Оптовый",
             qty=4,
             pallet_code="PAL-C",
             zone="OS",
@@ -1317,16 +1354,15 @@ class WarehouseCommandServiceTests(TestCase):
             section=1,
             tier=1,
             cell=1,
-            location="OS · Ряд 1 · Секция 1 · Ярус 1 · Ячейка 1",
-            state=StockPalletState.STATE_WAREHOUSE,
         )
-        StockPalletState.objects.create(
+        create_warehouse_snapshot_row(
             agency=other_agency,
             order_type="receiving",
             order_id="7002",
             sku="SKU-D",
             name="Товар D",
             size="42",
+            goods_type="Оптовый",
             qty=4,
             pallet_code="PAL-D",
             zone="OS",
@@ -1334,8 +1370,6 @@ class WarehouseCommandServiceTests(TestCase):
             section=3,
             tier=1,
             cell=1,
-            location="OS · Ряд 1 · Секция 3 · Ярус 1 · Ячейка 1",
-            state=StockPalletState.STATE_WAREHOUSE,
         )
 
         suggestion = StockAvailabilityService.suggest_os_cell_for_agency(
@@ -1372,74 +1406,47 @@ class ClientInventoryJournalReserveColumnsTests(TestCase):
         self.client.force_login(self.user)
 
     def test_client_inventory_journal_shows_separate_obr_and_otg_reserves(self):
-        StockPalletState.objects.create(
+        create_warehouse_snapshot_row(
             agency=self.agency,
-            order_type="receiving",
             order_id="1001",
             sku="SKU-1",
             name="Джинсы",
             size="42",
             goods_type="Оптовый",
             qty=10,
-            state=StockPalletState.STATE_WAREHOUSE,
         )
-        InventoryState.objects.create(
+        WarehouseReserve.objects.create(
             agency=self.agency,
-            order_type="processing",
-            order_id="2001",
-            sku="SKU-1",
-            size="42",
-            goods_type="Оптовый",
-            qty=2,
-            state=InventoryState.STATE_PROCESSING,
-        )
-        submitted_order = ShippingOrder.objects.create(
-            number="SO-000001",
-            agency=self.agency,
-            status=ShippingOrder.STATUS_SUBMITTED,
-        )
-        submitted_item = ShippingOrderItem.objects.create(
-            order=submitted_order,
-            sku=self.sku,
+            reserve_type=WarehouseReserve.TYPE_PROCESSING,
+            context_type="processing",
+            context_id="2001",
             sku_code="SKU-1",
-            name="Джинсы",
             size="42",
             goods_type="Оптовый",
-            qty_requested=3,
+            qty_reserved=2,
+            status=WarehouseReserve.STATUS_ACTIVE,
+        )
+        WarehouseReserve.objects.create(
+            agency=self.agency,
+            reserve_type=WarehouseReserve.TYPE_SHIPPING,
+            context_type="shipping",
+            context_id="SO-000001",
+            sku_code="SKU-1",
+            size="42",
+            goods_type="Оптовый",
             qty_reserved=3,
+            status=WarehouseReserve.STATUS_ACTIVE,
         )
-        ShippingReserve.objects.create(
-            order=submitted_order,
-            item=submitted_item,
+        WarehouseReserve.objects.create(
             agency=self.agency,
+            reserve_type=WarehouseReserve.TYPE_SHIPPING,
+            context_type="shipping",
+            context_id="SO-000002",
             sku_code="SKU-1",
             size="42",
             goods_type="Оптовый",
-            qty=3,
-        )
-        canceled_order = ShippingOrder.objects.create(
-            number="SO-000002",
-            agency=self.agency,
-            status=ShippingOrder.STATUS_CANCELED,
-        )
-        canceled_item = ShippingOrderItem.objects.create(
-            order=canceled_order,
-            sku=self.sku,
-            sku_code="SKU-1",
-            name="Джинсы",
-            size="42",
-            goods_type="Оптовый",
-            qty_requested=9,
             qty_reserved=9,
-        )
-        ShippingReserve.objects.create(
-            order=canceled_order,
-            item=canceled_item,
-            agency=self.agency,
-            sku_code="SKU-1",
-            size="42",
-            goods_type="Оптовый",
-            qty=9,
+            status=WarehouseReserve.STATUS_CANCELED,
         )
 
         response = self.client.get("/sklad/journal/")
@@ -1456,16 +1463,14 @@ class ClientInventoryJournalReserveColumnsTests(TestCase):
         self.assertContains(response, "Доступный остаток")
 
     def test_client_inventory_journal_uses_warehouse_processing_reserve_when_present(self):
-        StockPalletState.objects.create(
+        create_warehouse_snapshot_row(
             agency=self.agency,
-            order_type="receiving",
             order_id="1002",
             sku="SKU-1",
             name="Джинсы",
             size="42",
             goods_type="Оптовый",
             qty=10,
-            state=StockPalletState.STATE_WAREHOUSE,
         )
         WarehouseReserve.objects.create(
             agency=self.agency,
@@ -1541,28 +1546,16 @@ class ClientInventoryJournalReserveColumnsTests(TestCase):
         self.assertEqual(rows[0]["pallet_code"], "PAL-JRN-1")
 
     def test_client_inventory_journal_shows_reserved_only_row(self):
-        submitted_order = ShippingOrder.objects.create(
-            number="SO-000003",
+        WarehouseReserve.objects.create(
             agency=self.agency,
-            status=ShippingOrder.STATUS_SUBMITTED,
-        )
-        submitted_item = ShippingOrderItem.objects.create(
-            order=submitted_order,
+            reserve_type=WarehouseReserve.TYPE_SHIPPING,
+            context_type="shipping",
+            context_id="SO-000003",
             sku_code="SKU-2",
-            name="Футболка",
             size="44",
             goods_type="Готовый",
-            qty_requested=5,
             qty_reserved=5,
-        )
-        ShippingReserve.objects.create(
-            order=submitted_order,
-            item=submitted_item,
-            agency=self.agency,
-            sku_code="SKU-2",
-            size="44",
-            goods_type="Готовый",
-            qty=5,
+            status=WarehouseReserve.STATUS_ACTIVE,
         )
 
         response = self.client.get("/sklad/journal/")
@@ -1576,45 +1569,69 @@ class ClientInventoryJournalReserveColumnsTests(TestCase):
         self.assertEqual(reserve_only_row["available_qty"], 0)
 
     def test_client_inventory_journal_shows_goods_already_in_processing(self):
-        OrderAuditEntry.objects.create(
-            order_id="2002",
-            order_type="processing",
-            action="status",
-            agency=self.agency,
-            payload={
-                "status": "processing_in_work",
-                "status_label": "Взята в работу",
-                "stock_rows": [
-                    {
-                        "sku": "SKU-1",
-                        "article": "SKU-1",
-                        "size": "42",
-                        "goods_type": "Оптовый",
-                        "qty": 10,
-                    }
-                ],
-            },
+        storage_location = WarehouseWritePathService.ensure_location(
+            warehouse_code="MSK",
+            zone_code="OS",
+            row_no=1,
+            section_no=1,
+            tier_no=1,
+            cell_no=1,
         )
-        StockPalletState.objects.create(
+        processing_location = WarehouseWritePathService.ensure_location(warehouse_code="MSK", zone_code="OBR")
+        operation = WarehouseOperation.objects.create(
             agency=self.agency,
-            order_type="receiving",
-            order_id="1002",
-            sku="SKU-1",
+            operation_type=WarehouseOperation.TYPE_PROCESSING,
+            context_type="processing",
+            context_id="2002",
+            source_location=processing_location,
+            destination_location=processing_location,
+            source_zone_code=processing_location.zone_code,
+            destination_zone_code=processing_location.zone_code,
+            status=WarehouseOperation.STATUS_IN_PROGRESS,
+        )
+        WarehouseStockSnapshot.objects.create(
+            agency=self.agency,
+            source_context_type="receiving",
+            source_context_id="1002",
+            sku_code="SKU-1",
             name="Джинсы",
             size="42",
             goods_type="Оптовый",
             qty=2,
-            state=StockPalletState.STATE_WAREHOUSE,
+            available_qty=2,
+            location=storage_location,
+            zone_code=storage_location.zone_code,
+            zone_kind=storage_location.zone_kind,
+            warehouse_state_code=WarehouseStateCode.STORED.value,
         )
-        InventoryState.objects.create(
+        WarehouseStockSnapshot.objects.create(
             agency=self.agency,
-            order_type="processing",
-            order_id="2002",
-            sku="SKU-1",
+            source_context_type="legacy_stock",
+            source_context_id="legacy-2002",
+            sku_code="SKU-1",
+            name="Джинсы",
             size="42",
             goods_type="Оптовый",
-            qty=2,
-            state=InventoryState.STATE_PROCESSING,
+            qty=8,
+            available_qty=0,
+            processing_reserved_qty=8,
+            active_operation=operation,
+            active_operation_type=operation.operation_type,
+            location=processing_location,
+            zone_code=processing_location.zone_code,
+            zone_kind=processing_location.zone_kind,
+            warehouse_state_code=WarehouseStateCode.PROCESSING_IN_PROGRESS.value,
+        )
+        WarehouseReserve.objects.create(
+            agency=self.agency,
+            reserve_type=WarehouseReserve.TYPE_PROCESSING,
+            context_type="processing",
+            context_id="2002",
+            sku_code="SKU-1",
+            size="42",
+            goods_type="Оптовый",
+            qty_reserved=10,
+            status=WarehouseReserve.STATUS_ACTIVE,
         )
 
         response = self.client.get("/sklad/journal/")
@@ -1740,9 +1757,8 @@ class StaffInventoryJournalAvailableQtyTests(TestCase):
         self.client.force_login(self.user)
 
     def test_staff_inventory_journal_uses_agency_specific_available_qty(self):
-        StockPalletState.objects.create(
+        create_warehouse_snapshot_row(
             agency=self.agency_a,
-            order_type="receiving",
             order_id="A-1",
             sku="SKU-X",
             name="Товар X",
@@ -1752,12 +1768,13 @@ class StaffInventoryJournalAvailableQtyTests(TestCase):
             box_code="BOX-A1",
             pallet_code="PAL-A1",
             zone="OS",
-            location="OS · Ряд 1 · Секция 1 · Ярус 1 · Ячейка 1",
-            state=StockPalletState.STATE_WAREHOUSE,
+            row=1,
+            section=1,
+            tier=1,
+            cell=1,
         )
-        StockPalletState.objects.create(
+        create_warehouse_snapshot_row(
             agency=self.agency_a,
-            order_type="receiving",
             order_id="A-2",
             sku="SKU-X",
             name="Товар X",
@@ -1767,12 +1784,13 @@ class StaffInventoryJournalAvailableQtyTests(TestCase):
             box_code="BOX-A2",
             pallet_code="PAL-A2",
             zone="OS",
-            location="OS · Ряд 1 · Секция 1 · Ярус 1 · Ячейка 2",
-            state=StockPalletState.STATE_WAREHOUSE,
+            row=1,
+            section=1,
+            tier=1,
+            cell=2,
         )
-        StockPalletState.objects.create(
+        create_warehouse_snapshot_row(
             agency=self.agency_b,
-            order_type="receiving",
             order_id="B-1",
             sku="SKU-X",
             name="Товар X",
@@ -1782,41 +1800,32 @@ class StaffInventoryJournalAvailableQtyTests(TestCase):
             box_code="BOX-B1",
             pallet_code="PAL-B1",
             zone="OS",
-            location="OS · Ряд 2 · Секция 1 · Ярус 1 · Ячейка 1",
-            state=StockPalletState.STATE_WAREHOUSE,
+            row=2,
+            section=1,
+            tier=1,
+            cell=1,
         )
-        InventoryState.objects.create(
+        WarehouseReserve.objects.create(
             agency=self.agency_a,
-            order_type="processing",
-            order_id="P-A",
-            sku="SKU-X",
-            size="42",
-            goods_type="Оптовый",
-            qty=3,
-            state=InventoryState.STATE_PROCESSING,
-        )
-        order_b = ShippingOrder.objects.create(
-            number="SO-009999",
-            agency=self.agency_b,
-            status=ShippingOrder.STATUS_SUBMITTED,
-        )
-        item_b = ShippingOrderItem.objects.create(
-            order=order_b,
+            reserve_type=WarehouseReserve.TYPE_PROCESSING,
+            context_type="processing",
+            context_id="P-A",
             sku_code="SKU-X",
-            name="Товар X",
             size="42",
             goods_type="Оптовый",
-            qty_requested=2,
+            qty_reserved=3,
+            status=WarehouseReserve.STATUS_ACTIVE,
+        )
+        WarehouseReserve.objects.create(
+            agency=self.agency_b,
+            reserve_type=WarehouseReserve.TYPE_SHIPPING,
+            context_type="shipping",
+            context_id="SO-009999",
+            sku_code="SKU-X",
+            size="42",
+            goods_type="Оптовый",
             qty_reserved=2,
-        )
-        ShippingReserve.objects.create(
-            order=order_b,
-            item=item_b,
-            agency=self.agency_b,
-            sku_code="SKU-X",
-            size="42",
-            goods_type="Оптовый",
-            qty=2,
+            status=WarehouseReserve.STATUS_ACTIVE,
         )
 
         response = self.client.get("/sklad/journal/")
@@ -1849,27 +1858,24 @@ class InventoryJournalUiServiceTests(TestCase):
         self.other_agency = Agency.objects.create(agn_name="Другой клиент service journal")
 
     def test_build_inventory_journal_page_for_client_uses_client_template_and_filters_by_portal_user(self):
-        StockPalletState.objects.create(
+        create_warehouse_snapshot_row(
             agency=self.client_agency,
-            order_type="receiving",
             order_id="R-SVC-1",
             sku="SKU-SVC",
             name="Товар клиента",
             size="42",
             goods_type="Оптовый",
             qty=4,
-            state=StockPalletState.STATE_WAREHOUSE,
         )
-        StockPalletState.objects.create(
+        create_warehouse_snapshot_row(
             agency=self.other_agency,
-            order_type="receiving",
             order_id="R-SVC-2",
             sku="SKU-OTHER",
             name="Чужой товар",
             size="43",
             goods_type="Оптовый",
             qty=9,
-            state=StockPalletState.STATE_WAREHOUSE,
+            row=2,
         )
         request = self.factory.get("/sklad/journal/")
         request.user = self.client_user
@@ -1883,27 +1889,24 @@ class InventoryJournalUiServiceTests(TestCase):
         self.assertEqual(rows[0]["sku"], "SKU-SVC")
 
     def test_build_inventory_journal_page_for_staff_respects_agency_filter(self):
-        StockPalletState.objects.create(
+        create_warehouse_snapshot_row(
             agency=self.client_agency,
-            order_type="receiving",
             order_id="R-SVC-3",
             sku="SKU-A",
             name="Товар А",
             size="42",
             goods_type="Оптовый",
             qty=5,
-            state=StockPalletState.STATE_WAREHOUSE,
         )
-        StockPalletState.objects.create(
+        create_warehouse_snapshot_row(
             agency=self.other_agency,
-            order_type="receiving",
             order_id="R-SVC-4",
             sku="SKU-B",
             name="Товар Б",
             size="44",
             goods_type="Оптовый",
             qty=7,
-            state=StockPalletState.STATE_WAREHOUSE,
+            row=2,
         )
         request = self.factory.get("/sklad/journal/", {"client": str(self.other_agency.id)})
         request.user = self.staff_user
@@ -1915,6 +1918,35 @@ class InventoryJournalUiServiceTests(TestCase):
         rows = page["context"]["rows"]
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0]["agency_id"], self.other_agency.id)
+
+    def test_build_inventory_journal_page_uses_common_order_and_location_display_for_staff(self):
+        create_warehouse_snapshot_row(
+            agency=self.other_agency,
+            order_id="7",
+            sku="SKU-B",
+            name="Товар Б",
+            size="44",
+            goods_type="Оптовый",
+            qty=7,
+            box_code="BOX-TD-1",
+            pallet_code="ТДТ-0405-289465",
+            zone="OS",
+            row=2,
+            section=3,
+            tier=1,
+            cell=4,
+        )
+        request = self.factory.get("/sklad/journal/", {"client": str(self.other_agency.id), "q": "7_PR"})
+        request.user = self.staff_user
+
+        page = build_inventory_journal_page(request=request)
+
+        rows = page["context"]["rows"]
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["order_display"], "7_PR")
+        self.assertEqual(rows[0]["location_short"], "OS-2/3-1-4")
+        self.assertEqual(page["context"]["journal_summary"]["total_qty"], 7)
+        self.assertEqual(page["context"]["journal_focus"]["order_label"], "7_PR")
 
 
 class StockSnapshotBarcodeRecoveryTests(TestCase):
@@ -1933,13 +1965,12 @@ class StockSnapshotBarcodeRecoveryTests(TestCase):
             is_primary=True,
         )
 
-    def test_rebuild_stock_snapshot_restores_missing_barcode_from_nomenclature(self):
-        OrderAuditEntry.objects.create(
-            order_id="R-100",
-            order_type="receiving",
-            action="status",
-            agency=self.agency,
-            payload={
+    def test_replace_order_placement_restores_missing_barcode_from_nomenclature(self):
+        OperationalStockService.replace_order_placement(
+            self.agency,
+            "receiving",
+            "R-100",
+            {
                 "act": "placement",
                 "act_state": "closed",
                 "act_items": [
@@ -1954,17 +1985,15 @@ class StockSnapshotBarcodeRecoveryTests(TestCase):
             },
         )
 
-        rebuild_stock_snapshot_for_agency(self.agency)
-        stock_row = StockPalletState.objects.get(agency=self.agency, sku="SKU-BC-1", size="42")
-        self.assertEqual(stock_row.barcode, "2000999000001")
+        snapshot = WarehouseStockSnapshot.objects.get(agency=self.agency, sku_code="SKU-BC-1", size="42")
+        self.assertEqual(snapshot.barcode, "2000999000001")
 
-    def test_rebuild_stock_snapshot_keeps_explicit_payload_barcode(self):
-        OrderAuditEntry.objects.create(
-            order_id="R-101",
-            order_type="receiving",
-            action="status",
-            agency=self.agency,
-            payload={
+    def test_replace_order_placement_keeps_explicit_payload_barcode(self):
+        OperationalStockService.replace_order_placement(
+            self.agency,
+            "receiving",
+            "R-101",
+            {
                 "act": "placement",
                 "act_state": "closed",
                 "act_items": [
@@ -1979,9 +2008,8 @@ class StockSnapshotBarcodeRecoveryTests(TestCase):
             },
         )
 
-        rebuild_stock_snapshot_for_agency(self.agency)
-        stock_row = StockPalletState.objects.get(agency=self.agency, sku="SKU-BC-1", size="42")
-        self.assertEqual(stock_row.barcode, "5550001112223")
+        snapshot = WarehouseStockSnapshot.objects.get(agency=self.agency, sku_code="SKU-BC-1", size="42")
+        self.assertEqual(snapshot.barcode, "5550001112223")
 
 
 class StockSnapshotMarkedUnitsTests(TestCase):
@@ -1995,13 +2023,12 @@ class StockSnapshotMarkedUnitsTests(TestCase):
             honest_sign=True,
         )
 
-    def test_rebuild_stock_snapshot_creates_separate_rows_per_marking_code(self):
-        OrderAuditEntry.objects.create(
-            order_id="R-CZ-200",
-            order_type="receiving",
-            action="status",
-            agency=self.agency,
-            payload={
+    def test_replace_order_placement_creates_separate_rows_per_marking_code(self):
+        OperationalStockService.replace_order_placement(
+            self.agency,
+            "receiving",
+            "R-CZ-200",
+            {
                 "act": "placement",
                 "act_state": "closed",
                 "act_boxes": [
@@ -2038,10 +2065,12 @@ class StockSnapshotMarkedUnitsTests(TestCase):
             },
         )
 
-        rebuild_stock_snapshot_for_agency(self.agency)
-
         rows = list(
-            StockPalletState.objects.filter(agency=self.agency, sku="SKU-CZ-2", size="43").order_by("marking_code")
+            WarehouseStockSnapshot.objects.filter(
+                agency=self.agency,
+                sku_code="SKU-CZ-2",
+                size="43",
+            ).order_by("marking_code")
         )
         self.assertEqual(len(rows), 2)
         self.assertEqual([row.qty for row in rows], [1, 1])
@@ -2051,7 +2080,7 @@ class StockSnapshotMarkedUnitsTests(TestCase):
 class OperationalStockReadApiTests(TestCase):
     def setUp(self):
         self.agency = Agency.objects.create(agn_name="Operational Stock Read API")
-        StockPalletState.objects.create(
+        create_warehouse_snapshot_row(
             agency=self.agency,
             order_type="receiving",
             order_id="R-API-1",
@@ -2068,10 +2097,8 @@ class OperationalStockReadApiTests(TestCase):
             section=1,
             tier=1,
             cell=3,
-            location="OS · Ряд 2 · Секция 1 · Ярус 1 · Ячейка 3",
-            state=StockPalletState.STATE_WAREHOUSE,
         )
-        StockPalletState.objects.create(
+        create_warehouse_snapshot_row(
             agency=self.agency,
             order_type="receiving",
             order_id="R-API-1",
@@ -2089,10 +2116,8 @@ class OperationalStockReadApiTests(TestCase):
             section=1,
             tier=1,
             cell=3,
-            location="OS · Ряд 2 · Секция 1 · Ярус 1 · Ячейка 3",
-            state=StockPalletState.STATE_WAREHOUSE,
         )
-        StockPalletState.objects.create(
+        create_warehouse_snapshot_row(
             agency=self.agency,
             order_type="receiving",
             order_id="R-API-1",
@@ -2109,8 +2134,6 @@ class OperationalStockReadApiTests(TestCase):
             section=1,
             tier=1,
             cell=3,
-            location="OS · Ряд 2 · Секция 1 · Ярус 1 · Ячейка 3",
-            state=StockPalletState.STATE_WAREHOUSE,
         )
 
     def test_get_pallet_boxes_returns_grouped_box_structure(self):
@@ -2257,6 +2280,115 @@ class WarehouseCoreModelsTests(TestCase):
         self.assertEqual(snapshot.last_event_id, event.id)
         self.assertEqual(operation.reserve_id, reserve.id)
         self.assertEqual(task.operation_id, operation.id)
+
+    def test_receiving_sync_keeps_product_box_pallet_and_goods_type_truth(self):
+        placement = WarehouseWritePathService.sync_receiving_placement(
+            agency=self.agency,
+            order_id="RCV-TRUTH-1",
+            performed_by=self.user,
+            placement_payload={
+                "goods_type": "op",
+                "act_boxes": [
+                    {
+                        "code": "BOX-TRUTH-1",
+                        "items": [
+                            {
+                                "sku": self.sku.sku_code,
+                                "name": self.sku.name,
+                                "size": "42",
+                                "qty": 5,
+                            }
+                        ],
+                    }
+                ],
+                "act_pallets": [
+                    {
+                        "code": "PAL-TRUTH-1",
+                        "boxes": ["BOX-TRUTH-1"],
+                        "items": [],
+                    }
+                ],
+            },
+        )
+
+        self.assertEqual(len(placement.snapshot_ids), 1)
+        snapshot = WarehouseStockSnapshot.objects.select_related(
+            "container",
+            "parent_container",
+        ).get(id=placement.snapshot_ids[0])
+        self.assertEqual(snapshot.container_code, "BOX-TRUTH-1")
+        self.assertEqual(snapshot.container.container_type, WarehouseContainer.TYPE_BOX)
+        self.assertEqual(snapshot.parent_container.container_code, "PAL-TRUTH-1")
+        self.assertEqual(snapshot.goods_type, "op")
+
+        rows = snapshot_stock_rows(agency=self.agency)
+        row = next(row for row in rows if row["order_id"] == "RCV-TRUTH-1")
+        self.assertEqual(row["sku"], self.sku.sku_code)
+        self.assertEqual(row["box_code"], "BOX-TRUTH-1")
+        self.assertEqual(row["pallet_code"], "PAL-TRUTH-1")
+        self.assertEqual(row["goods_type"], "op")
+        self.assertEqual(row["zone"], "PR")
+
+    def test_receiving_putaway_by_pallet_moves_child_boxes_and_container_location(self):
+        placement = WarehouseWritePathService.create_receiving_placement(
+            agency=self.agency,
+            order_id="RCV-TRUTH-2",
+            performed_by=self.user,
+            items=[
+                {
+                    "sku_code": self.sku.sku_code,
+                    "name": self.sku.name,
+                    "size": "43",
+                    "goods_type": "gv",
+                    "qty": 7,
+                    "pallet_code": "PAL-TRUTH-2",
+                    "box_code": "BOX-TRUTH-2",
+                }
+            ],
+        )
+        snapshot = WarehouseStockSnapshot.objects.select_related(
+            "container",
+            "parent_container",
+        ).get(id=placement.snapshot_ids[0])
+
+        operation = WarehouseWritePathService.request_putaway_for_receiving(
+            agency=self.agency,
+            order_id="RCV-TRUTH-2",
+            container_codes=["PAL-TRUTH-2"],
+            destination_zone_code="OS",
+            destination_row_no=3,
+            destination_section_no=2,
+            destination_tier_no=1,
+            destination_cell_no=4,
+            requested_by=self.user,
+            requested_by_role="storekeeper",
+        )
+
+        task = operation.tasks.select_related("container").get()
+        self.assertEqual(task.task_type, WarehouseOperationTask.TYPE_PALLET_MOVE)
+        self.assertEqual(task.container.container_code, "PAL-TRUTH-2")
+        self.assertEqual(task.qty_planned, 7)
+        snapshot.refresh_from_db()
+        self.assertEqual(snapshot.active_operation_id, operation.id)
+
+        WarehouseWritePathService.complete_putaway_operation(
+            operation=operation,
+            performed_by=self.user,
+        )
+
+        snapshot.refresh_from_db()
+        snapshot.container.refresh_from_db()
+        snapshot.parent_container.refresh_from_db()
+        completed_event = WarehouseEvent.objects.filter(
+            stock_context_type="receiving",
+            stock_context_id="RCV-TRUTH-2",
+            event_type=WarehouseEventType.PUTAWAY_COMPLETED.value,
+        ).latest("id")
+        self.assertEqual(snapshot.zone_code, "OS")
+        self.assertEqual(snapshot.location.row_no, 3)
+        self.assertEqual(snapshot.container.current_location_id, snapshot.location_id)
+        self.assertEqual(snapshot.parent_container.current_location_id, snapshot.location_id)
+        self.assertEqual(completed_event.container.container_code, "PAL-TRUTH-2")
 
     def test_receiving_write_path_moves_snapshot_from_placement_to_stored(self):
         placement = WarehouseWritePathService.create_receiving_placement(

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from django.db import models
 
-from sklad.models import StockPalletState, WarehouseContainer, WarehouseStockSnapshot
+from sklad.models import WarehouseContainer, WarehouseStockSnapshot
 
 _PALLET_CONTAINER_TYPES = {
     WarehouseContainer.TYPE_PALLET,
@@ -138,36 +138,6 @@ def normalize_stock_row_from_snapshot(snapshot: WarehouseStockSnapshot) -> dict 
     }
 
 
-def normalize_stock_row_from_state(stock_row: StockPalletState) -> dict:
-    return {
-        "id": int(stock_row.pk or 0),
-        "agency": stock_row.agency,
-        "agency_id": int(stock_row.agency_id or 0),
-        "order_type": _clean_text(stock_row.order_type),
-        "order_id": _clean_text(stock_row.order_id),
-        "sku": _clean_text(stock_row.sku),
-        "sku_ref_id": int(stock_row.sku_ref_id or 0),
-        "name": _clean_text(stock_row.name),
-        "size": _clean_text(stock_row.size),
-        "barcode": _clean_text(stock_row.barcode),
-        "goods_type": _clean_text(stock_row.goods_type),
-        "qty": int(stock_row.qty or 0),
-        "available_qty": int(stock_row.available_qty or 0),
-        "processing_reserved_qty": int(stock_row.processing_reserved_qty or 0),
-        "shipping_reserved_qty": int(stock_row.shipping_reserved_qty or 0),
-        "pallet_code": _clean_text(stock_row.pallet_code),
-        "box_code": _clean_text(stock_row.box_code),
-        "zone": _normalize_zone(stock_row.zone),
-        "row": _int_value(stock_row.row),
-        "section": _int_value(stock_row.section),
-        "tier": _int_value(stock_row.tier),
-        "cell": _int_value(stock_row.cell),
-        "location": _clean_text(stock_row.location),
-        "created_at": stock_row.created_at,
-        "updated_at": stock_row.updated_at,
-    }
-
-
 def snapshot_stock_rows(
     *,
     agency=None,
@@ -222,7 +192,3 @@ def snapshot_stock_rows(
                 continue
         rows.append(row)
     return rows
-
-
-def legacy_stock_rows(qs) -> list[dict]:
-    return [normalize_stock_row_from_state(row) for row in qs]

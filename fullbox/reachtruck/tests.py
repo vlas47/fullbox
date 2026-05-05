@@ -2,6 +2,7 @@ import json
 from unittest import mock
 
 from django.contrib.auth import get_user_model
+from django.db.models import Q
 from django.test import RequestFactory, SimpleTestCase, TestCase
 
 from audit.models import OrderAuditEntry
@@ -10,8 +11,6 @@ from orders.views import _create_receiving_warehouse_moves
 from processing_app.views import _replace_processing_reserves
 from sku.models import Agency
 from sklad.models import (
-    InventoryState,
-    StockPalletState,
     WarehouseContainer,
     WarehouseLocation,
     WarehouseOperation,
@@ -19,14 +18,26 @@ from sklad.models import (
     WarehouseReserve,
     WarehouseStockSnapshot,
 )
+from sklad.services.warehouse_transitions import WarehouseStateCode
+from sklad.services.warehouse_write_path import WarehouseWritePathService
 from sklad.services.stock_operations import OperationalStockService
 from .models import MoveRequest, MoveTask
 from .services import (
     build_mobile_execution_snapshot,
+    build_mobile_request_execution_snapshot,
     complete_move_task,
     create_stock_move_task,
+    scan_move_request_step,
     scan_move_task_step,
+    take_move_request,
     take_move_task,
+)
+from .services.task_commands import (
+    display_scan_text,
+    _location_scan_code,
+    _same_location_scan,
+    _same_pallet_code_scan,
+    _same_scan_value,
 )
 
 from .views import (
@@ -46,6 +57,183 @@ from .views import (
     _resolve_box_partial_codes,
     _resolve_otg_box_codes,
 )
+
+
+def _warehouse_zone_kind(zone: str) -> str:
+    return {
+        "PR": WarehouseLocation.ZONE_KIND_RECEIVING,
+        "OS": WarehouseLocation.ZONE_KIND_STORAGE,
+        "OBR": WarehouseLocation.ZONE_KIND_PROCESSING,
+        "OTG": WarehouseLocation.ZONE_KIND_SHIPPING,
+    }.get(str(zone or "").strip().upper(), WarehouseLocation.ZONE_KIND_STORAGE)
+
+
+def _warehouse_state_for_zone(zone: str) -> str:
+    return {
+        "PR": WarehouseStateCode.PLACED_IN_RECEIVING.value,
+        "OS": WarehouseStateCode.STORED.value,
+        "OBR": WarehouseStateCode.IN_PROCESSING_ZONE.value,
+        "OTG": WarehouseStateCode.IN_OTG.value,
+    }.get(str(zone or "").strip().upper(), WarehouseStateCode.STORED.value)
+
+
+def _warehouse_location_label(zone: str, row: int = 0, section: int = 0, tier: int = 0, cell: int = 0, location: str = "") -> str:
+    if location:
+        return location
+    zone = str(zone or "").strip().upper()
+    if zone == "PR":
+        return "PR · Зона приемки"
+    if zone == "OTG":
+        return "OTG · Зона отгрузки"
+    if zone == "OBR":
+        return "OBR · Зона обработки"
+    if zone == "OS" and row and section and tier and cell:
+        return f"OS · Ряд {row} · Секция {section} · Ярус {tier} · Ячейка {cell}"
+    return zone or "OS"
+
+
+def create_warehouse_snapshot_row(
+    *,
+    agency: Agency,
+    order_type: str = "receiving",
+    order_id: str = "1",
+    sku: str = "SKU-1",
+    name: str = "",
+    size: str = "",
+    barcode: str = "",
+    goods_type: str = "",
+    qty: int = 1,
+    available_qty: int | None = None,
+    processing_reserved_qty: int = 0,
+    shipping_reserved_qty: int = 0,
+    box_code: str = "",
+    pallet_code: str,
+    zone: str = "OS",
+    row: int = 0,
+    section: int = 0,
+    tier: int = 0,
+    cell: int = 0,
+    location: str = "",
+) -> WarehouseStockSnapshot:
+    zone_code = str(zone or "").strip().upper()
+    location_obj, _ = WarehouseLocation.objects.get_or_create(
+        warehouse_code="MSK",
+        zone_code=zone_code,
+        row_no=int(row or 0),
+        section_no=int(section or 0),
+        tier_no=int(tier or 0),
+        cell_no=int(cell or 0),
+        defaults={
+            "zone_kind": _warehouse_zone_kind(zone_code),
+            "display_name": _warehouse_location_label(zone_code, row, section, tier, cell, location),
+        },
+    )
+    pallet, _ = WarehouseContainer.objects.get_or_create(
+        agency=agency,
+        container_code=pallet_code,
+        defaults={
+            "container_type": WarehouseContainer.TYPE_PALLET,
+            "current_location": location_obj,
+            "source_context_type": order_type,
+            "source_context_id": str(order_id),
+        },
+    )
+    if pallet.current_location_id != location_obj.id:
+        pallet.current_location = location_obj
+        pallet.save(update_fields=["current_location", "updated_at"])
+    container = pallet
+    parent_container = None
+    container_code = pallet_code
+    if box_code:
+        container, _ = WarehouseContainer.objects.get_or_create(
+            agency=agency,
+            container_code=box_code,
+            defaults={
+                "container_type": WarehouseContainer.TYPE_BOX,
+                "parent_container": pallet,
+                "current_location": location_obj,
+                "source_context_type": order_type,
+                "source_context_id": str(order_id),
+            },
+        )
+        changed_fields = []
+        if container.parent_container_id != pallet.id:
+            container.parent_container = pallet
+            changed_fields.append("parent_container")
+        if container.current_location_id != location_obj.id:
+            container.current_location = location_obj
+            changed_fields.append("current_location")
+        if changed_fields:
+            container.save(update_fields=[*changed_fields, "updated_at"])
+        parent_container = pallet
+        container_code = box_code
+    return WarehouseStockSnapshot.objects.create(
+        agency=agency,
+        source_context_type=order_type,
+        source_context_id=str(order_id),
+        sku_code=sku,
+        name=name,
+        size=size,
+        barcode=barcode,
+        goods_type=goods_type,
+        qty=int(qty or 0),
+        available_qty=int(available_qty if available_qty is not None else qty or 0),
+        processing_reserved_qty=int(processing_reserved_qty or 0),
+        shipping_reserved_qty=int(shipping_reserved_qty or 0),
+        container=container,
+        container_code=container_code,
+        parent_container=parent_container,
+        location=location_obj,
+        zone_code=zone_code,
+        zone_kind=location_obj.zone_kind,
+        warehouse_state_code=_warehouse_state_for_zone(zone_code),
+    )
+
+
+def move_warehouse_pallet(
+    *,
+    agency: Agency,
+    pallet_code: str,
+    zone: str,
+    row: int = 0,
+    section: int = 0,
+    tier: int = 0,
+    cell: int = 0,
+    location: str = "",
+) -> int:
+    zone_code = str(zone or "").strip().upper()
+    location_obj, _ = WarehouseLocation.objects.get_or_create(
+        warehouse_code="MSK",
+        zone_code=zone_code,
+        row_no=int(row or 0),
+        section_no=int(section or 0),
+        tier_no=int(tier or 0),
+        cell_no=int(cell or 0),
+        defaults={
+            "zone_kind": _warehouse_zone_kind(zone_code),
+            "display_name": _warehouse_location_label(zone_code, row, section, tier, cell, location),
+        },
+    )
+    snapshots = list(
+        WarehouseStockSnapshot.objects.filter(agency=agency, is_archived=False)
+        .filter(
+            Q(container__container_code=pallet_code)
+            | Q(parent_container__container_code=pallet_code)
+            | Q(container_code=pallet_code)
+        )
+        .select_related("container", "parent_container")
+    )
+    for snapshot in snapshots:
+        snapshot.location = location_obj
+        snapshot.zone_code = zone_code
+        snapshot.zone_kind = location_obj.zone_kind
+        snapshot.warehouse_state_code = _warehouse_state_for_zone(zone_code)
+        snapshot.save(update_fields=["location", "zone_code", "zone_kind", "warehouse_state_code", "updated_at"])
+        for container in (snapshot.container, snapshot.parent_container):
+            if container and container.current_location_id != location_obj.id:
+                container.current_location = location_obj
+                container.save(update_fields=["current_location", "updated_at"])
+    return len(snapshots)
 
 
 class ReachtruckHelpersTests(SimpleTestCase):
@@ -114,6 +302,36 @@ class ReachtruckHelpersTests(SimpleTestCase):
         self.assertEqual((pallets[0].get("location") or {}).get("zone"), "OS")
         box1 = next(box for box in placement_payload["act_boxes"] if box.get("code") == "BOX-1")
         self.assertEqual((box1.get("location") or {}).get("zone"), "OTG")
+
+    def test_same_scan_value_accepts_common_mojibake_for_cyrillic_pallet_codes(self):
+        expected = "ТДТ-3004-247635-gv"
+        mojibake_cp1251 = expected.encode("utf-8").decode("cp1251")
+        mojibake_cp1252 = expected.encode("utf-8").decode("cp1252")
+        mojibake_latin1 = expected.encode("cp1251").decode("latin1")
+
+        self.assertTrue(_same_scan_value(mojibake_cp1251, expected))
+        self.assertTrue(_same_scan_value(mojibake_cp1252, expected))
+        self.assertTrue(_same_scan_value(mojibake_latin1, expected))
+
+    def test_same_pallet_code_scan_accepts_matching_numeric_tail(self):
+        expected = "ТДТ-3004-247635-gv"
+        self.assertTrue(_same_pallet_code_scan("???-3004-247635-xx", expected))
+
+    def test_display_scan_text_repairs_gbk_mojibake_for_cyrillic_pallet_codes(self):
+        expected = "ТДТ-3004-247635-gv"
+        mojibake_gbk = expected.encode("utf-8").decode("gb18030")
+        self.assertEqual(display_scan_text(mojibake_gbk), expected)
+
+    def test_location_scan_code_uses_stockmap_os_format(self):
+        self.assertEqual(
+            _location_scan_code({"zone": "OS", "row": 3, "section": 6, "tier": 3, "cell": 2}),
+            "E-3/3-2",
+        )
+
+    def test_same_location_scan_accepts_stockmap_and_legacy_os_codes(self):
+        location = {"zone": "OS", "row": 3, "section": 6, "tier": 3, "cell": 2}
+        self.assertTrue(_same_location_scan("E-3/3-2", location))
+        self.assertTrue(_same_location_scan("OS-3-6-3-2", location))
 
     def test_move_boxes_to_otg_deletes_empty_pallet(self):
         placement_payload = {
@@ -246,7 +464,7 @@ class ReachtruckHelpersTests(SimpleTestCase):
 
     def test_pallet_box_plan_marks_single_matching_obr_box_as_deliver(self):
         agency = Agency.objects.create(agn_name="Клиент OBR одного короба")
-        StockPalletState.objects.create(
+        create_warehouse_snapshot_row(
             agency=agency,
             order_type="receiving",
             order_id="3",
@@ -262,7 +480,6 @@ class ReachtruckHelpersTests(SimpleTestCase):
             tier=1,
             cell=3,
             location="OS · Ряд 1 · Секция 1 · Ярус 1 · Ячейка 3",
-            state=StockPalletState.STATE_WAREHOUSE,
         )
         payload = {
             "move_mode": MOVE_MODE_BOX_PARTIAL,
@@ -300,7 +517,7 @@ class ReachtruckMoveRequestTests(TestCase):
             is_active=True,
         )
         self.agency = Agency.objects.create(agn_name="ООО Тест Клиент")
-        StockPalletState.objects.create(
+        create_warehouse_snapshot_row(
             agency=self.agency,
             order_type="receiving",
             order_id="R-100",
@@ -311,7 +528,6 @@ class ReachtruckMoveRequestTests(TestCase):
             pallet_code="PAL-100",
             zone="PR",
             location="PR",
-            state=StockPalletState.STATE_WAREHOUSE,
         )
         self.client.login(username="processing_head_test", password="pwd")
 
@@ -324,33 +540,18 @@ class ReachtruckMoveRequestTests(TestCase):
         zone_kind: str = WarehouseLocation.ZONE_KIND_RECEIVING,
         display_name: str = "PR · Зона приемки",
     ) -> WarehouseStockSnapshot:
-        location = WarehouseLocation.objects.create(
-            warehouse_code="MSK",
-            zone_code=zone_code,
-            zone_kind=zone_kind,
-            display_name=display_name,
-        )
-        pallet = WarehouseContainer.objects.create(
+        del zone_kind
+        return create_warehouse_snapshot_row(
             agency=self.agency,
-            container_type=WarehouseContainer.TYPE_PALLET,
-            container_code=pallet_code,
-            current_location=location,
-        )
-        return WarehouseStockSnapshot.objects.create(
-            agency=self.agency,
-            source_context_type="receiving",
-            source_context_id="R-100",
-            sku_code="SKU-100",
+            order_type="receiving",
+            order_id="R-100",
+            sku="SKU-100",
             barcode="200000000100",
             goods_type="gv",
             qty=qty,
-            available_qty=qty,
-            container=pallet,
-            container_code=pallet.container_code,
-            location=location,
-            zone_code=zone_code,
-            zone_kind=location.zone_kind,
-            warehouse_state_code="placed_in_receiving" if zone_code == "PR" else "stored",
+            pallet_code=pallet_code,
+            zone=zone_code,
+            location=display_name,
         )
 
     def test_create_move_request_plans_tasks_from_items(self):
@@ -382,7 +583,8 @@ class ReachtruckMoveRequestTests(TestCase):
         self.assertEqual(task.to_zone, "OBR")
 
     def test_create_move_request_uses_warehouse_snapshot_when_legacy_rows_missing(self):
-        StockPalletState.objects.filter(agency=self.agency).delete()
+        WarehouseStockSnapshot.objects.filter(agency=self.agency).delete()
+        WarehouseContainer.objects.filter(agency=self.agency).delete()
         self._create_snapshot_pallet()
 
         response = self.client.post(
@@ -411,7 +613,9 @@ class ReachtruckMoveRequestTests(TestCase):
         self.assertEqual(task.to_zone, "OBR")
 
     def test_create_move_request_with_processing_order_links_warehouse_operation(self):
-        StockPalletState.objects.filter(agency=self.agency, pallet_code="PAL-100").update(
+        move_warehouse_pallet(
+            agency=self.agency,
+            pallet_code="PAL-100",
             zone="OS",
             row=1,
             section=1,
@@ -470,7 +674,9 @@ class ReachtruckMoveRequestTests(TestCase):
             user=driver_user,
             is_active=True,
         )
-        StockPalletState.objects.filter(agency=self.agency, pallet_code="PAL-100").update(
+        move_warehouse_pallet(
+            agency=self.agency,
+            pallet_code="PAL-100",
             zone="OS",
             row=1,
             section=1,
@@ -554,7 +760,9 @@ class ReachtruckMoveRequestTests(TestCase):
             user=driver_user,
             is_active=True,
         )
-        StockPalletState.objects.filter(agency=self.agency, pallet_code="PAL-100").update(
+        move_warehouse_pallet(
+            agency=self.agency,
+            pallet_code="PAL-100",
             zone="OS",
             row=1,
             section=1,
@@ -664,7 +872,7 @@ class ReachtruckMoveRequestTests(TestCase):
         self.assertEqual(request_obj.status, MoveRequest.STATUS_PARTIAL)
 
     def test_create_move_request_uses_explicit_requested_rows(self):
-        StockPalletState.objects.create(
+        create_warehouse_snapshot_row(
             agency=self.agency,
             order_type="receiving",
             order_id="R-102",
@@ -680,9 +888,8 @@ class ReachtruckMoveRequestTests(TestCase):
             tier=1,
             cell=2,
             location="OS · Ряд 1 · Секция 1 · Ярус 1 · Ячейка 2",
-            state=StockPalletState.STATE_WAREHOUSE,
         )
-        StockPalletState.objects.create(
+        create_warehouse_snapshot_row(
             agency=self.agency,
             order_type="receiving",
             order_id="R-102",
@@ -698,7 +905,6 @@ class ReachtruckMoveRequestTests(TestCase):
             tier=1,
             cell=2,
             location="OS · Ряд 1 · Секция 1 · Ярус 1 · Ячейка 2",
-            state=StockPalletState.STATE_WAREHOUSE,
         )
         OrderAuditEntry.objects.create(
             order_id="R-102",
@@ -784,7 +990,7 @@ class ReachtruckMoveRequestTests(TestCase):
         self.assertEqual(deliver_codes, ["BOX-100", "BOX-101"])
 
     def test_create_move_request_prefers_minimal_number_of_pallets(self):
-        StockPalletState.objects.create(
+        create_warehouse_snapshot_row(
             agency=self.agency,
             order_type="receiving",
             order_id="R-101",
@@ -795,7 +1001,6 @@ class ReachtruckMoveRequestTests(TestCase):
             pallet_code="PAL-200",
             zone="OS",
             location="OS",
-            state=StockPalletState.STATE_WAREHOUSE,
         )
 
         response = self.client.post(
@@ -883,7 +1088,7 @@ class ReachtruckMoveRequestTests(TestCase):
             ("BOX-32", "2000215562636"),
             ("BOX-36", "2000215562667"),
         ]:
-            StockPalletState.objects.create(
+            create_warehouse_snapshot_row(
                 agency=self.agency,
                 order_type="receiving",
                 order_id="R-BOX-1",
@@ -899,7 +1104,6 @@ class ReachtruckMoveRequestTests(TestCase):
                 tier=1,
                 cell=1,
                 location="OS · Ряд 1 · Секция 1 · Ярус 1 · Ячейка 1",
-                state=StockPalletState.STATE_WAREHOUSE,
             )
         create_stock_move_task(
             user=self.user,
@@ -942,7 +1146,7 @@ class ReachtruckMoveRequestTests(TestCase):
         self.assertNotContains(response, "Что нужно подать")
         self.assertNotContains(response, "План по коробам с палеты")
 
-    def test_complete_partial_obr_move_updates_processing_reserve_without_audit(self):
+    def test_complete_partial_obr_move_updates_warehouse_snapshot_without_audit(self):
         driver_user = get_user_model().objects.create_user(username="reachtruck_driver_obr_reserve", password="pwd")
         driver_employee = Employee.objects.create(
             full_name="Водитель Ричтрака OBR",
@@ -950,7 +1154,7 @@ class ReachtruckMoveRequestTests(TestCase):
             user=driver_user,
             is_active=True,
         )
-        StockPalletState.objects.create(
+        create_warehouse_snapshot_row(
             agency=self.agency,
             order_type="receiving",
             order_id="R-OBR-1",
@@ -969,18 +1173,6 @@ class ReachtruckMoveRequestTests(TestCase):
             cell=1,
             location="OS · Ряд 1 · Секция 1 · Ярус 1 · Ячейка 1",
             available_qty=100,
-            state=StockPalletState.STATE_WAREHOUSE,
-        )
-        InventoryState.objects.create(
-            agency=self.agency,
-            order_type="processing",
-            order_id="1",
-            sku="SKU-100",
-            size="31",
-            barcode="2000215562629",
-            goods_type="gv",
-            qty=20,
-            state=InventoryState.STATE_PROCESSING,
         )
         move_id = create_stock_move_task(
             user=self.user,
@@ -1031,15 +1223,11 @@ class ReachtruckMoveRequestTests(TestCase):
         )
 
         self.assertTrue(complete_result.ok, complete_result.error)
-        self.assertFalse(
-            InventoryState.objects.filter(
-                agency=self.agency,
-                order_type="processing",
-                order_id="1",
-                state=InventoryState.STATE_PROCESSING,
-            ).exists()
+        stock_row = WarehouseStockSnapshot.objects.get(
+            agency=self.agency,
+            container__container_code="BOX-31",
+            is_archived=False,
         )
-        stock_row = StockPalletState.objects.get(agency=self.agency, box_code="BOX-31")
         self.assertEqual(stock_row.qty, 80)
         self.assertEqual(stock_row.available_qty, 80)
 
@@ -1051,7 +1239,7 @@ class ReachtruckMoveRequestTests(TestCase):
             user=driver_user,
             is_active=True,
         )
-        StockPalletState.objects.create(
+        create_warehouse_snapshot_row(
             agency=self.agency,
             order_type="receiving",
             order_id="R-200",
@@ -1063,7 +1251,6 @@ class ReachtruckMoveRequestTests(TestCase):
             pallet_code="PAL-OTG",
             zone="PR",
             location="PR · Зона приемки",
-            state=StockPalletState.STATE_WAREHOUSE,
         )
         move_id = create_stock_move_task(
             user=self.user,
@@ -1124,7 +1311,7 @@ class ReachtruckMoveRequestTests(TestCase):
             user=driver_user,
             is_active=True,
         )
-        StockPalletState.objects.create(
+        create_warehouse_snapshot_row(
             agency=self.agency,
             order_type="receiving",
             order_id="R-201",
@@ -1136,7 +1323,6 @@ class ReachtruckMoveRequestTests(TestCase):
             pallet_code="PAL-SERVICE",
             zone="PR",
             location="PR · Зона приемки",
-            state=StockPalletState.STATE_WAREHOUSE,
         )
         move_id = create_stock_move_task(
             user=self.user,
@@ -1196,7 +1382,7 @@ class ReachtruckMoveRequestTests(TestCase):
             user=driver_user,
             is_active=True,
         )
-        StockPalletState.objects.create(
+        create_warehouse_snapshot_row(
             agency=self.agency,
             order_type="receiving",
             order_id="R-203",
@@ -1214,7 +1400,6 @@ class ReachtruckMoveRequestTests(TestCase):
             tier=1,
             cell=1,
             location="OS · Ряд 1 · Секция 1 · Ярус 1 · Ячейка 1",
-            state=StockPalletState.STATE_WAREHOUSE,
         )
         move_id = create_stock_move_task(
             user=self.user,
@@ -1261,10 +1446,14 @@ class ReachtruckMoveRequestTests(TestCase):
         task = MoveTask.objects.get(legacy_order_id=move_id)
         self.assertEqual(task.status, MoveTask.STATUS_DONE)
 
-        moved_row = StockPalletState.objects.get(agency=self.agency, box_code="BOX-OP")
-        self.assertEqual(moved_row.pallet_code, "")
-        self.assertEqual(moved_row.zone, "OTG")
-        self.assertEqual(moved_row.location, "OTG · Зона отгрузки")
+        moved_row = WarehouseStockSnapshot.objects.get(
+            agency=self.agency,
+            container__container_code="BOX-OP",
+            is_archived=False,
+        )
+        self.assertEqual(moved_row.parent_container_id, None)
+        self.assertEqual(moved_row.zone_code, "OTG")
+        self.assertEqual(moved_row.location.display_name, "OTG · Зона отгрузки")
         self.assertEqual(moved_row.available_qty, 12)
 
     def test_complete_move_uses_task_status_when_payload_status_is_stale(self):
@@ -1275,7 +1464,7 @@ class ReachtruckMoveRequestTests(TestCase):
             user=driver_user,
             is_active=True,
         )
-        StockPalletState.objects.create(
+        create_warehouse_snapshot_row(
             agency=self.agency,
             order_type="receiving",
             order_id="R-202",
@@ -1287,7 +1476,6 @@ class ReachtruckMoveRequestTests(TestCase):
             pallet_code="PAL-STALE",
             zone="PR",
             location="PR · Зона приемки",
-            state=StockPalletState.STATE_WAREHOUSE,
         )
         move_id = create_stock_move_task(
             user=self.user,
@@ -1389,6 +1577,12 @@ class ReachtruckMoveRequestTests(TestCase):
             "R-WH-1",
             placement_entry.payload,
         )
+        WarehouseWritePathService.sync_receiving_placement(
+            agency=self.agency,
+            order_id="R-WH-1",
+            placement_payload=placement_entry.payload,
+            performed_by=self.user,
+        )
         request = RequestFactory().post("/orders/receiving/R-WH-1/create-warehouse-moves/")
         request.user = self.user
         created, skipped_existing, skipped_missing, total = _create_receiving_warehouse_moves(
@@ -1436,7 +1630,7 @@ class ReachtruckMoveRequestTests(TestCase):
 class ReachtruckPalletBoxPlanTests(TestCase):
     def test_pallet_box_plan_marks_all_boxes_deliver_for_full_pallet_move(self):
         agency = Agency.objects.create(agn_name="Клиент полной паллеты")
-        StockPalletState.objects.create(
+        create_warehouse_snapshot_row(
             agency=agency,
             order_type="receiving",
             order_id="10",
@@ -1452,7 +1646,6 @@ class ReachtruckPalletBoxPlanTests(TestCase):
             tier=1,
             cell=4,
             location="OS · Ряд 1 · Секция 1 · Ярус 1 · Ячейка 4",
-            state=StockPalletState.STATE_WAREHOUSE,
         )
         payload = {
             "move_mode": MOVE_MODE_PALLET_FULL,
@@ -1467,7 +1660,7 @@ class ReachtruckPalletBoxPlanTests(TestCase):
 
     def test_pallet_box_plan_marks_deliver_then_return(self):
         agency = Agency.objects.create(agn_name="Клиент коробов паллеты")
-        StockPalletState.objects.create(
+        create_warehouse_snapshot_row(
             agency=agency,
             order_type="receiving",
             order_id="1",
@@ -1483,9 +1676,8 @@ class ReachtruckPalletBoxPlanTests(TestCase):
             tier=1,
             cell=1,
             location="OS · Ряд 1 · Секция 1 · Ярус 1 · Ячейка 1",
-            state=StockPalletState.STATE_WAREHOUSE,
         )
-        StockPalletState.objects.create(
+        create_warehouse_snapshot_row(
             agency=agency,
             order_type="receiving",
             order_id="1",
@@ -1501,7 +1693,6 @@ class ReachtruckPalletBoxPlanTests(TestCase):
             tier=1,
             cell=1,
             location="OS · Ряд 1 · Секция 1 · Ярус 1 · Ячейка 1",
-            state=StockPalletState.STATE_WAREHOUSE,
         )
         payload = {
             "move_mode": MOVE_MODE_BOX_PARTIAL,
@@ -1518,7 +1709,7 @@ class ReachtruckPalletBoxPlanTests(TestCase):
     def test_pallet_box_plan_marks_duplicate_barcode_box_as_return(self):
         agency = Agency.objects.create(agn_name="Клиент дублей коробов")
         for box_code in ["BOX-A", "BOX-B"]:
-            StockPalletState.objects.create(
+            create_warehouse_snapshot_row(
                 agency=agency,
                 order_type="receiving",
                 order_id="2",
@@ -1534,7 +1725,6 @@ class ReachtruckPalletBoxPlanTests(TestCase):
                 tier=1,
                 cell=2,
                 location="OS · Ряд 1 · Секция 1 · Ярус 1 · Ячейка 2",
-                state=StockPalletState.STATE_WAREHOUSE,
             )
         payload = {
             "move_mode": MOVE_MODE_BOX_PARTIAL,
@@ -1552,7 +1742,7 @@ class ReachtruckPalletBoxPlanTests(TestCase):
 class ReachtruckCollectMovesTests(TestCase):
     def test_collect_moves_uses_operational_stock_for_box_plans(self):
         agency = Agency.objects.create(agn_name="Клиент lookup")
-        StockPalletState.objects.create(
+        create_warehouse_snapshot_row(
             agency=agency,
             order_type="receiving",
             order_id="R-LOOKUP",
@@ -1568,7 +1758,6 @@ class ReachtruckCollectMovesTests(TestCase):
             tier=1,
             cell=5,
             location="OS · Ряд 1 · Секция 1 · Ярус 1 · Ячейка 5",
-            state=StockPalletState.STATE_WAREHOUSE,
         )
         OrderAuditEntry.objects.create(
             order_id="MOVE-LOOKUP",
@@ -1595,6 +1784,84 @@ class ReachtruckCollectMovesTests(TestCase):
         self.assertEqual(active[0]["pallet_box_plan"][0]["box_code"], "BOX-LOOKUP")
         self.assertEqual(active[0]["box_execution_plan"][0]["box_code"], "BOX-LOOKUP")
 
+    def test_collect_moves_includes_move_tasks_without_stock_move_audit_entries(self):
+        user_model = get_user_model()
+        driver_user = user_model.objects.create_user(username="reachtruck_collect_driver", password="pwd")
+        driver_employee = Employee.objects.create(
+            full_name="Водитель выборки",
+            role="reachtruck_driver",
+            user=driver_user,
+            is_active=True,
+        )
+        agency = Agency.objects.create(agn_name="Клиент без аудита")
+        create_warehouse_snapshot_row(
+            agency=agency,
+            order_type="receiving",
+            order_id="91",
+            sku="SKU-1",
+            barcode="200000000991",
+            goods_type="gv",
+            qty=10,
+            box_code="BOX-NO-AUDIT",
+            pallet_code="PAL-NO-AUDIT",
+            zone="PR",
+            row=1,
+            section=1,
+            tier=1,
+            cell=1,
+            location="PR · Зона приемки",
+        )
+        move_request = MoveRequest.objects.create(
+            context_type=MoveRequest.CONTEXT_RECEIVING,
+            context_id="91",
+            agency=agency,
+            destination_zone="OS",
+            destination_row=1,
+            destination_section=1,
+            destination_tier=1,
+            destination_cell=1,
+            status=MoveRequest.STATUS_IN_PROGRESS,
+        )
+        MoveTask.objects.create(
+            request=move_request,
+            legacy_order_id="MOVE-NO-AUDIT",
+            pallet_code="PAL-NO-AUDIT",
+            from_zone="PR",
+            to_zone="OS",
+            to_row=1,
+            to_section=1,
+            to_tier=1,
+            to_cell=1,
+            move_mode=MOVE_MODE_PALLET_FULL,
+            status=MoveTask.STATUS_IN_PROGRESS,
+            assigned_to=driver_user,
+            assigned_to_name=driver_employee.full_name,
+            payload={
+                "status": "in_progress",
+                "status_label": "В работе",
+                "receiving_order_id": "91",
+                "pallet_code": "PAL-NO-AUDIT",
+                "from_location": {"zone": "PR"},
+                "to_location": {"zone": "OS", "row": 1, "section": 1, "tier": 1, "cell": 1},
+                "from_label": "PR · Зона приемки",
+                "to_label": "OS · Ряд 1 · Секция 1 · Ярус 1 · Ячейка 1",
+                "move_mode": MOVE_MODE_PALLET_FULL,
+                "pick_mode": "full",
+                "assigned_to_id": driver_employee.id,
+                "assigned_to_name": driver_employee.full_name,
+                "mobile_request_batch_mode": True,
+            },
+        )
+
+        active, done = _collect_moves(employee_id=driver_employee.id, driver_view=True)
+
+        self.assertEqual(len(done), 0)
+        self.assertEqual(len(active), 1)
+        self.assertEqual(active[0]["order_id"], "MOVE-NO-AUDIT")
+        self.assertEqual(active[0]["assigned_to_id"], driver_employee.id)
+        self.assertEqual(active[0]["mobile_request_key"], "receiving:91")
+        self.assertEqual(active[0]["mobile_category"], "movement")
+
 
 class ReachtruckMobileFlowTests(TestCase):
     def setUp(self):
@@ -1617,9 +1884,16 @@ class ReachtruckMobileFlowTests(TestCase):
         self.agency = Agency.objects.create(agn_name="ИП Талеев ПП")
         self.client.force_login(self.driver_user)
 
+    def test_mobile_dashboard_includes_scan_audio_assets(self):
+        response = self.client.get("/reachtruck/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, '/static/reachtruck/audio/scan-success.mp3')
+        self.assertContains(response, '/static/reachtruck/audio/scan-error.mp3')
+
     def _create_placement(self, *, pallet_code: str, boxes: list[tuple[str, str, int]], zone: str = "OS"):
         for code, barcode, qty in boxes:
-            StockPalletState.objects.create(
+            create_warehouse_snapshot_row(
                 agency=self.agency,
                 order_type="receiving",
                 order_id=f"R-{pallet_code}",
@@ -1639,7 +1913,6 @@ class ReachtruckMobileFlowTests(TestCase):
                     if zone == "OS"
                     else "PR · Зона приемки"
                 ),
-                state=StockPalletState.STATE_WAREHOUSE,
             )
 
     def test_mobile_dashboard_shows_categories_and_filtered_task_buttons(self):
@@ -1684,7 +1957,8 @@ class ReachtruckMobileFlowTests(TestCase):
 
         response = self.client.get("/reachtruck/?mobile_category=shipping&mobile_request=shipping:SO-000002")
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, f"/reachtruck/?mobile_category=shipping&amp;mobile_request=shipping:SO-000002&amp;mobile_task={move_id}")
+        self.assertContains(response, "Взять заявку в работу")
+        self.assertNotContains(response, f"/reachtruck/?mobile_category=shipping&amp;mobile_request=shipping:SO-000002&amp;mobile_task={move_id}")
 
     def test_mobile_movement_uses_receiving_number_when_task_belongs_to_receiving(self):
         self._create_placement(
@@ -1747,13 +2021,13 @@ class ReachtruckMobileFlowTests(TestCase):
         response = self.client.get("/reachtruck/?mobile_category=movement&mobile_request=receiving:7")
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "7_PR")
-        self.assertContains(response, f"/reachtruck/?mobile_category=movement&amp;mobile_request=receiving:7&amp;mobile_task={move_id_1}")
-        self.assertContains(response, f"/reachtruck/?mobile_category=movement&amp;mobile_request=receiving:7&amp;mobile_task={move_id_2}")
+        self.assertContains(response, "Взять заявку в работу")
+        self.assertNotContains(response, f"/reachtruck/?mobile_category=movement&amp;mobile_request=receiving:7&amp;mobile_task={move_id_1}")
+        self.assertNotContains(response, f"/reachtruck/?mobile_category=movement&amp;mobile_request=receiving:7&amp;mobile_task={move_id_2}")
 
         response = self.client.get(f"/reachtruck/?mobile_category=movement&mobile_request=receiving:7&mobile_task={move_id_1}")
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Маршрут")
-        self.assertContains(response, "Зона PR -&gt; Основной склад", html=True)
+        self.assertContains(response, "Взять заявку в работу")
 
     def test_storekeeper_reachtruck_dashboard_uses_storekeeper_identity_and_source_link(self):
         self.client.force_login(self.storekeeper_user)
@@ -2010,7 +2284,7 @@ class ReachtruckMobileFlowTests(TestCase):
         self.assertEqual(task.to_section, 3)
         self.assertEqual(task.to_tier, 1)
         self.assertEqual(task.to_cell, 4)
-        self.assertEqual((task.payload or {}).get("to_label"), "OS · Ряд 2 · Секция 3 · Ярус 1 · Ячейка 4")
+        self.assertEqual((task.payload or {}).get("to_label"), "OS · Линия B · Стеллаж 2 · Этаж 1 · Ячейка 4")
         move_request.refresh_from_db()
         self.assertEqual(move_request.destination_row, 2)
         self.assertEqual(move_request.destination_section, 3)
@@ -2018,6 +2292,117 @@ class ReachtruckMobileFlowTests(TestCase):
         self.assertEqual(warehouse_task.to_zone_code, "OS")
         self.assertEqual(warehouse_task.to_location.row_no, 2)
         self.assertEqual(warehouse_task.to_location.section_no, 3)
+
+    def test_storekeeper_cannot_edit_move_destination_to_reserved_os_cell(self):
+        self.client.force_login(self.storekeeper_user)
+        move_request = MoveRequest.objects.create(
+            context_type=MoveRequest.CONTEXT_RECEIVING,
+            context_id="56",
+            agency=self.agency,
+            requested_by=self.manager_user,
+            requested_by_role="manager",
+            requested_by_name="Менеджер",
+            destination_zone="OS",
+            destination_row=1,
+            destination_section=1,
+            destination_tier=1,
+            destination_cell=1,
+            status=MoveRequest.STATUS_PLANNED,
+        )
+        operation = WarehouseOperation.objects.create(
+            agency=self.agency,
+            operation_type=WarehouseOperation.TYPE_PUTAWAY,
+            context_type="receiving",
+            context_id="56",
+            destination_zone_code="OS",
+            destination_location=WarehouseLocation.objects.create(
+                warehouse_code="MSK",
+                zone_code="OS",
+                zone_kind=WarehouseLocation.ZONE_KIND_STORAGE,
+                row_no=1,
+                section_no=1,
+                tier_no=1,
+                cell_no=1,
+                location_code="OS-1-1-1-1",
+                display_name="OS · Ряд 1 · Секция 1 · Ярус 1 · Ячейка 1",
+            ),
+            status=WarehouseOperation.STATUS_CREATED,
+        )
+        warehouse_task = WarehouseOperationTask.objects.create(
+            operation=operation,
+            task_type=WarehouseOperationTask.TYPE_PALLET_MOVE,
+            to_location=operation.destination_location,
+            to_zone_code="OS",
+            status=WarehouseOperationTask.STATUS_CREATED,
+        )
+        conflicting_location = WarehouseLocation.objects.create(
+            warehouse_code="MSK",
+            zone_code="OS",
+            zone_kind=WarehouseLocation.ZONE_KIND_STORAGE,
+            row_no=2,
+            section_no=3,
+            tier_no=1,
+            cell_no=4,
+            location_code="OS-2-3-1-4",
+            display_name="OS · Ряд 2 · Секция 3 · Ярус 1 · Ячейка 4",
+        )
+        WarehouseOperation.objects.create(
+            agency=self.agency,
+            operation_type=WarehouseOperation.TYPE_PUTAWAY,
+            context_type="receiving",
+            context_id="57",
+            destination_zone_code="OS",
+            destination_location=conflicting_location,
+            status=WarehouseOperation.STATUS_PLANNED,
+        )
+        move_id = create_stock_move_task(
+            user=self.manager_user,
+            agency=self.agency,
+            description="Перемещение по приемке с конфликтом ячейки",
+            requested_by_name="Менеджер",
+            requested_by_role="manager",
+            move_request=move_request,
+            payload={
+                "status": "created",
+                "status_label": "Ожидает перевозки",
+                "receiving_order_id": "56",
+                "pallet_code": "PAL-MOBILE-SK-EDIT-2",
+                "from_location": {"zone": "PR"},
+                "to_location": {"zone": "OS", "row": 1, "section": 1, "tier": 1, "cell": 1},
+                "from_label": "PR · Зона приемки",
+                "to_label": "OS · Ряд 1 · Секция 1 · Ярус 1 · Ячейка 1",
+                "move_mode": MOVE_MODE_PALLET_FULL,
+                "pick_mode": "full",
+                "warehouse_operation_id": operation.id,
+                "warehouse_operation_task_id": warehouse_task.id,
+            },
+        )
+
+        response = self.client.post(
+            "/reachtruck/",
+            data={
+                "action": "edit_move_destination",
+                "order_id": move_id,
+                "to_zone": "OS",
+                "to_row": "2",
+                "to_section": "3",
+                "to_tier": "1",
+                "to_cell": "4",
+            },
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertContains(
+            response,
+            "уже зарезервировано другой заявкой ричтрака",
+            status_code=400,
+        )
+        task = MoveTask.objects.get(legacy_order_id=move_id)
+        self.assertEqual(task.to_row, 1)
+        self.assertEqual(task.to_section, 1)
+        warehouse_task.refresh_from_db()
+        self.assertEqual(warehouse_task.to_location.row_no, 1)
+        self.assertEqual(warehouse_task.to_location.section_no, 1)
 
 
     def test_mobile_scan_flow_completes_full_pallet_task(self):
@@ -2054,11 +2439,11 @@ class ReachtruckMobileFlowTests(TestCase):
 
         snapshot = build_mobile_execution_snapshot(move_id)
         self.assertEqual(snapshot["current_step"], "source")
-        self.assertEqual(snapshot["source_code"], "OS-1-1-1-1")
+        self.assertEqual(snapshot["source_code"], "0-1/1-1")
 
         result = scan_move_task_step(
             legacy_order_id=move_id,
-            scan_value="OS-1-1-1-1",
+            scan_value="0-1/1-1",
             user=self.driver_user,
             employee_id=self.driver_employee.id,
             employee_name=self.driver_employee.full_name,
@@ -2104,6 +2489,414 @@ class ReachtruckMobileFlowTests(TestCase):
         self.assertTrue(result.completed)
         task = MoveTask.objects.get(legacy_order_id=move_id)
         self.assertEqual(task.status, MoveTask.STATUS_DONE)
+
+    def test_mobile_request_flow_completes_all_full_pallets_in_request(self):
+        self._create_placement(
+            pallet_code="PAL-REQ-1",
+            boxes=[("BOX-REQ-1", "200000000201", 10)],
+            zone="PR",
+        )
+        self._create_placement(
+            pallet_code="PAL-REQ-2",
+            boxes=[("BOX-REQ-2", "200000000202", 10)],
+            zone="PR",
+        )
+        move_id_1 = create_stock_move_task(
+            user=self.manager_user,
+            agency=self.agency,
+            description="Первая паллета заявки",
+            requested_by_name="Менеджер",
+            requested_by_role="manager",
+            payload={
+                "status": "created",
+                "status_label": "Ожидает перевозки",
+                "receiving_order_id": "81",
+                "pallet_code": "PAL-REQ-1",
+                "from_location": {"zone": "PR"},
+                "to_location": {"zone": "OS", "row": 1, "section": 1, "tier": 1, "cell": 1},
+                "from_label": "PR · Зона приемки",
+                "to_label": "OS · Ряд 1 · Секция 1 · Ярус 1 · Ячейка 1",
+                "move_mode": MOVE_MODE_PALLET_FULL,
+                "pick_mode": "full",
+            },
+        )
+        move_id_2 = create_stock_move_task(
+            user=self.manager_user,
+            agency=self.agency,
+            description="Вторая паллета заявки",
+            requested_by_name="Менеджер",
+            requested_by_role="manager",
+            payload={
+                "status": "created",
+                "status_label": "Ожидает перевозки",
+                "receiving_order_id": "81",
+                "pallet_code": "PAL-REQ-2",
+                "from_location": {"zone": "PR"},
+                "to_location": {"zone": "OS", "row": 1, "section": 1, "tier": 1, "cell": 2},
+                "from_label": "PR · Зона приемки",
+                "to_label": "OS · Ряд 1 · Секция 1 · Ярус 1 · Ячейка 2",
+                "move_mode": MOVE_MODE_PALLET_FULL,
+                "pick_mode": "full",
+            },
+        )
+        request_ids = [move_id_1, move_id_2]
+
+        take_result = take_move_request(
+            legacy_order_ids=request_ids,
+            user=self.driver_user,
+            employee_id=self.driver_employee.id,
+            employee_name=self.driver_employee.full_name,
+        )
+        self.assertTrue(take_result.ok, take_result.error)
+
+        snapshot = build_mobile_request_execution_snapshot(request_ids, employee_id=self.driver_employee.id)
+        self.assertTrue(snapshot["can_scan"])
+        self.assertEqual(snapshot["current_step"], "pallet")
+        self.assertEqual(snapshot["remaining_count"], 2)
+
+        result = scan_move_request_step(
+            legacy_order_ids=request_ids,
+            scan_value="PAL-REQ-1",
+            user=self.driver_user,
+            employee_id=self.driver_employee.id,
+            employee_name=self.driver_employee.full_name,
+        )
+        self.assertTrue(result.ok, result.error)
+        self.assertIn("Отвези -> 0-1/1-1.", result.message)
+        snapshot = build_mobile_request_execution_snapshot(request_ids, employee_id=self.driver_employee.id)
+        self.assertEqual(snapshot["current_step"], "destination")
+        self.assertEqual(snapshot["active_order_id"], move_id_1)
+        self.assertEqual(snapshot["active_destination_code"], "0-1/1-1")
+        self.assertEqual(snapshot["prompt"], "Отвези -> 0-1/1-1")
+
+        result = scan_move_request_step(
+            legacy_order_ids=request_ids,
+            scan_value="0-1/1-1",
+            user=self.driver_user,
+            employee_id=self.driver_employee.id,
+            employee_name=self.driver_employee.full_name,
+        )
+        self.assertTrue(result.ok, result.error)
+        self.assertFalse(result.completed)
+        snapshot = build_mobile_request_execution_snapshot(request_ids, employee_id=self.driver_employee.id)
+        self.assertEqual(snapshot["remaining_count"], 1)
+        self.assertEqual(snapshot["current_step"], "pallet")
+
+        result = scan_move_request_step(
+            legacy_order_ids=request_ids,
+            scan_value="PAL-REQ-2",
+            user=self.driver_user,
+            employee_id=self.driver_employee.id,
+            employee_name=self.driver_employee.full_name,
+        )
+        self.assertTrue(result.ok, result.error)
+        snapshot = build_mobile_request_execution_snapshot(request_ids, employee_id=self.driver_employee.id)
+        self.assertEqual(snapshot["active_order_id"], move_id_2)
+
+        result = scan_move_request_step(
+            legacy_order_ids=request_ids,
+            scan_value="OS-1-1-1-2",
+            user=self.driver_user,
+            employee_id=self.driver_employee.id,
+            employee_name=self.driver_employee.full_name,
+        )
+        self.assertTrue(result.ok, result.error)
+        self.assertTrue(result.completed)
+        self.assertEqual(MoveTask.objects.get(legacy_order_id=move_id_1).status, MoveTask.STATUS_DONE)
+        self.assertEqual(MoveTask.objects.get(legacy_order_id=move_id_2).status, MoveTask.STATUS_DONE)
+
+    def test_mobile_request_flow_accepts_mojibake_for_cyrillic_pallet_code(self):
+        self._create_placement(
+            pallet_code="ТДТ-REQ-1-gv",
+            boxes=[("BOX-REQ-TDT-1", "200000000291", 10)],
+            zone="PR",
+        )
+        move_id = create_stock_move_task(
+            user=self.manager_user,
+            agency=self.agency,
+            description="Кириллическая паллета в заявке",
+            requested_by_name="Менеджер",
+            requested_by_role="manager",
+            payload={
+                "status": "created",
+                "status_label": "Ожидает перевозки",
+                "receiving_order_id": "84",
+                "pallet_code": "ТДТ-REQ-1-gv",
+                "from_location": {"zone": "PR"},
+                "to_location": {"zone": "OS", "row": 1, "section": 1, "tier": 1, "cell": 7},
+                "from_label": "PR · Зона приемки",
+                "to_label": "OS · Ряд 1 · Секция 1 · Ярус 1 · Ячейка 7",
+                "move_mode": MOVE_MODE_PALLET_FULL,
+                "pick_mode": "full",
+            },
+        )
+        take_result = take_move_request(
+            legacy_order_ids=[move_id],
+            user=self.driver_user,
+            employee_id=self.driver_employee.id,
+            employee_name=self.driver_employee.full_name,
+        )
+        self.assertTrue(take_result.ok, take_result.error)
+
+        garbled_scan = "ТДТ-REQ-1-gv".encode("utf-8").decode("cp1251")
+        result = scan_move_request_step(
+            legacy_order_ids=[move_id],
+            scan_value=garbled_scan,
+            user=self.driver_user,
+            employee_id=self.driver_employee.id,
+            employee_name=self.driver_employee.full_name,
+        )
+
+        self.assertTrue(result.ok, result.error)
+        self.assertIn("Паллета ТДТ-REQ-1-gv подтверждена.", result.message)
+        self.assertNotIn(garbled_scan, result.message)
+        self.assertIn("Отвези -> 0-1/1-7.", result.message)
+
+    def test_mobile_request_flow_accepts_gbk_mojibake_for_cyrillic_pallet_code(self):
+        self._create_placement(
+            pallet_code="ТДТ-REQ-2-gv",
+            boxes=[("BOX-REQ-TDT-2", "200000000292", 10)],
+            zone="PR",
+        )
+        move_id = create_stock_move_task(
+            user=self.manager_user,
+            agency=self.agency,
+            description="GBK-крякозябры паллеты в заявке",
+            requested_by_name="Менеджер",
+            requested_by_role="manager",
+            payload={
+                "status": "created",
+                "status_label": "Ожидает перевозки",
+                "receiving_order_id": "85-GBK",
+                "pallet_code": "ТДТ-REQ-2-gv",
+                "from_location": {"zone": "PR"},
+                "to_location": {"zone": "OS", "row": 1, "section": 1, "tier": 1, "cell": 8},
+                "from_label": "PR · Зона приемки",
+                "to_label": "OS · Ряд 1 · Секция 1 · Ярус 1 · Ячейка 8",
+                "move_mode": MOVE_MODE_PALLET_FULL,
+                "pick_mode": "full",
+            },
+        )
+        take_result = take_move_request(
+            legacy_order_ids=[move_id],
+            user=self.driver_user,
+            employee_id=self.driver_employee.id,
+            employee_name=self.driver_employee.full_name,
+        )
+        self.assertTrue(take_result.ok, take_result.error)
+
+        garbled_scan = "ТДТ-REQ-2-gv".encode("utf-8").decode("gb18030")
+        result = scan_move_request_step(
+            legacy_order_ids=[move_id],
+            scan_value=garbled_scan,
+            user=self.driver_user,
+            employee_id=self.driver_employee.id,
+            employee_name=self.driver_employee.full_name,
+        )
+
+        self.assertTrue(result.ok, result.error)
+        self.assertIn("Паллета ТДТ-REQ-2-gv подтверждена.", result.message)
+        self.assertNotIn(garbled_scan, result.message)
+
+    def test_mobile_home_shows_current_request_and_in_progress_count_after_take_request(self):
+        self._create_placement(
+            pallet_code="PAL-REQ-HOME-1",
+            boxes=[("BOX-REQ-HOME-1", "200000000211", 10)],
+            zone="PR",
+        )
+        self._create_placement(
+            pallet_code="PAL-REQ-HOME-2",
+            boxes=[("BOX-REQ-HOME-2", "200000000212", 10)],
+            zone="PR",
+        )
+        move_id_1 = create_stock_move_task(
+            user=self.manager_user,
+            agency=self.agency,
+            description="Первая паллета заявки для возврата",
+            requested_by_name="Менеджер",
+            requested_by_role="manager",
+            payload={
+                "status": "created",
+                "status_label": "Ожидает перевозки",
+                "receiving_order_id": "82",
+                "pallet_code": "PAL-REQ-HOME-1",
+                "from_location": {"zone": "PR"},
+                "to_location": {"zone": "OS", "row": 1, "section": 1, "tier": 1, "cell": 3},
+                "from_label": "PR · Зона приемки",
+                "to_label": "OS · Ряд 1 · Секция 1 · Ярус 1 · Ячейка 3",
+                "move_mode": MOVE_MODE_PALLET_FULL,
+                "pick_mode": "full",
+            },
+        )
+        move_id_2 = create_stock_move_task(
+            user=self.manager_user,
+            agency=self.agency,
+            description="Вторая паллета заявки для возврата",
+            requested_by_name="Менеджер",
+            requested_by_role="manager",
+            payload={
+                "status": "created",
+                "status_label": "Ожидает перевозки",
+                "receiving_order_id": "82",
+                "pallet_code": "PAL-REQ-HOME-2",
+                "from_location": {"zone": "PR"},
+                "to_location": {"zone": "OS", "row": 1, "section": 1, "tier": 1, "cell": 4},
+                "from_label": "PR · Зона приемки",
+                "to_label": "OS · Ряд 1 · Секция 1 · Ярус 1 · Ячейка 4",
+                "move_mode": MOVE_MODE_PALLET_FULL,
+                "pick_mode": "full",
+            },
+        )
+
+        take_result = take_move_request(
+            legacy_order_ids=[move_id_1, move_id_2],
+            user=self.driver_user,
+            employee_id=self.driver_employee.id,
+            employee_name=self.driver_employee.full_name,
+        )
+        self.assertTrue(take_result.ok, take_result.error)
+
+        response = self.client.get("/reachtruck/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Продолжить текущую работу")
+        self.assertContains(response, "Приемка №82_PR")
+        self.assertContains(response, "В работе: 2")
+        self.assertContains(response, "/reachtruck/?mobile_category=movement&amp;mobile_request=receiving%3A82")
+
+    def test_mobile_category_shows_continue_current_request_after_take_request(self):
+        self._create_placement(
+            pallet_code="PAL-REQ-CONT-1",
+            boxes=[("BOX-REQ-CONT-1", "200000000221", 10)],
+            zone="PR",
+        )
+        self._create_placement(
+            pallet_code="PAL-REQ-CONT-2",
+            boxes=[("BOX-REQ-CONT-2", "200000000222", 10)],
+            zone="PR",
+        )
+        move_id_1 = create_stock_move_task(
+            user=self.manager_user,
+            agency=self.agency,
+            description="Первая паллета заявки для продолжения",
+            requested_by_name="Менеджер",
+            requested_by_role="manager",
+            payload={
+                "status": "created",
+                "status_label": "Ожидает перевозки",
+                "receiving_order_id": "83",
+                "pallet_code": "PAL-REQ-CONT-1",
+                "from_location": {"zone": "PR"},
+                "to_location": {"zone": "OS", "row": 1, "section": 1, "tier": 1, "cell": 5},
+                "from_label": "PR · Зона приемки",
+                "to_label": "OS · Ряд 1 · Секция 1 · Ярус 1 · Ячейка 5",
+                "move_mode": MOVE_MODE_PALLET_FULL,
+                "pick_mode": "full",
+            },
+        )
+        move_id_2 = create_stock_move_task(
+            user=self.manager_user,
+            agency=self.agency,
+            description="Вторая паллета заявки для продолжения",
+            requested_by_name="Менеджер",
+            requested_by_role="manager",
+            payload={
+                "status": "created",
+                "status_label": "Ожидает перевозки",
+                "receiving_order_id": "83",
+                "pallet_code": "PAL-REQ-CONT-2",
+                "from_location": {"zone": "PR"},
+                "to_location": {"zone": "OS", "row": 1, "section": 1, "tier": 1, "cell": 6},
+                "from_label": "PR · Зона приемки",
+                "to_label": "OS · Ряд 1 · Секция 1 · Ярус 1 · Ячейка 6",
+                "move_mode": MOVE_MODE_PALLET_FULL,
+                "pick_mode": "full",
+            },
+        )
+
+        take_result = take_move_request(
+            legacy_order_ids=[move_id_1, move_id_2],
+            user=self.driver_user,
+            employee_id=self.driver_employee.id,
+            employee_name=self.driver_employee.full_name,
+        )
+        self.assertTrue(take_result.ok, take_result.error)
+
+        response = self.client.get("/reachtruck/?mobile_category=movement")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Приемка №83_PR")
+        self.assertContains(response, "ИП Талеев ПП")
+        self.assertContains(response, "Отсканируй паллету")
+        self.assertContains(response, 'name="scan_value"')
+        self.assertContains(response, 'inputmode="none"')
+        self.assertContains(response, 'autocomplete="off"')
+        self.assertNotContains(response, "Продолжить приемка №83_PR")
+
+    def test_mobile_category_show_list_flag_opens_request_list_instead_of_auto_open(self):
+        self._create_placement(
+            pallet_code="PAL-REQ-LIST-1",
+            boxes=[("BOX-REQ-LIST-1", "200000000231", 10)],
+            zone="PR",
+        )
+        self._create_placement(
+            pallet_code="PAL-REQ-LIST-2",
+            boxes=[("BOX-REQ-LIST-2", "200000000232", 10)],
+            zone="PR",
+        )
+        move_id_1 = create_stock_move_task(
+            user=self.manager_user,
+            agency=self.agency,
+            description="Первая паллета заявки для списка",
+            requested_by_name="Менеджер",
+            requested_by_role="manager",
+            payload={
+                "status": "created",
+                "status_label": "Ожидает перевозки",
+                "receiving_order_id": "85",
+                "pallet_code": "PAL-REQ-LIST-1",
+                "from_location": {"zone": "PR"},
+                "to_location": {"zone": "OS", "row": 1, "section": 1, "tier": 1, "cell": 8},
+                "from_label": "PR · Зона приемки",
+                "to_label": "OS · Ряд 1 · Секция 1 · Ярус 1 · Ячейка 8",
+                "move_mode": MOVE_MODE_PALLET_FULL,
+                "pick_mode": "full",
+            },
+        )
+        move_id_2 = create_stock_move_task(
+            user=self.manager_user,
+            agency=self.agency,
+            description="Вторая паллета заявки для списка",
+            requested_by_name="Менеджер",
+            requested_by_role="manager",
+            payload={
+                "status": "created",
+                "status_label": "Ожидает перевозки",
+                "receiving_order_id": "85",
+                "pallet_code": "PAL-REQ-LIST-2",
+                "from_location": {"zone": "PR"},
+                "to_location": {"zone": "OS", "row": 1, "section": 1, "tier": 1, "cell": 9},
+                "from_label": "PR · Зона приемки",
+                "to_label": "OS · Ряд 1 · Секция 1 · Ярус 1 · Ячейка 9",
+                "move_mode": MOVE_MODE_PALLET_FULL,
+                "pick_mode": "full",
+            },
+        )
+
+        take_result = take_move_request(
+            legacy_order_ids=[move_id_1, move_id_2],
+            user=self.driver_user,
+            employee_id=self.driver_employee.id,
+            employee_name=self.driver_employee.full_name,
+        )
+        self.assertTrue(take_result.ok, take_result.error)
+
+        response = self.client.get("/reachtruck/?mobile_category=movement&mobile_show_list=1")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Приемка №85_PR")
+        self.assertContains(response, "/reachtruck/?mobile_category=movement&amp;mobile_request=receiving%3A85")
+        self.assertNotContains(response, "Отсканируй паллету")
 
     def test_mobile_partial_pick_generates_box_plan_and_tracks_unit_scans(self):
         self._create_placement(

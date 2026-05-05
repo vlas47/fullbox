@@ -16,14 +16,12 @@ from employees.access import get_request_role, resolve_cabinet_url
 from employees.models import Employee
 from marking.models import MarkingCode
 from marking.utils import extract_processing_items
-from sklad.models import InventoryState
 from sklad.services.stock_operations import OperationalStockService
 from sklad.services.stock_availability import StockAvailabilityService
 from sklad.services.warehouse_policy import WarehouseActionPolicy
 from sklad.services.warehouse_state import WarehouseGoodsStateResolver
 from sklad.services.warehouse_transitions import WarehouseStateCode
 from sklad.services.warehouse_write_path import WarehouseWritePathService
-from sklad.stock_state import refresh_materialized_stock_state_for_keys
 from todo.models import Task
 from labels.utils import shorten_client_label, split_printers_by_kind
 from .models import ProcessingFlowSession, ProcessingPrintJob
@@ -1044,47 +1042,11 @@ class ProcessingWorkflowService:
             order_id=order_id,
             used_at__isnull=True,
         ).update(order_id="", printed_at=None, printed_by=None)
-        reserve_rows = processing_views._processing_reserve_rows_for_order(
-            str(order_id),
-            latest.agency if latest else None,
-        )
-        deleted_reserve_rows = list(
-            InventoryState.objects.filter(
-                agency=latest.agency if latest else None,
-                order_type="processing",
-                order_id=str(order_id),
-                state="processing",
-            ).only("sku", "size", "goods_type")
-        )
-        InventoryState.objects.filter(
-            agency=latest.agency if latest else None,
-            order_type="processing",
-            order_id=str(order_id),
-            state="processing",
-        ).delete()
         if latest and latest.agency:
-            refresh_materialized_stock_state_for_keys(
-                latest.agency,
-                (
-                    {
-                        (
-                            str(row.sku or "").strip().lower(),
-                            str(row.size or "").strip().lower(),
-                            StockAvailabilityService.normalize_goods_type(row.goods_type),
-                        )
-                        for row in deleted_reserve_rows
-                        if str(row.sku or "").strip()
-                    }
-                    or {
-                        (
-                            str((row.get("sku") or row.get("article") or "")).strip().lower(),
-                            str(row.get("size") or "").strip().lower(),
-                            StockAvailabilityService.normalize_goods_type(row.get("goods_type") or ""),
-                        )
-                        for row in reserve_rows
-                        if str((row.get("sku") or row.get("article") or "")).strip()
-                    }
-                ),
+            WarehouseWritePathService.replace_processing_reserves(
+                agency=latest.agency,
+                order_id=str(order_id),
+                items=[],
             )
         payload["status"] = "done"
         payload["status_label"] = "Выполнена"

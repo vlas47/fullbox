@@ -22,9 +22,8 @@ from audit.models import log_order_action
 from employees.access import resolve_cabinet_url
 from fullbox.order_numbers import format_order_number
 from labels.utils import build_print_status_snapshot, refresh_print_agent_printers
-from sklad.models import StockPalletState
 from sklad.services.stock_availability import StockAvailabilityService
-from sklad.services.warehouse_stock_rows import legacy_stock_rows, snapshot_stock_rows
+from sklad.services.warehouse_stock_rows import snapshot_stock_rows
 from sku.models import Agency
 
 from .actions import ShippingDetailActionPermissions, handle_shipping_detail_action
@@ -43,7 +42,7 @@ from .forms import (
     ShippingOrderForm,
 )
 from .marketplace_warehouses import load_marketplace_warehouse_catalog
-from .models import ShippingOrder, ShippingOrderAttachment, ShippingOrderItem, ShippingReserve
+from .models import ShippingOrder, ShippingOrderAttachment, ShippingOrderItem
 from .packing import (
     _shipping_box_row_key,
     _shipping_boxes_from_packing_payload,
@@ -312,29 +311,11 @@ def _shipping_stock_picker_rows(
     if not agency:
         return []
     rows = snapshot_stock_rows(agency=agency, require_box=True)
-    if not rows:
-        rows = legacy_stock_rows(
-            StockPalletState.objects.filter(
-                agency=agency,
-                state=StockPalletState.STATE_WAREHOUSE,
-            )
-            .exclude(box_code="")
-            .select_related("sku_ref")
-            .order_by("sku", "size", "goods_type", "box_code")
-        )
     processing_reserve_map, _ = StockAvailabilityService.build_processing_reserve_maps(agency)
-    shipping_reserve_map, _ = StockAvailabilityService.build_shipping_reserve_maps(agency)
-    if exclude_order is not None:
-        current_order_reserves = ShippingReserve.objects.filter(
-            agency=agency,
-            order__number=str(exclude_order.number or "").strip(),
-        )
-        for reserve in current_order_reserves:
-            reserve_key = _normalize_stock_key(reserve.sku_code, reserve.size, reserve.goods_type)
-            shipping_reserve_map[reserve_key] = max(
-                int(shipping_reserve_map.get(reserve_key, 0)) - int(reserve.qty or 0),
-                0,
-            )
+    shipping_reserve_map, _ = StockAvailabilityService.build_shipping_reserve_maps(
+        agency,
+        exclude_shipping_order_id=str(exclude_order.number or "").strip() if exclude_order else None,
+    )
     processing_left = {key: int(value or 0) for key, value in processing_reserve_map.items()}
     shipping_left = {key: int(value or 0) for key, value in shipping_reserve_map.items()}
 
@@ -386,7 +367,7 @@ def _shipping_stock_picker_rows(
         name = str(row.get("name") or "").strip()
         sku_id = int(row.get("sku_ref_id") or 0)
         line_key = (sku_id, sku_code, name, size, barcode, goods_type)
-        box_id = f"{row.get('order_type') or ''}:{row.get('order_id') or ''}:{box_code}"
+        box_id = f"{int(row.get('agency_id') or 0)}:{box_code}"
         box_lines[box_id][line_key] += qty_in_box
         box_available_lines[box_id][line_key] += int(row_available_qty.get(int(row.get("id") or 0), 0))
         item_signature = (

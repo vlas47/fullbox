@@ -81,6 +81,12 @@
       flex-wrap: wrap;
       align-items: center;
     }
+    .toolbar-group {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
     .btn {
       display: inline-flex;
       align-items: center;
@@ -543,33 +549,45 @@
         <div class="hero-top">
           <div>
             <div class="eyebrow">FULLBOX · {% include "partials/current_user.html" %}</div>
-            <h1>Номенклатура</h1>
-            <p class="hero-subtitle">
-              Полный каталог SKU по всем клиентам. Таблица оставлена для быстрых операций и поиска, карточки для просмотра расширенных данных.
-            </p>
+            <h1>{{ hero_title }}</h1>
+            <p class="hero-subtitle">{{ hero_subtitle }}</p>
           </div>
           <div class="toolbar">
-            <a class="btn primary" href="/sku/new/">Создать SKU</a>
-            <a class="btn {% if view_mode == 'table' %}active{% endif %}"
-               href="?view=table{% if request.GET.q %}&q={{ request.GET.q|urlencode }}{% endif %}{% if request.GET.sort %}&sort={{ request.GET.sort|urlencode }}{% endif %}{% if request.GET.dir %}&dir={{ request.GET.dir|urlencode }}{% endif %}{% if request.GET.page %}&page={{ request.GET.page|urlencode }}{% endif %}{% if request.GET.filter_field %}&filter_field={{ request.GET.filter_field|urlencode }}{% endif %}{% if request.GET.filter_value %}&filter_value={{ request.GET.filter_value|urlencode }}{% endif %}{% if request.GET.deleted %}&deleted={{ request.GET.deleted|urlencode }}{% endif %}{% if agency_filter %}&agency={{ agency_filter|urlencode }}{% endif %}">
-              Таблица
-            </a>
-            <a class="btn {% if view_mode == 'cards' %}active{% endif %}"
-               href="?view=cards{% if request.GET.q %}&q={{ request.GET.q|urlencode }}{% endif %}{% if request.GET.sort %}&sort={{ request.GET.sort|urlencode }}{% endif %}{% if request.GET.dir %}&dir={{ request.GET.dir|urlencode }}{% endif %}{% if request.GET.page %}&page={{ request.GET.page|urlencode }}{% endif %}{% if request.GET.filter_field %}&filter_field={{ request.GET.filter_field|urlencode }}{% endif %}{% if request.GET.filter_value %}&filter_value={{ request.GET.filter_value|urlencode }}{% endif %}{% if request.GET.deleted %}&deleted={{ request.GET.deleted|urlencode }}{% endif %}{% if agency_filter %}&agency={{ agency_filter|urlencode }}{% endif %}">
-              Карточки
-            </a>
-            {% if show_deleted %}
-              <a class="btn active" href="?view={{ view_mode }}{% if agency_filter %}&agency={{ agency_filter|urlencode }}{% endif %}">Все</a>
-            {% else %}
-              <a class="btn" href="?view={{ view_mode }}&deleted=1{% if agency_filter %}&agency={{ agency_filter|urlencode }}{% endif %}">Удаленные</a>
-            {% endif %}
-            <a class="btn" href="{{ cabinet_url|default:'/' }}">В кабинет</a>
+            <div class="toolbar-group">
+              <a class="btn {% if not is_temporary_catalog %}active{% endif %}"
+                 href="?view={{ view_mode }}{% if request.GET.q %}&q={{ request.GET.q|urlencode }}{% endif %}{% if request.GET.sort %}&sort={{ request.GET.sort|urlencode }}{% endif %}{% if request.GET.dir %}&dir={{ request.GET.dir|urlencode }}{% endif %}{% if request.GET.page %}&page={{ request.GET.page|urlencode }}{% endif %}{% if request.GET.filter_field %}&filter_field={{ request.GET.filter_field|urlencode }}{% endif %}{% if request.GET.filter_value %}&filter_value={{ request.GET.filter_value|urlencode }}{% endif %}{% if request.GET.deleted and not is_temporary_catalog %}&deleted={{ request.GET.deleted|urlencode }}{% endif %}{% if agency_filter %}&agency={{ agency_filter|urlencode }}{% endif %}">
+                Номенклатура SKU
+              </a>
+              <a class="btn {% if is_temporary_catalog %}active{% endif %}"
+                 href="?view={{ view_mode }}&catalog=temporary{% if request.GET.q %}&q={{ request.GET.q|urlencode }}{% endif %}{% if request.GET.sort %}&sort={{ request.GET.sort|urlencode }}{% endif %}{% if request.GET.dir %}&dir={{ request.GET.dir|urlencode }}{% endif %}{% if request.GET.page %}&page={{ request.GET.page|urlencode }}{% endif %}{% if agency_filter %}&agency={{ agency_filter|urlencode }}{% endif %}">
+                Временная номенклатура
+              </a>
+            </div>
+            <div class="toolbar-group">
+              <a class="btn primary" href="/sku/new/">Создать SKU</a>
+              <a class="btn {% if view_mode == 'table' %}active{% endif %}"
+                 href="?view=table{% if is_temporary_catalog %}&catalog=temporary{% endif %}{% if request.GET.q %}&q={{ request.GET.q|urlencode }}{% endif %}{% if request.GET.sort %}&sort={{ request.GET.sort|urlencode }}{% endif %}{% if request.GET.dir %}&dir={{ request.GET.dir|urlencode }}{% endif %}{% if request.GET.page %}&page={{ request.GET.page|urlencode }}{% endif %}{% if request.GET.filter_field %}&filter_field={{ request.GET.filter_field|urlencode }}{% endif %}{% if request.GET.filter_value %}&filter_value={{ request.GET.filter_value|urlencode }}{% endif %}{% if request.GET.deleted and not is_temporary_catalog %}&deleted={{ request.GET.deleted|urlencode }}{% endif %}{% if agency_filter %}&agency={{ agency_filter|urlencode }}{% endif %}">
+                Таблица
+              </a>
+              <a class="btn {% if view_mode == 'cards' %}active{% endif %}"
+                 href="?view=cards{% if is_temporary_catalog %}&catalog=temporary{% endif %}{% if request.GET.q %}&q={{ request.GET.q|urlencode }}{% endif %}{% if request.GET.sort %}&sort={{ request.GET.sort|urlencode }}{% endif %}{% if request.GET.dir %}&dir={{ request.GET.dir|urlencode }}{% endif %}{% if request.GET.page %}&page={{ request.GET.page|urlencode }}{% endif %}{% if request.GET.filter_field %}&filter_field={{ request.GET.filter_field|urlencode }}{% endif %}{% if request.GET.filter_value %}&filter_value={{ request.GET.filter_value|urlencode }}{% endif %}{% if request.GET.deleted and not is_temporary_catalog %}&deleted={{ request.GET.deleted|urlencode }}{% endif %}{% if agency_filter %}&agency={{ agency_filter|urlencode }}{% endif %}">
+                Карточки
+              </a>
+              {% if show_deleted_toggle %}
+                {% if show_deleted %}
+                  <a class="btn active" href="?view={{ view_mode }}{% if is_temporary_catalog %}&catalog=temporary{% endif %}{% if agency_filter %}&agency={{ agency_filter|urlencode }}{% endif %}">Все</a>
+                {% else %}
+                  <a class="btn" href="?view={{ view_mode }}&deleted=1{% if is_temporary_catalog %}&catalog=temporary{% endif %}{% if agency_filter %}&agency={{ agency_filter|urlencode }}{% endif %}">Удаленные</a>
+                {% endif %}
+              {% endif %}
+              <a class="btn" href="{{ cabinet_url|default:'/' }}">В кабинет</a>
+            </div>
           </div>
         </div>
 
         <form method="get" class="search-bar" id="search-form">
           <div class="search-field">
-            <input id="search-input" class="search-input" type="text" name="q" value="{{ request.GET.q }}" placeholder="Поиск по артикулу, названию или штрихкоду" autocomplete="off">
+            <input id="search-input" class="search-input" type="text" name="q" value="{{ request.GET.q }}" placeholder="{{ search_placeholder }}" autocomplete="off">
             <div class="suggest-box" id="suggest-box"></div>
           </div>
           <select class="search-select" name="agency" aria-label="Фильтр по клиенту">
@@ -579,14 +597,15 @@
             {% endfor %}
           </select>
           <input type="hidden" name="view" value="{{ view_mode }}">
+          {% if is_temporary_catalog %}<input type="hidden" name="catalog" value="temporary">{% endif %}
           {% if request.GET.sort %}<input type="hidden" name="sort" value="{{ request.GET.sort }}">{% endif %}
           {% if request.GET.dir %}<input type="hidden" name="dir" value="{{ request.GET.dir }}">{% endif %}
           {% if request.GET.filter_field %}<input type="hidden" name="filter_field" value="{{ request.GET.filter_field }}">{% endif %}
           {% if request.GET.filter_value %}<input type="hidden" name="filter_value" value="{{ request.GET.filter_value }}">{% endif %}
-          {% if request.GET.deleted %}<input type="hidden" name="deleted" value="{{ request.GET.deleted }}">{% endif %}
+          {% if request.GET.deleted and not is_temporary_catalog %}<input type="hidden" name="deleted" value="{{ request.GET.deleted }}">{% endif %}
           <button class="btn" type="submit">Искать</button>
           {% if request.GET.q or agency_filter or request.GET.filter_field or request.GET.deleted %}
-            <a class="btn" href="?view={{ view_mode }}">Сбросить</a>
+            <a class="btn" href="?view={{ view_mode }}{% if is_temporary_catalog %}&catalog=temporary{% endif %}">Сбросить</a>
           {% endif %}
         </form>
       </section>
@@ -594,200 +613,183 @@
       {% if items %}
         <section class="panel">
           <div class="panel-head">
-            <div class="panel-title">
-              {% if view_mode == 'table' %}
-                Табличный вид с быстрыми действиями
-              {% else %}
-                Карточный вид с расширенной информацией
-              {% endif %}
-            </div>
-            <div class="panel-count">Всего SKU: {{ page_obj.paginator.count }}</div>
+            <div class="panel-title">{{ panel_title }}</div>
+            <div class="panel-count">{{ panel_count_label }}: {{ page_obj.paginator.count }}</div>
           </div>
 
           {% if view_mode == 'table' %}
             <div class="table-wrap">
               <table>
-                <thead>
-                  <tr>
-                    <th>Действия</th>
-                    <th>
-                      <a class="sort-link" href="{{ sort_info.sku_code.url }}">
-                        Артикул
-                        {% if sort_info.sku_code.active %}<span class="sort-mark">{% if sort_info.sku_code.dir == 'asc' %}▲{% else %}▼{% endif %}</span>{% endif %}
-                      </a>
-                    </th>
-                    <th>
-                      <a class="sort-link" href="{{ sort_info.name.url }}">
-                        Номенклатура
-                        {% if sort_info.name.active %}<span class="sort-mark">{% if sort_info.name.dir == 'asc' %}▲{% else %}▼{% endif %}</span>{% endif %}
-                      </a>
-                    </th>
-                    <th>
-                      <a class="sort-link" href="{{ sort_info.brand.url }}">
-                        Бренд
-                        {% if sort_info.brand.active %}<span class="sort-mark">{% if sort_info.brand.dir == 'asc' %}▲{% else %}▼{% endif %}</span>{% endif %}
-                      </a>
-                    </th>
-                    {% if not hide_client_column %}
+                {% if is_temporary_catalog %}
+                  <thead>
+                    <tr>
                       <th>
-                        <a class="sort-link" href="{{ sort_info.agency.url }}">
-                          Клиент
-                          {% if sort_info.agency.active %}<span class="sort-mark">{% if sort_info.agency.dir == 'asc' %}▲{% else %}▼{% endif %}</span>{% endif %}
+                        <a class="sort-link" href="{{ sort_info.item_code.url }}">
+                          Временный код
+                          {% if sort_info.item_code.active %}<span class="sort-mark">{% if sort_info.item_code.dir == 'asc' %}▲{% else %}▼{% endif %}</span>{% endif %}
                         </a>
                       </th>
-                    {% endif %}
-                    <th>
-                      <a class="sort-link" href="{{ sort_info.market.url }}">
-                        Маркет
-                        {% if sort_info.market.active %}<span class="sort-mark">{% if sort_info.market.dir == 'asc' %}▲{% else %}▼{% endif %}</span>{% endif %}
-                      </a>
-                    </th>
-                    <th>
-                      <a class="sort-link" href="{{ sort_info.size.url }}">
-                        Размер
-                        {% if sort_info.size.active %}<span class="sort-mark">{% if sort_info.size.dir == 'asc' %}▲{% else %}▼{% endif %}</span>{% endif %}
-                      </a>
-                    </th>
-                    <th>Штрихкоды</th>
-                    <th>
-                      <a class="sort-link" href="{{ sort_info.updated_at.url }}">
-                        Обновлено
-                        {% if sort_info.updated_at.active %}<span class="sort-mark">{% if sort_info.updated_at.dir == 'asc' %}▲{% else %}▼{% endif %}</span>{% endif %}
-                      </a>
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {% for item in items %}
-                    <tr
-                      data-sku-size-scope
-                      data-sku-article="{{ item.sku_code }}"
-                      data-sku-name="{% firstof item.name_print item.name %}"
-                      data-sku-brand="{{ item.brand|default:'' }}"
-                      data-sku-subject="{% firstof item.tovar_category item.vid_tovar item.type_tovar '' %}"
-                      data-sku-color="{% firstof item.color item.color_ref '' %}"
-                      data-sku-composition="{{ item.composition|default:'' }}"
-                      data-sku-supplier="{{ item.agency|default:'' }}"
-                      data-sku-country="{{ item.made_in|default:'' }}"
-                      data-sku-default-mode="{% if item.honest_sign %}cz{% else %}no-cz{% endif %}"
-                    >
-                      <td>
-                        <div class="actions">
-                          <a class="act-btn" title="Создать новый SKU" href="/sku/new/">＋</a>
-                          <a class="act-btn" title="Редактировать" href="/sku/{{ item.id }}/edit/">✎</a>
-                          <a class="act-btn" title="Создать копию" href="/sku/{{ item.id }}/duplicate/">⧉</a>
-                          <button class="act-btn print-btn" type="button" data-sku-print title="Печать этикетки">🖨</button>
-                          <a class="act-btn danger delete-btn" data-id="{{ item.id }}" title="Пометить как удаленный">🗑</a>
-                        </div>
-                      </td>
-                      <td>
-                        <div class="sku-code">{{ item.sku_code }}</div>
-                      </td>
-                      <td>
-                        <div class="sku-main">
-                          <div class="sku-name">{{ item.name }}</div>
-                          <div class="sku-meta">
-                            {% if item.name_print %}Для печати: {{ item.name_print }}{% else %}Название для печати не задано{% endif %}
-                          </div>
-                          <div class="chip-stack">
-                            {% if item.color %}<span class="chip">Цвет: {{ item.color }}</span>{% endif %}
-                            {% if item.honest_sign %}<span class="chip">Честный знак</span>{% endif %}
-                            {% if item.use_nds %}<span class="chip">НДС</span>{% endif %}
-                          </div>
-                        </div>
-                      </td>
-                      <td>{{ item.brand|default:"-" }}</td>
+                      <th>
+                        <a class="sort-link" href="{{ sort_info.name.url }}">
+                          Номенклатура
+                          {% if sort_info.name.active %}<span class="sort-mark">{% if sort_info.name.dir == 'asc' %}▲{% else %}▼{% endif %}</span>{% endif %}
+                        </a>
+                      </th>
+                      <th>
+                        <a class="sort-link" href="{{ sort_info.size.url }}">
+                          Размер
+                          {% if sort_info.size.active %}<span class="sort-mark">{% if sort_info.size.dir == 'asc' %}▲{% else %}▼{% endif %}</span>{% endif %}
+                        </a>
+                      </th>
+                      <th>
+                        <a class="sort-link" href="{{ sort_info.barcode.url }}">
+                          Штрихкод
+                          {% if sort_info.barcode.active %}<span class="sort-mark">{% if sort_info.barcode.dir == 'asc' %}▲{% else %}▼{% endif %}</span>{% endif %}
+                        </a>
+                      </th>
                       {% if not hide_client_column %}
-                        <td>{{ item.agency|default:"-" }}</td>
+                        <th>
+                          <a class="sort-link" href="{{ sort_info.agency.url }}">
+                            Клиент
+                            {% if sort_info.agency.active %}<span class="sort-mark">{% if sort_info.agency.dir == 'asc' %}▲{% else %}▼{% endif %}</span>{% endif %}
+                          </a>
+                        </th>
                       {% endif %}
-                      <td>{{ item.market|default:"-" }}</td>
-                      <td>
-                        {% if item.has_size_selector_ui %}
-                          <select
-                            class="size-select"
-                            data-sku-size-picker
-                            data-has-sized-barcodes="{% if item.has_sized_barcodes_ui %}1{% else %}0{% endif %}"
-                          >
-                            {% for size_option in item.size_options_ui %}
-                              <option value="{{ size_option }}" {% if size_option == item.selected_size_ui %}selected{% endif %}>{{ size_option }}</option>
-                            {% endfor %}
-                          </select>
-                        {% else %}
-                          {{ item.size_display_ui|default:item.size|default:"-" }}
-                        {% endif %}
-                      </td>
-                      <td>
-                        <div class="chip-stack barcode-chip-stack" data-barcode-stack>
-                          {% for bc in item.barcode_rows_ui %}
-                            <span
-                              class="chip barcode-chip{% if not bc.visible %} is-hidden{% endif %}"
-                              data-barcode-chip
-                              data-barcode-value="{{ bc.value }}"
-                              data-size="{{ bc.size }}"
-                            >{{ bc.value }}{% if bc.is_primary %}*{% endif %}</span>
-                          {% empty %}
-                            <span class="chip">-</span>
-                          {% endfor %}
-                          <span class="barcode-empty{% if item.barcode_rows_ui %} is-hidden{% endif %}" data-barcode-empty>Нет штрихкода для выбранного размера</span>
-                        </div>
-                      </td>
-                      <td>{{ item.updated_at|date:"d.m.Y H:i" }}</td>
+                      <th>Первый источник</th>
+                      <th>Последний источник</th>
+                      <th>
+                        <a class="sort-link" href="{{ sort_info.normalized_sku_ref.url }}">
+                          Нормализованный SKU
+                          {% if sort_info.normalized_sku_ref.active %}<span class="sort-mark">{% if sort_info.normalized_sku_ref.dir == 'asc' %}▲{% else %}▼{% endif %}</span>{% endif %}
+                        </a>
+                      </th>
+                      <th>
+                        <a class="sort-link" href="{{ sort_info.updated_at.url }}">
+                          Обновлено
+                          {% if sort_info.updated_at.active %}<span class="sort-mark">{% if sort_info.updated_at.dir == 'asc' %}▲{% else %}▼{% endif %}</span>{% endif %}
+                        </a>
+                      </th>
                     </tr>
-                  {% endfor %}
-                </tbody>
-              </table>
-            </div>
-          {% else %}
-            <div class="cards">
-              {% for item in items %}
-                <article
-                  class="card"
-                  data-sku-size-scope
-                  data-sku-article="{{ item.sku_code }}"
-                  data-sku-name="{% firstof item.name_print item.name %}"
-                  data-sku-brand="{{ item.brand|default:'' }}"
-                  data-sku-subject="{% firstof item.tovar_category item.vid_tovar item.type_tovar '' %}"
-                  data-sku-color="{% firstof item.color item.color_ref '' %}"
-                  data-sku-composition="{{ item.composition|default:'' }}"
-                  data-sku-supplier="{{ item.agency|default:'' }}"
-                  data-sku-country="{{ item.made_in|default:'' }}"
-                  data-sku-default-mode="{% if item.honest_sign %}cz{% else %}no-cz{% endif %}"
-                >
-                  <div class="card-top">
-                    <div class="card-title">
-                      <div class="eyebrow">Артикул {{ item.sku_code }}</div>
-                      <h3>{{ item.name }}</h3>
-                      <div class="card-subtitle">
-                        {% if not hide_client_column %}Клиент: {{ item.agency|default:"-" }} · {% endif %}
-                        Маркет: {{ item.market|default:"-" }}
-                      </div>
-                    </div>
-                    {% if item.photos.all %}
-                      {% with photo=item.photos.all.0 %}
-                        <div class="thumb" style="background-image:url('{{ photo.url }}');"></div>
-                      {% endwith %}
-                    {% elif item.img %}
-                      <div class="thumb" style="background-image:url('{{ item.img }}');"></div>
-                    {% else %}
-                      <div class="thumb"></div>
-                    {% endif %}
-                  </div>
-
-                  <div class="actions">
-                    <a class="act-btn" title="Редактировать" href="/sku/{{ item.id }}/edit/">✎</a>
-                    <a class="act-btn" title="Создать копию" href="/sku/{{ item.id }}/duplicate/">⧉</a>
-                    <button class="act-btn print-btn" type="button" data-sku-print title="Печать этикетки">🖨</button>
-                    <a class="act-btn danger delete-btn" data-id="{{ item.id }}" title="Пометить как удаленный">🗑</a>
-                  </div>
-
-                  <div class="card-grid">
-                    <div class="data-block">
-                      <div class="data-label">Основное</div>
-                      <div class="data-value">
-                        Бренд: {{ item.brand|default:"-" }}<br>
-                        Размер:
-                        {% if item.has_size_selector_ui %}
-                          <div style="margin-top:8px;">
+                  </thead>
+                  <tbody>
+                    {% for item in items %}
+                      <tr>
+                        <td><div class="sku-code">{{ item.item_code|default:"-" }}</div></td>
+                        <td>
+                          <div class="sku-main">
+                            <div class="sku-name">{{ item.name|default:"-" }}</div>
+                            <div class="sku-meta">Тип: {{ item.goods_type|default:"op"|upper }}</div>
+                          </div>
+                        </td>
+                        <td>{{ item.size|default:"-" }}</td>
+                        <td>{{ item.barcode|default:"-" }}</td>
+                        {% if not hide_client_column %}
+                          <td>{{ item.agency|default:"-" }}</td>
+                        {% endif %}
+                        <td>{{ item.first_context_type|default:"-" }}{% if item.first_context_id %} · {{ item.first_context_id }}{% endif %}</td>
+                        <td>{{ item.last_context_type|default:"-" }}{% if item.last_context_id %} · {{ item.last_context_id }}{% endif %}</td>
+                        <td>{{ item.normalized_sku_ref.sku_code|default:"-" }}</td>
+                        <td>{{ item.updated_at|date:"d.m.Y H:i" }}</td>
+                      </tr>
+                    {% endfor %}
+                  </tbody>
+                {% else %}
+                  <thead>
+                    <tr>
+                      <th>Действия</th>
+                      <th>
+                        <a class="sort-link" href="{{ sort_info.sku_code.url }}">
+                          Артикул
+                          {% if sort_info.sku_code.active %}<span class="sort-mark">{% if sort_info.sku_code.dir == 'asc' %}▲{% else %}▼{% endif %}</span>{% endif %}
+                        </a>
+                      </th>
+                      <th>
+                        <a class="sort-link" href="{{ sort_info.name.url }}">
+                          Номенклатура
+                          {% if sort_info.name.active %}<span class="sort-mark">{% if sort_info.name.dir == 'asc' %}▲{% else %}▼{% endif %}</span>{% endif %}
+                        </a>
+                      </th>
+                      <th>
+                        <a class="sort-link" href="{{ sort_info.brand.url }}">
+                          Бренд
+                          {% if sort_info.brand.active %}<span class="sort-mark">{% if sort_info.brand.dir == 'asc' %}▲{% else %}▼{% endif %}</span>{% endif %}
+                        </a>
+                      </th>
+                      {% if not hide_client_column %}
+                        <th>
+                          <a class="sort-link" href="{{ sort_info.agency.url }}">
+                            Клиент
+                            {% if sort_info.agency.active %}<span class="sort-mark">{% if sort_info.agency.dir == 'asc' %}▲{% else %}▼{% endif %}</span>{% endif %}
+                          </a>
+                        </th>
+                      {% endif %}
+                      <th>
+                        <a class="sort-link" href="{{ sort_info.market.url }}">
+                          Маркет
+                          {% if sort_info.market.active %}<span class="sort-mark">{% if sort_info.market.dir == 'asc' %}▲{% else %}▼{% endif %}</span>{% endif %}
+                        </a>
+                      </th>
+                      <th>
+                        <a class="sort-link" href="{{ sort_info.size.url }}">
+                          Размер
+                          {% if sort_info.size.active %}<span class="sort-mark">{% if sort_info.size.dir == 'asc' %}▲{% else %}▼{% endif %}</span>{% endif %}
+                        </a>
+                      </th>
+                      <th>Штрихкоды</th>
+                      <th>
+                        <a class="sort-link" href="{{ sort_info.updated_at.url }}">
+                          Обновлено
+                          {% if sort_info.updated_at.active %}<span class="sort-mark">{% if sort_info.updated_at.dir == 'asc' %}▲{% else %}▼{% endif %}</span>{% endif %}
+                        </a>
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {% for item in items %}
+                      <tr
+                        data-sku-size-scope
+                        data-sku-article="{{ item.sku_code }}"
+                        data-sku-name="{% firstof item.name_print item.name %}"
+                        data-sku-brand="{{ item.brand|default:'' }}"
+                        data-sku-subject="{% firstof item.tovar_category item.vid_tovar item.type_tovar '' %}"
+                        data-sku-color="{% firstof item.color item.color_ref '' %}"
+                        data-sku-composition="{{ item.composition|default:'' }}"
+                        data-sku-supplier="{{ item.agency|default:'' }}"
+                        data-sku-country="{{ item.made_in|default:'' }}"
+                        data-sku-default-mode="{% if item.honest_sign %}cz{% else %}no-cz{% endif %}"
+                      >
+                        <td>
+                          <div class="actions">
+                            <a class="act-btn" title="Создать новый SKU" href="/sku/new/">＋</a>
+                            <a class="act-btn" title="Редактировать" href="/sku/{{ item.id }}/edit/">✎</a>
+                            <a class="act-btn" title="Создать копию" href="/sku/{{ item.id }}/duplicate/">⧉</a>
+                            <button class="act-btn print-btn" type="button" data-sku-print title="Печать этикетки">🖨</button>
+                            <a class="act-btn danger delete-btn" data-id="{{ item.id }}" title="Пометить как удаленный">🗑</a>
+                          </div>
+                        </td>
+                        <td>
+                          <div class="sku-code">{{ item.sku_code }}</div>
+                        </td>
+                        <td>
+                          <div class="sku-main">
+                            <div class="sku-name">{{ item.name }}</div>
+                            <div class="sku-meta">
+                              {% if item.name_print %}Для печати: {{ item.name_print }}{% else %}Название для печати не задано{% endif %}
+                            </div>
+                            <div class="chip-stack">
+                              {% if item.color %}<span class="chip">Цвет: {{ item.color }}</span>{% endif %}
+                              {% if item.honest_sign %}<span class="chip">Честный знак</span>{% endif %}
+                              {% if item.use_nds %}<span class="chip">НДС</span>{% endif %}
+                            </div>
+                          </div>
+                        </td>
+                        <td>{{ item.brand|default:"-" }}</td>
+                        {% if not hide_client_column %}
+                          <td>{{ item.agency|default:"-" }}</td>
+                        {% endif %}
+                        <td>{{ item.market|default:"-" }}</td>
+                        <td>
+                          {% if item.has_size_selector_ui %}
                             <select
                               class="size-select"
                               data-sku-size-picker
@@ -797,52 +799,181 @@
                                 <option value="{{ size_option }}" {% if size_option == item.selected_size_ui %}selected{% endif %}>{{ size_option }}</option>
                               {% endfor %}
                             </select>
+                          {% else %}
+                            {{ item.size_display_ui|default:item.size|default:"-" }}
+                          {% endif %}
+                        </td>
+                        <td>
+                          <div class="chip-stack barcode-chip-stack" data-barcode-stack>
+                            {% for bc in item.barcode_rows_ui %}
+                              <span
+                                class="chip barcode-chip{% if not bc.visible %} is-hidden{% endif %}"
+                                data-barcode-chip
+                                data-barcode-value="{{ bc.value }}"
+                                data-size="{{ bc.size }}"
+                              >{{ bc.value }}{% if bc.is_primary %}*{% endif %}</span>
+                            {% empty %}
+                              <span class="chip">-</span>
+                            {% endfor %}
+                            <span class="barcode-empty{% if item.barcode_rows_ui %} is-hidden{% endif %}" data-barcode-empty>Нет штрихкода для выбранного размера</span>
                           </div>
-                          <br>
-                        {% else %}
-                          {{ item.size_display_ui|default:item.size|default:"-" }}<br>
-                        {% endif %}
-                        Цвет: {{ item.color|default:"-" }}{% if item.color_ref %} ({{ item.color_ref }}){% endif %}<br>
-                        Название для печати: {{ item.name_print|default:"-" }}
+                        </td>
+                        <td>{{ item.updated_at|date:"d.m.Y H:i" }}</td>
+                      </tr>
+                    {% endfor %}
+                  </tbody>
+                {% endif %}
+              </table>
+            </div>
+          {% else %}
+            <div class="cards">
+              {% if is_temporary_catalog %}
+                {% for item in items %}
+                  <article class="card">
+                    <div class="card-top">
+                      <div class="card-title">
+                        <div class="eyebrow">Временный код {{ item.item_code|default:"-" }}</div>
+                        <h3>{{ item.name|default:"-" }}</h3>
+                        <div class="card-subtitle">
+                          {% if not hide_client_column %}Клиент: {{ item.agency|default:"-" }} · {% endif %}
+                          Размер: {{ item.size|default:"-" }}
+                        </div>
+                      </div>
+                      <div class="thumb"></div>
+                    </div>
+                    <div class="card-grid">
+                      <div class="data-block">
+                        <div class="data-label">Основное</div>
+                        <div class="data-value">
+                          Штрихкод: {{ item.barcode|default:"-" }}<br>
+                          Тип: {{ item.goods_type|default:"op"|upper }}<br>
+                          Нормализованный SKU: {{ item.normalized_sku_ref.sku_code|default:"-" }}
+                        </div>
+                      </div>
+                      <div class="data-block">
+                        <div class="data-label">Источник</div>
+                        <div class="data-value">
+                          Первый: {{ item.first_context_type|default:"-" }}{% if item.first_context_id %} · {{ item.first_context_id }}{% endif %}<br>
+                          Последний: {{ item.last_context_type|default:"-" }}{% if item.last_context_id %} · {{ item.last_context_id }}{% endif %}
+                        </div>
+                      </div>
+                      <div class="data-block">
+                        <div class="data-label">Обновление</div>
+                        <div class="data-value">
+                          Создано: {{ item.created_at|date:"d.m.Y H:i" }}<br>
+                          Обновлено: {{ item.updated_at|date:"d.m.Y H:i" }}<br>
+                          Нормализовано: {{ item.normalized_at|date:"d.m.Y H:i"|default:"-" }}
+                        </div>
                       </div>
                     </div>
-                    <div class="data-block">
-                      <div class="data-label">Штрихкоды</div>
-                      <div class="data-value" data-barcode-stack>
-                        {% for bc in item.barcode_rows_ui %}
-                          <div data-barcode-chip data-barcode-value="{{ bc.value }}" data-size="{{ bc.size }}"{% if not bc.visible %} class="is-hidden"{% endif %}>
-                            {{ bc.value }}{% if bc.is_primary %} · основной{% endif %}
-                          </div>
-                        {% empty %}
-                          -
-                        {% endfor %}
-                        <div class="barcode-empty{% if item.barcode_rows_ui %} is-hidden{% endif %}" data-barcode-empty>Нет штрихкода для выбранного размера</div>
+                  </article>
+                {% endfor %}
+              {% else %}
+                {% for item in items %}
+                  <article
+                    class="card"
+                    data-sku-size-scope
+                    data-sku-article="{{ item.sku_code }}"
+                    data-sku-name="{% firstof item.name_print item.name %}"
+                    data-sku-brand="{{ item.brand|default:'' }}"
+                    data-sku-subject="{% firstof item.tovar_category item.vid_tovar item.type_tovar '' %}"
+                    data-sku-color="{% firstof item.color item.color_ref '' %}"
+                    data-sku-composition="{{ item.composition|default:'' }}"
+                    data-sku-supplier="{{ item.agency|default:'' }}"
+                    data-sku-country="{{ item.made_in|default:'' }}"
+                    data-sku-default-mode="{% if item.honest_sign %}cz{% else %}no-cz{% endif %}"
+                  >
+                    <div class="card-top">
+                      <div class="card-title">
+                        <div class="eyebrow">Артикул {{ item.sku_code }}</div>
+                        <h3>{{ item.name }}</h3>
+                        <div class="card-subtitle">
+                          {% if not hide_client_column %}Клиент: {{ item.agency|default:"-" }} · {% endif %}
+                          Маркет: {{ item.market|default:"-" }}
+                        </div>
                       </div>
+                      {% if item.photos.all %}
+                        {% with photo=item.photos.all.0 %}
+                          <div class="thumb" style="background-image:url('{{ photo.url }}');"></div>
+                        {% endwith %}
+                      {% elif item.img %}
+                        <div class="thumb" style="background-image:url('{{ item.img }}');"></div>
+                      {% else %}
+                        <div class="thumb"></div>
+                      {% endif %}
                     </div>
-                    <div class="data-block">
-                      <div class="data-label">Маркировка и учет</div>
-                      <div class="data-value">
-                        Источник: {{ item.get_source_display }}<br>
-                        Честный знак: {{ item.honest_sign|yesno:"Да,Нет" }}<br>
-                        НДС: {{ item.use_nds|yesno:"Да,Нет" }}<br>
-                        Акциз: {{ item.sign_akciz|yesno:"Да,Нет" }}
-                      </div>
-                    </div>
-                    <div class="data-block">
-                      <div class="data-label">Обновление</div>
-                      <div class="data-value">
-                        Создано: {{ item.created_at|date:"d.m.Y H:i" }}<br>
-                        Обновлено: {{ item.updated_at|date:"d.m.Y H:i" }}<br>
-                        Внешний ID: {{ item.source_reference|default:"-" }}
-                      </div>
-                    </div>
-                  </div>
 
-                  {% if item.description or item.img_comment %}
-                    <div class="description">{{ item.description|default:item.img_comment }}</div>
-                  {% endif %}
-                </article>
-              {% endfor %}
+                    <div class="actions">
+                      <a class="act-btn" title="Редактировать" href="/sku/{{ item.id }}/edit/">✎</a>
+                      <a class="act-btn" title="Создать копию" href="/sku/{{ item.id }}/duplicate/">⧉</a>
+                      <button class="act-btn print-btn" type="button" data-sku-print title="Печать этикетки">🖨</button>
+                      <a class="act-btn danger delete-btn" data-id="{{ item.id }}" title="Пометить как удаленный">🗑</a>
+                    </div>
+
+                    <div class="card-grid">
+                      <div class="data-block">
+                        <div class="data-label">Основное</div>
+                        <div class="data-value">
+                          Бренд: {{ item.brand|default:"-" }}<br>
+                          Размер:
+                          {% if item.has_size_selector_ui %}
+                            <div style="margin-top:8px;">
+                              <select
+                                class="size-select"
+                                data-sku-size-picker
+                                data-has-sized-barcodes="{% if item.has_sized_barcodes_ui %}1{% else %}0{% endif %}"
+                              >
+                                {% for size_option in item.size_options_ui %}
+                                  <option value="{{ size_option }}" {% if size_option == item.selected_size_ui %}selected{% endif %}>{{ size_option }}</option>
+                                {% endfor %}
+                              </select>
+                            </div>
+                            <br>
+                          {% else %}
+                            {{ item.size_display_ui|default:item.size|default:"-" }}<br>
+                          {% endif %}
+                          Цвет: {{ item.color|default:"-" }}{% if item.color_ref %} ({{ item.color_ref }}){% endif %}<br>
+                          Название для печати: {{ item.name_print|default:"-" }}
+                        </div>
+                      </div>
+                      <div class="data-block">
+                        <div class="data-label">Штрихкоды</div>
+                        <div class="data-value" data-barcode-stack>
+                          {% for bc in item.barcode_rows_ui %}
+                            <div data-barcode-chip data-barcode-value="{{ bc.value }}" data-size="{{ bc.size }}"{% if not bc.visible %} class="is-hidden"{% endif %}>
+                              {{ bc.value }}{% if bc.is_primary %} · основной{% endif %}
+                            </div>
+                          {% empty %}
+                            -
+                          {% endfor %}
+                          <div class="barcode-empty{% if item.barcode_rows_ui %} is-hidden{% endif %}" data-barcode-empty>Нет штрихкода для выбранного размера</div>
+                        </div>
+                      </div>
+                      <div class="data-block">
+                        <div class="data-label">Маркировка и учет</div>
+                        <div class="data-value">
+                          Источник: {{ item.get_source_display }}<br>
+                          Честный знак: {{ item.honest_sign|yesno:"Да,Нет" }}<br>
+                          НДС: {{ item.use_nds|yesno:"Да,Нет" }}<br>
+                          Акциз: {{ item.sign_akciz|yesno:"Да,Нет" }}
+                        </div>
+                      </div>
+                      <div class="data-block">
+                        <div class="data-label">Обновление</div>
+                        <div class="data-value">
+                          Создано: {{ item.created_at|date:"d.m.Y H:i" }}<br>
+                          Обновлено: {{ item.updated_at|date:"d.m.Y H:i" }}<br>
+                          Внешний ID: {{ item.source_reference|default:"-" }}
+                        </div>
+                      </div>
+                    </div>
+
+                    {% if item.description or item.img_comment %}
+                      <div class="description">{{ item.description|default:item.img_comment }}</div>
+                    {% endif %}
+                  </article>
+                {% endfor %}
+              {% endif %}
             </div>
           {% endif %}
 
@@ -850,28 +981,31 @@
             <div class="pager-note">Страница {{ page_obj.number }} из {{ page_obj.paginator.num_pages }}</div>
             <div class="pager-actions">
               {% if page_obj.has_previous %}
-                <a class="btn" href="?page={{ page_obj.previous_page_number }}&view={{ view_mode }}{% if request.GET.q %}&q={{ request.GET.q|urlencode }}{% endif %}{% if request.GET.sort %}&sort={{ request.GET.sort|urlencode }}{% endif %}{% if request.GET.dir %}&dir={{ request.GET.dir|urlencode }}{% endif %}{% if request.GET.filter_field %}&filter_field={{ request.GET.filter_field|urlencode }}{% endif %}{% if request.GET.filter_value %}&filter_value={{ request.GET.filter_value|urlencode }}{% endif %}{% if request.GET.deleted %}&deleted={{ request.GET.deleted|urlencode }}{% endif %}{% if agency_filter %}&agency={{ agency_filter|urlencode }}{% endif %}">Назад</a>
+                <a class="btn" href="?page={{ page_obj.previous_page_number }}&view={{ view_mode }}{% if is_temporary_catalog %}&catalog=temporary{% endif %}{% if request.GET.q %}&q={{ request.GET.q|urlencode }}{% endif %}{% if request.GET.sort %}&sort={{ request.GET.sort|urlencode }}{% endif %}{% if request.GET.dir %}&dir={{ request.GET.dir|urlencode }}{% endif %}{% if request.GET.filter_field %}&filter_field={{ request.GET.filter_field|urlencode }}{% endif %}{% if request.GET.filter_value %}&filter_value={{ request.GET.filter_value|urlencode }}{% endif %}{% if request.GET.deleted and not is_temporary_catalog %}&deleted={{ request.GET.deleted|urlencode }}{% endif %}{% if agency_filter %}&agency={{ agency_filter|urlencode }}{% endif %}">Назад</a>
               {% endif %}
               {% if page_obj.has_next %}
-                <a class="btn" href="?page={{ page_obj.next_page_number }}&view={{ view_mode }}{% if request.GET.q %}&q={{ request.GET.q|urlencode }}{% endif %}{% if request.GET.sort %}&sort={{ request.GET.sort|urlencode }}{% endif %}{% if request.GET.dir %}&dir={{ request.GET.dir|urlencode }}{% endif %}{% if request.GET.filter_field %}&filter_field={{ request.GET.filter_field|urlencode }}{% endif %}{% if request.GET.filter_value %}&filter_value={{ request.GET.filter_value|urlencode }}{% endif %}{% if request.GET.deleted %}&deleted={{ request.GET.deleted|urlencode }}{% endif %}{% if agency_filter %}&agency={{ agency_filter|urlencode }}{% endif %}">Вперёд</a>
+                <a class="btn" href="?page={{ page_obj.next_page_number }}&view={{ view_mode }}{% if is_temporary_catalog %}&catalog=temporary{% endif %}{% if request.GET.q %}&q={{ request.GET.q|urlencode }}{% endif %}{% if request.GET.sort %}&sort={{ request.GET.sort|urlencode }}{% endif %}{% if request.GET.dir %}&dir={{ request.GET.dir|urlencode }}{% endif %}{% if request.GET.filter_field %}&filter_field={{ request.GET.filter_field|urlencode }}{% endif %}{% if request.GET.filter_value %}&filter_value={{ request.GET.filter_value|urlencode }}{% endif %}{% if request.GET.deleted and not is_temporary_catalog %}&deleted={{ request.GET.deleted|urlencode }}{% endif %}{% if agency_filter %}&agency={{ agency_filter|urlencode }}{% endif %}">Вперёд</a>
               {% endif %}
             </div>
           </div>
         </section>
       {% else %}
         <section class="empty-state">
-          <div class="eyebrow">Номенклатура пока пуста</div>
-          <h2>Активные SKU не найдены</h2>
-          <p>
-            Сейчас страница пустая не из-за сломанной верстки, а потому что в базе нет активных записей номенклатуры под этот экран.
-            Можно создать SKU вручную или загрузить/синхронизировать каталог, после чего записи сразу появятся здесь.
-          </p>
+          <div class="eyebrow">{{ empty_eyebrow }}</div>
+          <h2>{{ empty_title }}</h2>
+          <p>{{ empty_text }}</p>
           <div class="toolbar">
-            <a class="btn primary" href="/sku/new/">Создать первый SKU</a>
-            {% if show_deleted %}
-              <a class="btn" href="?view={{ view_mode }}">Показать активные</a>
+            {% if not is_temporary_catalog %}
+              <a class="btn primary" href="/sku/new/">Создать первый SKU</a>
             {% else %}
-              <a class="btn" href="?view={{ view_mode }}&deleted=1">Показать удаленные</a>
+              <a class="btn primary" href="?view={{ view_mode }}">Перейти к SKU</a>
+            {% endif %}
+            {% if show_deleted_toggle %}
+              {% if show_deleted %}
+                <a class="btn" href="?view={{ view_mode }}{% if is_temporary_catalog %}&catalog=temporary{% endif %}">Показать активные</a>
+              {% else %}
+                <a class="btn" href="?view={{ view_mode }}&deleted=1{% if is_temporary_catalog %}&catalog=temporary{% endif %}">Показать удаленные</a>
+              {% endif %}
             {% endif %}
           </div>
         </section>
@@ -948,6 +1082,7 @@
       const printModeButtons = document.querySelectorAll('[data-print-mode]');
       const printPreviewRoot = document.getElementById('sku-print-preview-root');
       const labelSettingsEl = document.getElementById('label-settings-data');
+      const catalogMode = '{{ catalog_mode }}';
       let timer = null;
       let activePrintScope = null;
       let activePrintMode = 'no-cz';
@@ -1323,7 +1458,11 @@
       }
 
       async function fetchSuggest(query) {
-        const response = await fetch(`/sku/suggest/?q=${encodeURIComponent(query)}`);
+        const params = new URLSearchParams({ q: query });
+        if (catalogMode === 'temporary') {
+          params.set('catalog', 'temporary');
+        }
+        const response = await fetch(`/sku/suggest/?${params.toString()}`);
         if (!response.ok) {
           render([]);
           return;

@@ -20,19 +20,19 @@ from head_manager.models import Carrier, OwnCompany
 from logistics.models import LogisticsTrip, LogisticsTripOrder
 from reachtruck.models import MoveRequest, MoveTask
 from sklad.models import (
-    InventoryState,
-    StockPalletState,
     WarehouseContainer,
     WarehouseLocation,
+    WarehouseReserve,
     WarehouseStockSnapshot,
 )
 from sklad.services import WarehouseGoodsStateResolver, WarehouseStateCode
 from sklad.services.warehouse_write_path import WarehouseWritePathService
+from sklad.test_utils import create_warehouse_snapshot_row
 from sku.models import Agency, Market
 from todo.models import Task
 
 from .forms import ShippingOrderForm
-from .models import ShippingOrder, ShippingOrderAttachment, ShippingOrderItem, ShippingReserve, ShippingTransportNote
+from .models import ShippingOrder, ShippingOrderAttachment, ShippingOrderItem, ShippingTransportNote
 from .services import (
     build_shipping_detail_page_context,
     build_shipping_list_page_context,
@@ -69,26 +69,6 @@ class ShippingFlowTests(TestCase):
             is_active=True,
         )
         self.agency = Agency.objects.create(agn_name="Тест Клиент")
-        StockPalletState.objects.create(
-            agency=self.agency,
-            order_type="receiving",
-            order_id="R-1",
-            sku="SKU-001",
-            name="Товар 1",
-            size="42",
-            barcode="200000000001",
-            goods_type="Готовый",
-            qty=100,
-            box_code="BX-1",
-            pallet_code="PL-1",
-            zone="OS",
-            row=1,
-            section=1,
-            tier=1,
-            cell=1,
-            location="OS · Ряд 1 · Секция 1 · Ярус 1 · Ячейка 1",
-            state=StockPalletState.STATE_WAREHOUSE,
-        )
         self.order = ShippingOrder.objects.create(
             number="SO-000001",
             agency=self.agency,
@@ -104,55 +84,83 @@ class ShippingFlowTests(TestCase):
             goods_type="Готовый",
             qty_requested=20,
         )
+        self._create_snapshot_box()
 
     def _create_snapshot_box(
         self,
         *,
         pallet_code: str = "PL-1",
         box_code: str = "BX-1",
+        order_id: str = "R-SNAP",
+        sku: str = "SKU-001",
+        name: str = "Товар 1",
+        size: str = "42",
+        barcode: str = "200000000001",
+        goods_type: str = "Готовый",
         qty: int = 100,
+        zone: str = "OS",
+        row: int = 1,
+        section: int = 1,
+        tier: int = 1,
+        cell: int = 1,
         location_code: str = "OS-1-1-1-1",
     ) -> WarehouseStockSnapshot:
-        location = WarehouseLocation.objects.create(
+        location = WarehouseWritePathService.ensure_location(
             warehouse_code="MSK",
-            zone_code="OS",
-            zone_kind=WarehouseLocation.ZONE_KIND_STORAGE,
-            row_no=1,
-            section_no=1,
-            tier_no=1,
-            cell_no=1,
-            location_code=location_code,
-            display_name="OS · Ряд 1 · Секция 1 · Ярус 1 · Ячейка 1",
+            zone_code=zone,
+            row_no=row,
+            section_no=section,
+            tier_no=tier,
+            cell_no=cell,
         )
-        pallet = WarehouseContainer.objects.create(
+        if location.location_code != location_code:
+            location.location_code = location_code
+            location.save(update_fields=["location_code", "updated_at"])
+        pallet, _ = WarehouseContainer.objects.get_or_create(
             agency=self.agency,
-            container_type=WarehouseContainer.TYPE_PALLET,
             container_code=pallet_code,
-            current_location=location,
+            defaults={
+                "container_type": WarehouseContainer.TYPE_PALLET,
+                "current_location": location,
+            },
         )
-        box = WarehouseContainer.objects.create(
+        if pallet.current_location_id != location.id:
+            pallet.current_location = location
+            pallet.save(update_fields=["current_location", "updated_at"])
+        box, _ = WarehouseContainer.objects.get_or_create(
             agency=self.agency,
-            container_type=WarehouseContainer.TYPE_BOX,
             container_code=box_code,
-            parent_container=pallet,
-            current_location=location,
+            defaults={
+                "container_type": WarehouseContainer.TYPE_BOX,
+                "parent_container": pallet,
+                "current_location": location,
+            },
         )
+        changed_fields = []
+        if box.parent_container_id != pallet.id:
+            box.parent_container = pallet
+            changed_fields.append("parent_container")
+        if box.current_location_id != location.id:
+            box.current_location = location
+            changed_fields.append("current_location")
+        if changed_fields:
+            box.save(update_fields=[*changed_fields, "updated_at"])
         return WarehouseStockSnapshot.objects.create(
             agency=self.agency,
             source_context_type="receiving",
-            source_context_id="R-SNAP",
-            sku_code="SKU-001",
-            name="Товар 1",
-            size="42",
-            barcode="200000000001",
-            goods_type="Готовый",
+            source_context_id=order_id,
+            sku_code=sku,
+            name=name,
+            size=size,
+            barcode=barcode,
+            goods_type=goods_type,
             qty=qty,
             available_qty=qty,
             container=box,
             container_code=box.container_code,
             parent_container=pallet,
             location=location,
-            zone_code="OS",
+            zone_code=location.zone_code,
             zone_kind=location.zone_kind,
             warehouse_state_code="stored",
         )
@@ -276,13 +284,20 @@ class ShippingFlowTests(TestCase):
         reserve_order(self.order, self.user)
         self.item.refresh_from_db()
         self.order.refresh_from_db()
-        stock_row = StockPalletState.objects.get(agency=self.agency, sku="SKU-001", size="42")
+        snapshot = WarehouseStockSnapshot.objects.get(agency=self.agency, sku_code="SKU-001", size="42")
         self.assertEqual(self.order.status, ShippingOrder.STATUS_RESERVED)
         self.assertEqual(self.item.qty_reserved, 20)
-        self.assertEqual(ShippingReserve.objects.filter(order=self.order).count(), 1)
-        self.assertEqual(stock_row.processing_reserved_qty, 0)
-        self.assertEqual(stock_row.shipping_reserved_qty, 20)
-        self.assertEqual(stock_row.available_qty, 80)
+        self.assertEqual(
+            WarehouseReserve.objects.filter(
+                agency=self.agency,
+                reserve_type=WarehouseReserve.TYPE_SHIPPING,
+                context_id=self.order.number,
+            ).count(),
+            1,
+        )
+        self.assertEqual(snapshot.processing_reserved_qty, 0)
+        self.assertEqual(snapshot.shipping_reserved_qty, 20)
+        self.assertEqual(snapshot.available_qty, 80)
 
     def test_reserve_order_can_keep_submitted_status_for_auto_reserve(self):
         reserve_order(
@@ -293,12 +308,19 @@ class ShippingFlowTests(TestCase):
         )
         self.item.refresh_from_db()
         self.order.refresh_from_db()
-        stock_row = StockPalletState.objects.get(agency=self.agency, sku="SKU-001", size="42")
+        snapshot = WarehouseStockSnapshot.objects.get(agency=self.agency, sku_code="SKU-001", size="42")
         self.assertEqual(self.order.status, ShippingOrder.STATUS_SUBMITTED)
         self.assertEqual(self.item.qty_reserved, 20)
-        self.assertEqual(ShippingReserve.objects.filter(order=self.order).count(), 1)
-        self.assertEqual(stock_row.shipping_reserved_qty, 20)
-        self.assertEqual(stock_row.available_qty, 80)
+        self.assertEqual(
+            WarehouseReserve.objects.filter(
+                agency=self.agency,
+                reserve_type=WarehouseReserve.TYPE_SHIPPING,
+                context_id=self.order.number,
+            ).count(),
+            1,
+        )
+        self.assertEqual(snapshot.shipping_reserved_qty, 20)
+        self.assertEqual(snapshot.available_qty, 80)
 
     def test_release_order_reserves_restores_available_qty_without_global_refresh(self):
         reserve_order(self.order, self.user)
@@ -307,12 +329,20 @@ class ShippingFlowTests(TestCase):
 
         self.order.refresh_from_db()
         self.item.refresh_from_db()
-        stock_row = StockPalletState.objects.get(agency=self.agency, sku="SKU-001", size="42")
+        snapshot = WarehouseStockSnapshot.objects.get(agency=self.agency, sku_code="SKU-001", size="42")
         self.assertEqual(self.order.status, ShippingOrder.STATUS_SUBMITTED)
         self.assertEqual(self.item.qty_reserved, 0)
-        self.assertEqual(ShippingReserve.objects.filter(order=self.order).count(), 0)
-        self.assertEqual(stock_row.shipping_reserved_qty, 0)
-        self.assertEqual(stock_row.available_qty, 100)
+        self.assertFalse(
+            WarehouseReserve.objects.filter(
+                agency=self.agency,
+                reserve_type=WarehouseReserve.TYPE_SHIPPING,
+                context_id=self.order.number,
+            )
+            .exclude(status__in=[WarehouseReserve.STATUS_RELEASED, WarehouseReserve.STATUS_CANCELED])
+            .exists()
+        )
+        self.assertEqual(snapshot.shipping_reserved_qty, 0)
+        self.assertEqual(snapshot.available_qty, 100)
 
     def test_create_pick_tasks_creates_reachtruck_task(self):
         reserve_order(self.order, self.user)
@@ -341,25 +371,15 @@ class ShippingFlowTests(TestCase):
             goods_type="Готовый",
             qty_requested=10,
         )
-        StockPalletState.objects.create(
-            agency=self.agency,
-            order_type="receiving",
+        self._create_snapshot_box(
             order_id="R-2",
             sku="SKU-002",
             name="Товар 2",
             size="44",
             barcode="200000000002",
-            goods_type="Готовый",
             qty=30,
             box_code="BX-2",
             pallet_code="PL-1",
-            zone="OS",
-            row=1,
-            section=1,
-            tier=1,
-            cell=1,
-            location="OS · Ряд 1 · Секция 1 · Ярус 1 · Ячейка 1",
-            state=StockPalletState.STATE_WAREHOUSE,
         )
 
         reserve_order(self.order, self.user)
@@ -397,25 +417,15 @@ class ShippingFlowTests(TestCase):
             goods_type="Готовый",
             qty_requested=30,
         )
-        StockPalletState.objects.create(
-            agency=self.agency,
-            order_type="receiving",
+        self._create_snapshot_box(
             order_id="R-2",
             sku="SKU-002",
             name="Товар 2",
             size="44",
             barcode="200000000002",
-            goods_type="Готовый",
             qty=30,
             box_code="BX-2",
             pallet_code="PL-1",
-            zone="OS",
-            row=1,
-            section=1,
-            tier=1,
-            cell=1,
-            location="OS · Ряд 1 · Секция 1 · Ярус 1 · Ячейка 1",
-            state=StockPalletState.STATE_WAREHOUSE,
         )
 
         reserve_order(self.order, self.user)
@@ -569,7 +579,7 @@ class ShippingFlowTests(TestCase):
         )
 
     def test_shipping_delivered_boxes_prefers_warehouse_snapshots_in_otg(self):
-        StockPalletState.objects.filter(agency=self.agency).delete()
+        WarehouseStockSnapshot.objects.filter(agency=self.agency).delete()
         self._create_snapshot_box(box_code="BX-WH-1", qty=20)
         WarehouseWritePathService.reserve_for_shipping(
             agency=self.agency,
@@ -619,7 +629,7 @@ class ShippingFlowTests(TestCase):
         )
 
     def test_save_shipping_packing_persists_shipping_pallets_in_warehouse(self):
-        StockPalletState.objects.filter(agency=self.agency).delete()
+        WarehouseStockSnapshot.objects.filter(agency=self.agency).delete()
         snapshot = self._create_snapshot_box(box_code="BX-PACK-1", qty=20)
         self.order.status = ShippingOrder.STATUS_PICKING
         self.order.save(update_fields=["status", "updated_at"])
@@ -679,7 +689,7 @@ class ShippingFlowTests(TestCase):
         self.assertEqual(snapshot.container.parent_container_id, snapshot.parent_container_id)
 
     def test_shipping_packing_summary_falls_back_to_warehouse_when_audit_missing(self):
-        StockPalletState.objects.filter(agency=self.agency).delete()
+        WarehouseStockSnapshot.objects.filter(agency=self.agency).delete()
         self._create_snapshot_box(box_code="BX-PACK-2", qty=20)
         self.order.status = ShippingOrder.STATUS_PICKING
         self.order.save(update_fields=["status", "updated_at"])
@@ -762,7 +772,7 @@ class ShippingFlowTests(TestCase):
         self.assertEqual(result.label_for("storekeeper"), "Загружено в машину")
 
     def test_warehouse_state_resolver_prefers_ready_for_loading_snapshot_over_order_status(self):
-        StockPalletState.objects.filter(agency=self.agency).delete()
+        WarehouseStockSnapshot.objects.filter(agency=self.agency).delete()
         self._load_snapshot_order_ready_for_loading(qty=20)
         self.order.status = ShippingOrder.STATUS_SUBMITTED
         self.order.save(update_fields=["status", "updated_at"])
@@ -773,7 +783,7 @@ class ShippingFlowTests(TestCase):
         self.assertEqual(result.label_for("default"), "Подготовлена складом, ожидает логиста")
 
     def test_warehouse_state_resolver_prefers_loaded_snapshot_over_trip_status_fallback(self):
-        StockPalletState.objects.filter(agency=self.agency).delete()
+        WarehouseStockSnapshot.objects.filter(agency=self.agency).delete()
         self._load_snapshot_order_to_vehicle(qty=20)
         self.order.status = ShippingOrder.STATUS_SUBMITTED
         self.order.save(update_fields=["status", "updated_at"])
@@ -789,15 +799,12 @@ class ShippingFlowTests(TestCase):
     def test_create_pick_tasks_prefers_single_pallet_when_it_covers_request(self):
         self.item.qty_requested = 110
         self.item.save(update_fields=["qty_requested", "updated_at"])
-        StockPalletState.objects.create(
-            agency=self.agency,
-            order_type="receiving",
+        self._create_snapshot_box(
             order_id="R-2",
             sku="SKU-001",
             name="Товар 1",
             size="42",
             barcode="200000000001",
-            goods_type="Готовый",
             qty=110,
             box_code="BX-2",
             pallet_code="PL-2",
@@ -806,8 +813,7 @@ class ShippingFlowTests(TestCase):
             section=1,
             tier=1,
             cell=1,
-            location="MR · Ряд 2 · Секция 1 · Ярус 1 · Ячейка 1",
-            state=StockPalletState.STATE_WAREHOUSE,
+            location_code="MR-2-1-1-1",
         )
 
         reserve_order(self.order, self.user)
@@ -831,20 +837,28 @@ class ShippingFlowTests(TestCase):
         ship_order(self.order, self.user, shipped_qty_by_item={self.item.id: 20})
         self.order.refresh_from_db()
         self.item.refresh_from_db()
-        stock_row = StockPalletState.objects.get(
+        snapshot = WarehouseStockSnapshot.objects.get(
             agency=self.agency,
-            sku="SKU-001",
+            sku_code="SKU-001",
             size="42",
         )
-        self.assertEqual(stock_row.qty, 80)
-        self.assertEqual(stock_row.shipping_reserved_qty, 0)
-        self.assertEqual(stock_row.available_qty, 80)
+        self.assertEqual(snapshot.qty, 80)
+        self.assertEqual(snapshot.shipping_reserved_qty, 0)
+        self.assertEqual(snapshot.available_qty, 80)
         self.assertEqual(self.order.status, ShippingOrder.STATUS_SHIPPED)
         self.assertEqual(self.item.qty_shipped, 20)
-        self.assertEqual(ShippingReserve.objects.filter(order=self.order).count(), 0)
+        self.assertFalse(
+            WarehouseReserve.objects.filter(
+                agency=self.agency,
+                reserve_type=WarehouseReserve.TYPE_SHIPPING,
+                context_id=self.order.number,
+            )
+            .exclude(status__in=[WarehouseReserve.STATUS_RELEASED, WarehouseReserve.STATUS_CANCELED])
+            .exists()
+        )
 
     def test_ship_order_uses_warehouse_write_path_for_loaded_trip(self):
-        StockPalletState.objects.filter(agency=self.agency).delete()
+        WarehouseStockSnapshot.objects.filter(agency=self.agency).delete()
         snapshot = self._load_snapshot_order_to_vehicle(qty=20)
         self.item.qty_reserved = 20
         self.item.save(update_fields=["qty_reserved", "updated_at"])
@@ -862,7 +876,7 @@ class ShippingFlowTests(TestCase):
         self.assertTrue(snapshot.is_archived)
 
     def test_ship_order_auto_promotes_ready_for_loading_snapshot_to_loaded_vehicle(self):
-        StockPalletState.objects.filter(agency=self.agency).delete()
+        WarehouseStockSnapshot.objects.filter(agency=self.agency).delete()
         snapshot, trip = self._assign_ready_snapshot_to_trip(qty=20, start_loading=False)
         self.item.qty_reserved = 20
         self.item.save(update_fields=["qty_reserved", "updated_at"])
@@ -880,7 +894,7 @@ class ShippingFlowTests(TestCase):
         self.assertTrue(snapshot.is_archived)
 
     def test_ship_order_completes_loading_in_progress_snapshot_via_warehouse_path(self):
-        StockPalletState.objects.filter(agency=self.agency).delete()
+        WarehouseStockSnapshot.objects.filter(agency=self.agency).delete()
         snapshot, trip = self._assign_ready_snapshot_to_trip(qty=20, start_loading=True)
         self.item.qty_reserved = 20
         self.item.save(update_fields=["qty_reserved", "updated_at"])
@@ -900,7 +914,7 @@ class ShippingFlowTests(TestCase):
         self.assertTrue(snapshot.is_archived)
 
     def test_shipping_stock_picker_uses_warehouse_snapshot_when_legacy_rows_missing(self):
-        StockPalletState.objects.filter(agency=self.agency).delete()
+        WarehouseStockSnapshot.objects.filter(agency=self.agency).delete()
         self._create_snapshot_box()
 
         stock_rows = _shipping_stock_picker_rows(self.agency)
@@ -911,7 +925,7 @@ class ShippingFlowTests(TestCase):
         self.assertEqual(stock_rows[0]["available_qty"], 100)
 
     def test_create_pick_tasks_uses_warehouse_snapshot_when_legacy_rows_missing(self):
-        StockPalletState.objects.filter(agency=self.agency).delete()
+        WarehouseStockSnapshot.objects.filter(agency=self.agency).delete()
         self._create_snapshot_box()
         self.item.qty_reserved = 20
         self.item.save(update_fields=["qty_reserved", "updated_at"])
@@ -931,25 +945,15 @@ class ShippingFlowTests(TestCase):
         self.assertEqual(task.to_zone, "OTG")
 
     def test_shipping_stock_picker_marks_mixed_boxes_by_barcodes(self):
-        StockPalletState.objects.create(
-            agency=self.agency,
-            order_type="receiving",
+        self._create_snapshot_box(
             order_id="R-1",
             sku="SKU-002",
             name="Товар 2",
             size="43",
             barcode="200000000002",
-            goods_type="Готовый",
             qty=100,
             box_code="BX-1",
             pallet_code="PL-1",
-            zone="OS",
-            row=1,
-            section=1,
-            tier=1,
-            cell=1,
-            location="OS · Ряд 1 · Секция 1 · Ярус 1 · Ячейка 1",
-            state=StockPalletState.STATE_WAREHOUSE,
         )
         stock_rows = _shipping_stock_picker_rows(self.agency)
         row_1 = next(row for row in stock_rows if row["sku_code"] == "SKU-001")
@@ -960,45 +964,29 @@ class ShippingFlowTests(TestCase):
         self.assertEqual(row_1["mixed_group"], row_2["mixed_group"])
 
     def test_shipping_stock_picker_marks_mixed_boxes_without_barcodes_by_item_signature(self):
-        StockPalletState.objects.create(
-            agency=self.agency,
-            order_type="receiving",
+        self._create_snapshot_box(
             order_id="R-2",
             sku="SKU-010",
             name="Товар без ШК",
             size="40",
             barcode="",
-            goods_type="Готовый",
             qty=20,
             box_code="BX-NO-BC",
             pallet_code="PL-2",
-            zone="OS",
-            row=1,
-            section=1,
-            tier=1,
             cell=2,
-            location="OS · Ряд 1 · Секция 1 · Ярус 1 · Ячейка 2",
-            state=StockPalletState.STATE_WAREHOUSE,
+            location_code="OS-1-1-1-2",
         )
-        StockPalletState.objects.create(
-            agency=self.agency,
-            order_type="receiving",
+        self._create_snapshot_box(
             order_id="R-2",
             sku="SKU-010",
             name="Товар без ШК",
             size="42",
             barcode="",
-            goods_type="Готовый",
             qty=20,
             box_code="BX-NO-BC",
             pallet_code="PL-2",
-            zone="OS",
-            row=1,
-            section=1,
-            tier=1,
             cell=2,
-            location="OS · Ряд 1 · Секция 1 · Ярус 1 · Ячейка 2",
-            state=StockPalletState.STATE_WAREHOUSE,
+            location_code="OS-1-1-1-2",
         )
         stock_rows = _shipping_stock_picker_rows(self.agency)
         rows = [row for row in stock_rows if row["sku_code"] == "SKU-010"]
@@ -1008,16 +996,16 @@ class ShippingFlowTests(TestCase):
         self.assertEqual(len(groups), 1)
 
     def test_shipping_stock_picker_hides_box_with_partial_processing_reserve(self):
-        InventoryState.objects.create(
+        WarehouseReserve.objects.create(
             agency=self.agency,
-            order_type="processing",
-            order_id="P-1",
-            sku="SKU-001",
+            reserve_type=WarehouseReserve.TYPE_PROCESSING,
+            context_type="processing",
+            context_id="P-1",
+            sku_code="SKU-001",
             size="42",
-            barcode="200000000001",
             goods_type="Готовый",
-            qty=20,
-            state=InventoryState.STATE_PROCESSING,
+            qty_reserved=20,
+            status=WarehouseReserve.STATUS_ACTIVE,
         )
 
         stock_rows = _shipping_stock_picker_rows(self.agency)
@@ -1025,36 +1013,28 @@ class ShippingFlowTests(TestCase):
         self.assertEqual(stock_rows, [])
 
     def test_shipping_stock_picker_keeps_only_fully_free_boxes(self):
-        StockPalletState.objects.create(
-            agency=self.agency,
-            order_type="receiving",
+        self._create_snapshot_box(
             order_id="R-2",
             sku="SKU-001",
             name="Товар 1",
             size="42",
             barcode="200000000001",
-            goods_type="Готовый",
             qty=100,
             box_code="BX-2",
             pallet_code="PL-2",
-            zone="OS",
-            row=1,
-            section=1,
-            tier=1,
             cell=2,
-            location="OS · Ряд 1 · Секция 1 · Ярус 1 · Ячейка 2",
-            state=StockPalletState.STATE_WAREHOUSE,
+            location_code="OS-1-1-1-2",
         )
-        InventoryState.objects.create(
+        WarehouseReserve.objects.create(
             agency=self.agency,
-            order_type="processing",
-            order_id="P-2",
-            sku="SKU-001",
+            reserve_type=WarehouseReserve.TYPE_PROCESSING,
+            context_type="processing",
+            context_id="P-2",
+            sku_code="SKU-001",
             size="42",
-            barcode="200000000001",
             goods_type="Готовый",
-            qty=20,
-            state=InventoryState.STATE_PROCESSING,
+            qty_reserved=20,
+            status=WarehouseReserve.STATUS_ACTIVE,
         )
 
         stock_rows = _shipping_stock_picker_rows(self.agency)
@@ -1080,14 +1060,16 @@ class ShippingFlowTests(TestCase):
             qty_requested=20,
             qty_reserved=20,
         )
-        ShippingReserve.objects.create(
-            order=order,
-            item=item,
+        WarehouseReserve.objects.create(
             agency=self.agency,
+            reserve_type=WarehouseReserve.TYPE_SHIPPING,
+            context_type="shipping",
+            context_id=order.number,
             sku_code="SKU-001",
             size="42",
             goods_type="Готовый",
-            qty=20,
+            qty_reserved=20,
+            status=WarehouseReserve.STATUS_ACTIVE,
         )
 
         self.assertEqual(_shipping_stock_picker_rows(self.agency), [])
@@ -1364,7 +1346,7 @@ class ShippingManagerTaskFlowTests(TestCase):
         )
         self.agency = Agency.objects.create(agn_name="Клиент отгрузки", portal_user=self.client_user)
         self.market = Market.objects.create(id=301, name="Ozon")
-        StockPalletState.objects.create(
+        create_warehouse_snapshot_row(
             agency=self.agency,
             order_type="receiving",
             order_id="R-SH-1",
@@ -1381,10 +1363,8 @@ class ShippingManagerTaskFlowTests(TestCase):
             section=1,
             tier=1,
             cell=1,
-            location="OS · Ряд 1 · Секция 1 · Ярус 1 · Ячейка 1",
-            state=StockPalletState.STATE_WAREHOUSE,
         )
-        StockPalletState.objects.create(
+        create_warehouse_snapshot_row(
             agency=self.agency,
             order_type="receiving",
             order_id="R-SH-2",
@@ -1401,8 +1381,6 @@ class ShippingManagerTaskFlowTests(TestCase):
             section=1,
             tier=1,
             cell=2,
-            location="OS · Ряд 1 · Секция 1 · Ярус 1 · Ячейка 2",
-            state=StockPalletState.STATE_WAREHOUSE,
         )
 
     def _submit_payload(self):
@@ -1629,7 +1607,11 @@ class ShippingManagerTaskFlowTests(TestCase):
         self.client.post(f"/shipping/{order.pk}/", data={"action": "reserve"})
         self.client.force_login(self.storekeeper_user)
         self.client.post(f"/shipping/{order.pk}/", data={"action": "accept_storekeeper"})
-        StockPalletState.objects.filter(agency=self.agency).update(pallet_code="")
+        WarehouseContainer.objects.filter(
+            agency=self.agency,
+            container_type=WarehouseContainer.TYPE_BOX,
+        ).update(parent_container=None)
+        WarehouseStockSnapshot.objects.filter(agency=self.agency).update(parent_container=None)
 
         response = self.client.get(f"/shipping/{order.pk}/")
 
@@ -1646,7 +1628,11 @@ class ShippingManagerTaskFlowTests(TestCase):
         self.client.post(f"/shipping/{order.pk}/", data={"action": "reserve"})
         self.client.force_login(self.storekeeper_user)
         self.client.post(f"/shipping/{order.pk}/", data={"action": "accept_storekeeper"})
-        StockPalletState.objects.filter(agency=self.agency).update(pallet_code="")
+        WarehouseContainer.objects.filter(
+            agency=self.agency,
+            container_type=WarehouseContainer.TYPE_BOX,
+        ).update(parent_container=None)
+        WarehouseStockSnapshot.objects.filter(agency=self.agency).update(parent_container=None)
 
         response = self.client.post(f"/shipping/{order.pk}/", data={"action": "create_pick_tasks"}, follow=True)
 
@@ -2586,7 +2572,7 @@ class ShippingAttachmentFlowTests(TestCase):
         self.agency = Agency.objects.create(agn_name="Клиент с файлами", portal_user=self.client_user)
         Agency.objects.create(agn_name="Чужой клиент", portal_user=self.other_client_user)
         self.market = Market.objects.create(id=302, name="WB Attach")
-        StockPalletState.objects.create(
+        create_warehouse_snapshot_row(
             agency=self.agency,
             order_type="receiving",
             order_id="R-ATT-1",
@@ -2603,8 +2589,6 @@ class ShippingAttachmentFlowTests(TestCase):
             section=1,
             tier=1,
             cell=1,
-            location="OS · Ряд 1 · Секция 1 · Ярус 1 · Ячейка 1",
-            state=StockPalletState.STATE_WAREHOUSE,
         )
 
     def tearDown(self):

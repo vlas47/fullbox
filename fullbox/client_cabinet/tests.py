@@ -9,7 +9,8 @@ from audit.models import OrderAuditEntry
 from employees.models import Employee
 from marking.models import MarkingCode
 from shipping.models import ShippingOrder, ShippingOrderItem
-from sklad.models import InventoryState, StockPalletState
+from sklad.services import WarehouseStateCode
+from sklad.test_utils import create_warehouse_snapshot_row
 from sku.models import Agency, SKU
 from todo.models import Task
 from .services import (
@@ -275,13 +276,14 @@ class ClientInventoryCheckTests(TestCase):
             qty_requested=4,
             qty_shipped=4,
         )
-        StockPalletState.objects.create(
+        create_warehouse_snapshot_row(
             agency=agency,
             order_type="receiving",
             order_id="rcv-1",
             sku="SKU-1",
+            name="Товар",
+            goods_type="Оптовый",
             qty=11,
-            state=StockPalletState.STATE_WAREHOUSE,
         )
 
         result = _inventory_check_for_agency(agency)
@@ -310,13 +312,14 @@ class ClientInventoryCheckTests(TestCase):
                 ],
             },
         )
-        StockPalletState.objects.create(
+        create_warehouse_snapshot_row(
             agency=agency,
             order_type="receiving",
             order_id="rcv-2",
             sku="SKU-1",
+            name="Товар",
+            goods_type="Оптовый",
             qty=9,
-            state=StockPalletState.STATE_WAREHOUSE,
         )
 
         result = _inventory_check_for_agency(agency)
@@ -356,21 +359,31 @@ class ClientInventoryCheckTests(TestCase):
                 ],
             },
         )
-        StockPalletState.objects.create(
+        create_warehouse_snapshot_row(
             agency=agency,
             order_type="receiving",
             order_id="rcv-3",
             sku="SKU-1",
+            name="Товар",
+            goods_type="Оптовый",
             qty=2,
-            state=StockPalletState.STATE_WAREHOUSE,
         )
-        InventoryState.objects.create(
+        create_warehouse_snapshot_row(
             agency=agency,
             order_type="processing",
             order_id="proc-3",
             sku="SKU-1",
-            qty=2,
-            state=InventoryState.STATE_PROCESSING,
+            name="Товар",
+            goods_type="Оптовый",
+            qty=8,
+            available_qty=0,
+            processing_reserved_qty=8,
+            zone="OBR",
+            row=0,
+            section=0,
+            tier=0,
+            cell=0,
+            warehouse_state_code=WarehouseStateCode.PROCESSING_IN_PROGRESS.value,
         )
 
         result = _inventory_check_for_agency(agency)
@@ -433,13 +446,14 @@ class ClientInventoryCheckTests(TestCase):
                 ],
             },
         )
-        StockPalletState.objects.create(
+        create_warehouse_snapshot_row(
             agency=agency,
             order_type="receiving",
             order_id="rcv-4",
             sku="SKU-1",
+            name="Товар",
+            goods_type="Оптовый",
             qty=400,
-            state=StockPalletState.STATE_WAREHOUSE,
         )
 
         result = _inventory_check_for_agency(agency)
@@ -527,11 +541,12 @@ class ClientCabinetServiceTests(TestCase):
             box_barcode="BOX-1",
             code="CZ-2",
         )
-        StockPalletState.objects.create(
+        create_warehouse_snapshot_row(
             agency=self.agency,
             order_type="processing",
             order_id="proc-1",
             sku="SKU-1",
+            name="Товар",
             barcode="200000000001",
             goods_type="gv",
             qty=2,
@@ -542,8 +557,6 @@ class ClientCabinetServiceTests(TestCase):
             section=1,
             tier=1,
             cell=1,
-            location="OS · Ряд 1 · Секция 1 · Ярус 1 · Ячейка 1",
-            state=StockPalletState.STATE_WAREHOUSE,
         )
 
         context = build_marking_tools_context(selected_client=self.agency)

@@ -9,6 +9,7 @@ from sklad.models import WarehouseStockSnapshot
 from sku.models import Agency
 
 from .stock_operations import OperationalStockService
+from .stock_availability import StockAvailabilityService
 from .warehouse_policy import WarehouseActionPolicy
 from .warehouse_state import WarehouseGoodsStateResolver
 from .warehouse_transitions import WarehouseStateCode
@@ -553,6 +554,11 @@ class WarehouseCommandService:
         skipped_missing_destination = 0
         total = 0
         task_specs_by_destination: dict[tuple[str, int, int, int, int], list[dict]] = {}
+        reserved_os_cells = StockAvailabilityService.occupied_os_cell_keys(
+            exclude_order_type="receiving",
+            exclude_order_id=order_key,
+        )
+        pending_os_cells: set[tuple[int, int, int, int]] = set()
         for pallet in placement_pallets:
             if not isinstance(pallet, dict):
                 continue
@@ -580,6 +586,17 @@ class WarehouseCommandService:
             if destination_key == ("PR", 0, 0, 0, 0):
                 skipped_missing_destination += 1
                 continue
+            if destination_key[0] == "OS":
+                os_key = (
+                    destination_key[1],
+                    destination_key[2],
+                    destination_key[3],
+                    destination_key[4],
+                )
+                if os_key in reserved_os_cells or os_key in pending_os_cells:
+                    skipped_existing += 1
+                    continue
+                pending_os_cells.add(os_key)
             from_location = {"zone": "PR", "row": "", "section": "", "tier": "", "cell": ""}
             move_payload = {
                 "status": "created",

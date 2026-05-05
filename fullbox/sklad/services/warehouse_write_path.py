@@ -7,7 +7,6 @@ from django.utils import timezone
 
 from sku.models import Agency, SKU
 from sklad.models import (
-    StockPalletState,
     WarehouseContainer,
     WarehouseEvent,
     WarehouseLocation,
@@ -30,6 +29,13 @@ ZONE_KIND_BY_CODE = {
     "LOAD": WarehouseLocation.ZONE_KIND_LOADING,
     "VEH": WarehouseLocation.ZONE_KIND_VEHICLE,
 }
+_PUTAWAY_DESTINATION_BLOCKING_STATUSES = (
+    WarehouseOperation.STATUS_CREATED,
+    WarehouseOperation.STATUS_PLANNED,
+    WarehouseOperation.STATUS_IN_PROGRESS,
+    WarehouseOperation.STATUS_PARTIAL,
+    WarehouseOperation.STATUS_BLOCKED,
+)
 
 
 @dataclass(frozen=True)
@@ -39,6 +45,58 @@ class WarehousePlacementResult:
 
 
 class WarehouseWritePathService:
+    @classmethod
+    def ensure_putaway_destination_available(
+        cls,
+        *,
+        destination: WarehouseLocation | None,
+        exclude_operation_id: int | None = None,
+        exclude_container_code: str = "",
+    ) -> None:
+        if destination is None:
+            raise ValueError("Putaway destination is required")
+        if str(destination.zone_code or "").strip().upper() != "OS":
+            return
+
+        location_label = cls._location_display_name(
+            str(destination.zone_code or "").strip().upper(),
+            int(destination.row_no or 0),
+            int(destination.section_no or 0),
+            int(destination.tier_no or 0),
+            int(destination.cell_no or 0),
+        )
+        normalized_container_code = str(exclude_container_code or "").strip()
+
+        occupied_snapshots = WarehouseStockSnapshot.objects.filter(
+            location=destination,
+            zone_code__iexact="OS",
+            is_archived=False,
+        )
+        if normalized_container_code:
+            occupied_snapshots = occupied_snapshots.exclude(
+                models.Q(container_code__iexact=normalized_container_code)
+                | models.Q(container__container_code__iexact=normalized_container_code)
+                | models.Q(parent_container__container_code__iexact=normalized_container_code)
+            )
+        if occupied_snapshots.exists():
+            raise ValueError(f"Место хранения {location_label} уже занято на складе.")
+
+        reserved_operations = WarehouseOperation.objects.filter(
+            operation_type=WarehouseOperation.TYPE_PUTAWAY,
+            destination_location=destination,
+            status__in=_PUTAWAY_DESTINATION_BLOCKING_STATUSES,
+        )
+        if exclude_operation_id:
+            reserved_operations = reserved_operations.exclude(id=int(exclude_operation_id))
+        if normalized_container_code:
+            reserved_operations = reserved_operations.exclude(
+                tasks__container__container_code__iexact=normalized_container_code
+            ).distinct()
+        if reserved_operations.exists():
+            raise ValueError(
+                f"Место хранения {location_label} уже зарезервировано другой заявкой ричтрака."
+            )
+
     @classmethod
     @transaction.atomic
     def clear_receiving_context(
@@ -102,100 +160,131 @@ class WarehouseWritePathService:
         if containers:
             WarehouseContainer.objects.filter(id__in=containers).delete()
 
+    @staticmethod
+    def _reserve_open_qty(reserve: WarehouseReserve) -> int:
+        return max(int(reserve.qty_reserved or 0) - int(reserve.qty_satisfied or 0), 0)
+
+    @staticmethod
+    def _reserve_matches_snapshot(reserve: WarehouseReserve, snapshot: WarehouseStockSnapshot) -> bool:
+        return (
+            int(reserve.agency_id or 0) == int(snapshot.agency_id or 0)
+            and str(reserve.sku_code or "").strip() == str(snapshot.sku_code or "").strip()
+            and str(reserve.size or "").strip() == str(snapshot.size or "").strip()
+            and str(reserve.barcode or "").strip() == str(snapshot.barcode or "").strip()
+            and str(reserve.goods_type or "").strip() == str(snapshot.goods_type or "").strip()
+        )
+
     @classmethod
-    @transaction.atomic
-    def sync_legacy_storage_pallet(
+    def _reserve_snapshot_id_map(cls, reserves: list[WarehouseReserve]) -> dict[int, int]:
+        reserve_ids = [int(reserve.id) for reserve in reserves if int(reserve.id or 0) > 0]
+        if not reserve_ids:
+            return {}
+        snapshot_by_reserve: dict[int, int] = {}
+        for row in (
+            WarehouseEvent.objects.filter(reserve_id__in=reserve_ids)
+            .exclude(payload__isnull=True)
+            .values("reserve_id", "payload")
+            .order_by("id")
+        ):
+            reserve_id = int(row.get("reserve_id") or 0)
+            payload = row.get("payload") if isinstance(row.get("payload"), dict) else {}
+            snapshot_id = int(payload.get("snapshot_id") or 0)
+            if reserve_id and snapshot_id:
+                snapshot_by_reserve.setdefault(reserve_id, snapshot_id)
+        return snapshot_by_reserve
+
+    @classmethod
+    def _release_reserves_from_snapshots(
         cls,
         *,
-        agency: Agency,
-        pallet_code: str,
-        source_document_type: str = "legacy_stock",
-        source_document_id: str = "",
-    ) -> list[int]:
-        normalized_pallet_code = str(pallet_code or "").strip()
-        if not normalized_pallet_code:
-            return []
-        rows = list(
-            StockPalletState.objects.filter(
-                agency=agency,
-                pallet_code=normalized_pallet_code,
-                state=StockPalletState.STATE_WAREHOUSE,
-            ).order_by("id")
-        )
-        if not rows:
-            return []
-        snapshot_ids: list[int] = []
-        pallet_location = cls.ensure_location(
-            warehouse_code="MSK",
-            zone_code=str(rows[0].zone or "OS").strip() or "OS",
-            row_no=int(rows[0].row or 0),
-            section_no=int(rows[0].section or 0),
-            tier_no=int(rows[0].tier or 0),
-            cell_no=int(rows[0].cell or 0),
-        )
-        pallet_container, _ = WarehouseContainer.objects.get_or_create(
-            agency=agency,
-            container_code=normalized_pallet_code,
-            defaults={
-                "container_type": WarehouseContainer.TYPE_PALLET,
-                "current_location": pallet_location,
-                "source_context_type": source_document_type,
-                "source_context_id": str(source_document_id or normalized_pallet_code).strip(),
-            },
-        )
-        if pallet_container.current_location_id != pallet_location.id:
-            pallet_container.current_location = pallet_location
-            pallet_container.save(update_fields=["current_location", "updated_at"])
-        for row in rows:
-            location = cls.ensure_location(
-                warehouse_code="MSK",
-                zone_code=str(row.zone or "OS").strip() or "OS",
-                row_no=int(row.row or 0),
-                section_no=int(row.section or 0),
-                tier_no=int(row.tier or 0),
-                cell_no=int(row.cell or 0),
-            )
-            sku_code = str(row.sku or "").strip()
-            if not sku_code:
+        reserves: list[WarehouseReserve],
+        reserved_qty_field: str,
+        release_event_type: WarehouseEventType,
+        performed_by=None,
+    ) -> None:
+        if not reserves:
+            return
+        snapshot_id_by_reserve = cls._reserve_snapshot_id_map(reserves)
+        snapshot_ids = {snapshot_id for snapshot_id in snapshot_id_by_reserve.values() if snapshot_id}
+        snapshots_by_id = {
+            int(snapshot.id): snapshot
+            for snapshot in WarehouseStockSnapshot.objects.select_for_update().filter(id__in=snapshot_ids)
+        }
+        for reserve in reserves:
+            remaining_to_release = cls._reserve_open_qty(reserve)
+            if remaining_to_release <= 0:
                 continue
-            sku_ref = SKU.objects.filter(agency=agency, sku_code=sku_code, deleted=False).first()
-            qty_value = int(row.qty or 0)
-            processing_reserved_qty = int(row.processing_reserved_qty or 0)
-            shipping_reserved_qty = int(row.shipping_reserved_qty or 0)
-            available_qty = max(int(row.available_qty or 0), qty_value - processing_reserved_qty - shipping_reserved_qty)
-            defaults = {
-                "stock_unit_type": "item",
-                "source_context_type": source_document_type,
-                "source_context_id": str(source_document_id or row.order_id or normalized_pallet_code).strip(),
-                "sku_ref": sku_ref,
-                "name": str(row.name or getattr(sku_ref, "name", "") or "").strip(),
-                "qty": qty_value,
-                "available_qty": available_qty,
-                "processing_reserved_qty": processing_reserved_qty,
-                "shipping_reserved_qty": shipping_reserved_qty,
-                "other_reserved_qty": 0,
-                "container": pallet_container,
-                "container_code": normalized_pallet_code,
-                "parent_container": None,
-                "location": location,
-                "zone_code": location.zone_code,
-                "zone_kind": location.zone_kind,
-                "warehouse_state_code": WarehouseStateCode.STORED.value,
-                "is_archived": False,
-            }
-            snapshot, _ = WarehouseStockSnapshot.objects.update_or_create(
-                agency=agency,
-                source_context_type=source_document_type,
-                source_context_id=str(source_document_id or row.order_id or normalized_pallet_code).strip(),
-                sku_code=sku_code,
-                size=str(row.size or "").strip(),
-                barcode=str(row.barcode or "").strip(),
-                goods_type=str(row.goods_type or "").strip(),
-                container_code=normalized_pallet_code,
-                defaults=defaults,
-            )
-            snapshot_ids.append(snapshot.id)
-        return snapshot_ids
+            candidates: list[WarehouseStockSnapshot] = []
+            snapshot_id = snapshot_id_by_reserve.get(int(reserve.id or 0))
+            if snapshot_id and snapshot_id in snapshots_by_id:
+                candidates.append(snapshots_by_id[snapshot_id])
+            if not candidates:
+                candidates = list(
+                    WarehouseStockSnapshot.objects.select_for_update()
+                    .filter(
+                        agency=reserve.agency,
+                        sku_code=reserve.sku_code,
+                        size=reserve.size,
+                        barcode=reserve.barcode,
+                        goods_type=reserve.goods_type,
+                        is_archived=False,
+                    )
+                    .order_by("id")
+                )
+            for snapshot in candidates:
+                if not cls._reserve_matches_snapshot(reserve, snapshot):
+                    continue
+                snapshot_reserved_qty = int(getattr(snapshot, reserved_qty_field, 0) or 0)
+                if snapshot_reserved_qty <= 0:
+                    continue
+                released_qty = min(snapshot_reserved_qty, remaining_to_release)
+                try:
+                    transition = WarehouseTransitionService.apply_event(
+                        snapshot.warehouse_state_code or WarehouseStateCode.UNKNOWN.value,
+                        release_event_type,
+                    )
+                    next_state = transition.code.value
+                except ValueError:
+                    next_state = snapshot.warehouse_state_code
+                release_event = WarehouseEvent.objects.create(
+                    agency=snapshot.agency,
+                    event_type=release_event_type.value,
+                    stock_context_type=reserve.context_type,
+                    stock_context_id=reserve.context_id,
+                    container=snapshot.container,
+                    reserve=reserve,
+                    from_location=snapshot.location,
+                    to_location=snapshot.location,
+                    from_zone_code=snapshot.zone_code,
+                    to_zone_code=snapshot.zone_code,
+                    qty=released_qty,
+                    performed_by=performed_by,
+                    performed_by_role=cls._role_of(performed_by),
+                    occurred_at=timezone.now(),
+                    payload={"snapshot_id": snapshot.id},
+                )
+                setattr(snapshot, reserved_qty_field, snapshot_reserved_qty - released_qty)
+                snapshot.available_qty = min(int(snapshot.qty or 0), int(snapshot.available_qty or 0) + released_qty)
+                if int(getattr(snapshot, reserved_qty_field, 0) or 0) <= 0:
+                    if int(snapshot.shipping_reserved_qty or 0) > 0:
+                        snapshot.warehouse_state_code = WarehouseStateCode.RESERVED_FOR_SHIPPING.value
+                    elif int(snapshot.processing_reserved_qty or 0) > 0:
+                        snapshot.warehouse_state_code = WarehouseStateCode.RESERVED_FOR_PROCESSING.value
+                    else:
+                        snapshot.warehouse_state_code = next_state
+                snapshot.last_event = release_event
+                snapshot.save(
+                    update_fields=[
+                        reserved_qty_field,
+                        "available_qty",
+                        "warehouse_state_code",
+                        "last_event",
+                        "updated_at",
+                    ]
+                )
+                remaining_to_release -= released_qty
+                if remaining_to_release <= 0:
+                    break
 
     @classmethod
     @transaction.atomic
@@ -222,40 +311,23 @@ class WarehouseWritePathService:
                     WarehouseReserve.STATUS_ACTIVE,
                     WarehouseReserve.STATUS_PARTIALLY_ALLOCATED,
                     WarehouseReserve.STATUS_ALLOCATED,
+                    WarehouseReserve.STATUS_PARTIALLY_SATISFIED,
+                    WarehouseReserve.STATUS_SATISFIED,
                 ],
             ).order_by("id")
         )
-        reserved_snapshots = list(
-            WarehouseStockSnapshot.objects.filter(
-                agency=agency,
-                warehouse_state_code=WarehouseStateCode.RESERVED_FOR_PROCESSING.value,
-                processing_reserved_qty__gt=0,
-                is_archived=False,
-            ).order_by("id")
+        cls._release_reserves_from_snapshots(
+            reserves=active_reserves,
+            reserved_qty_field="processing_reserved_qty",
+            release_event_type=WarehouseEventType.PROCESSING_RESERVE_RELEASED,
+            performed_by=created_by,
         )
-        reserved_snapshots = [
-            snapshot for snapshot in reserved_snapshots if cls._snapshot_matches_processing_context(snapshot, order_key)
-        ]
-        for snapshot in reserved_snapshots:
-            restored_qty = int(snapshot.processing_reserved_qty or 0)
-            if restored_qty <= 0:
-                continue
-            snapshot.available_qty = min(int(snapshot.qty or 0), int(snapshot.available_qty or 0) + restored_qty)
-            snapshot.processing_reserved_qty = 0
-            snapshot.warehouse_state_code = WarehouseStateCode.STORED.value
-            snapshot.last_event = None
-            snapshot.save(
-                update_fields=[
-                    "available_qty",
-                    "processing_reserved_qty",
-                    "warehouse_state_code",
-                    "last_event",
-                    "updated_at",
-                ]
-            )
         if active_reserves:
-            WarehouseEvent.objects.filter(reserve__in=active_reserves).delete()
-            WarehouseReserve.objects.filter(id__in=[reserve.id for reserve in active_reserves]).delete()
+            WarehouseReserve.objects.filter(id__in=[reserve.id for reserve in active_reserves]).update(
+                status=WarehouseReserve.STATUS_RELEASED,
+                released_by=created_by if getattr(created_by, "is_authenticated", False) else None,
+                updated_at=timezone.now(),
+            )
         if not items:
             return []
         return cls.reserve_for_processing(
@@ -297,6 +369,7 @@ class WarehouseWritePathService:
             warehouse_code=warehouse_code,
             source_document_type="placement_act",
             source_document_id=order_key,
+            stock_context_type="receiving",
         )
 
     @classmethod
@@ -311,6 +384,8 @@ class WarehouseWritePathService:
         warehouse_code: str = "MSK",
         source_document_type: str = "receiving_order",
         source_document_id: str = "",
+        stock_context_type: str = "receiving",
+        respect_item_location: bool = False,
     ) -> WarehousePlacementResult:
         if not items:
             return WarehousePlacementResult(snapshot_ids=[], event_ids=[])
@@ -320,6 +395,7 @@ class WarehouseWritePathService:
             raise ValueError("order_id is required for receiving placement")
 
         source_document_id = str(source_document_id or order_key).strip()
+        stock_context_type = str(stock_context_type or "receiving").strip()
         receiving_location = cls.ensure_location(
             warehouse_code=warehouse_code,
             zone_code="PR",
@@ -332,7 +408,7 @@ class WarehouseWritePathService:
         receiving_event = WarehouseEvent.objects.create(
             agency=agency,
             event_type=WarehouseEventType.RECEIVING_ARRIVED.value,
-            stock_context_type="receiving",
+            stock_context_type=stock_context_type,
             stock_context_id=order_key,
             source_document_type=source_document_type,
             source_document_id=source_document_id,
@@ -351,11 +427,20 @@ class WarehouseWritePathService:
             qty = max(int(item.get("qty") or 0), 0)
             if qty <= 0:
                 continue
+            target_location = (
+                cls._location_from_item(
+                    item=item,
+                    fallback=receiving_location,
+                    warehouse_code=warehouse_code,
+                )
+                if respect_item_location
+                else receiving_location
+            )
             sku_ref = cls._resolve_sku_ref(agency=agency, item=item)
             container = cls._resolve_container(
                 agency=agency,
                 item=item,
-                current_location=receiving_location,
+                current_location=target_location,
                 performed_by=performed_by,
             )
             transition = WarehouseTransitionService.apply_event(
@@ -365,13 +450,13 @@ class WarehouseWritePathService:
             placement_event = WarehouseEvent.objects.create(
                 agency=agency,
                 event_type=WarehouseEventType.PLACEMENT_COMPLETED.value,
-                stock_context_type="receiving",
+                stock_context_type=stock_context_type,
                 stock_context_id=order_key,
                 container=container,
                 source_document_type=source_document_type,
                 source_document_id=source_document_id,
-                to_location=receiving_location,
-                to_zone_code=receiving_location.zone_code,
+                to_location=target_location,
+                to_zone_code=target_location.zone_code,
                 qty=qty,
                 performed_by=performed_by,
                 performed_by_role=cls._role_of(performed_by),
@@ -388,7 +473,7 @@ class WarehouseWritePathService:
             snapshot = WarehouseStockSnapshot.objects.create(
                 agency=agency,
                 stock_unit_type="item",
-                source_context_type="receiving",
+                source_context_type=stock_context_type,
                 source_context_id=order_key,
                 sku_ref=sku_ref,
                 sku_code=str(item.get("sku_code") or item.get("sku") or "").strip(),
@@ -402,10 +487,14 @@ class WarehouseWritePathService:
                 container=container,
                 container_code=container.container_code if container else "",
                 parent_container=container.parent_container if container else None,
-                location=receiving_location,
-                zone_code=receiving_location.zone_code,
-                zone_kind=receiving_location.zone_kind,
-                warehouse_state_code=transition.code.value,
+                location=target_location,
+                zone_code=target_location.zone_code,
+                zone_kind=target_location.zone_kind,
+                warehouse_state_code=(
+                    transition.code.value
+                    if target_location.zone_code == "PR"
+                    else cls._state_for_location(target_location)
+                ),
                 last_event=placement_event,
             )
             snapshot_ids.append(snapshot.id)
@@ -433,7 +522,7 @@ class WarehouseWritePathService:
         source_document_id: str = "",
     ) -> WarehouseOperation:
         order_key = str(order_id or "").strip()
-        snapshot_query = WarehouseStockSnapshot.objects.select_related("location", "container").filter(
+        snapshot_query = WarehouseStockSnapshot.objects.select_related("location", "container", "parent_container").filter(
             agency=agency,
             source_context_type="receiving",
             source_context_id=order_key,
@@ -446,7 +535,11 @@ class WarehouseWritePathService:
             if str(value or "").strip()
         ]
         if normalized_container_codes:
-            snapshot_query = snapshot_query.filter(container_code__in=normalized_container_codes)
+            snapshot_query = snapshot_query.filter(
+                models.Q(container_code__in=normalized_container_codes)
+                | models.Q(container__container_code__in=normalized_container_codes)
+                | models.Q(parent_container__container_code__in=normalized_container_codes)
+            )
         snapshots = list(snapshot_query.order_by("id"))
         if not snapshots:
             raise ValueError("No receiving snapshots ready for putaway")
@@ -459,6 +552,10 @@ class WarehouseWritePathService:
             section_no=destination_section_no,
             tier_no=destination_tier_no,
             cell_no=destination_cell_no,
+        )
+        cls.ensure_putaway_destination_available(
+            destination=destination,
+            exclude_container_code=normalized_container_codes[0] if len(normalized_container_codes) == 1 else "",
         )
         operation = WarehouseOperation.objects.create(
             agency=agency,
@@ -494,32 +591,40 @@ class WarehouseWritePathService:
         )
         grouped_tasks: dict[tuple[str, int], dict] = {}
         for snapshot in snapshots:
-            if snapshot.container_id:
-                task_key = ("container", int(snapshot.container_id))
+            move_container = snapshot.parent_container or snapshot.container
+            if move_container:
+                task_key = ("container", int(move_container.id))
             else:
                 task_key = ("snapshot", int(snapshot.id))
             task_bucket = grouped_tasks.setdefault(
                 task_key,
                 {
-                    "container": snapshot.container,
+                    "container": move_container,
                     "from_location": snapshot.location,
                     "from_zone_code": snapshot.zone_code,
                     "qty_planned": 0,
                     "snapshot_ids": [],
-                    "container_code": snapshot.container_code,
+                    "container_code": (
+                        move_container.container_code
+                        if move_container
+                        else snapshot.container_code
+                    ),
                 },
             )
             task_bucket["qty_planned"] += int(snapshot.qty or 0)
             task_bucket["snapshot_ids"].append(int(snapshot.id))
         for task_bucket in grouped_tasks.values():
+            task_container = task_bucket["container"]
             WarehouseOperationTask.objects.create(
                 operation=operation,
                 task_type=(
                     WarehouseOperationTask.TYPE_PALLET_MOVE
-                    if task_bucket["container"]
+                    if task_container
+                    and task_container.container_type
+                    in {WarehouseContainer.TYPE_PALLET, WarehouseContainer.TYPE_MIXED_PALLET}
                     else WarehouseOperationTask.TYPE_BOX_MOVE
                 ),
-                container=task_bucket["container"],
+                container=task_container,
                 from_location=task_bucket["from_location"],
                 to_location=destination,
                 from_zone_code=task_bucket["from_zone_code"],
@@ -553,12 +658,14 @@ class WarehouseWritePathService:
             raise ValueError("Putaway operation must have destination_location")
 
         snapshots = list(
-            WarehouseStockSnapshot.objects.select_related("container")
+            WarehouseStockSnapshot.objects.select_related("container", "parent_container")
             .filter(active_operation=operation, is_archived=False)
             .order_by("id")
         )
         total_done = 0
+        touched_container_ids: set[int] = set()
         for snapshot in snapshots:
+            move_container = snapshot.parent_container or snapshot.container
             transition = WarehouseTransitionService.apply_event(
                 snapshot.warehouse_state_code or WarehouseStateCode.UNKNOWN.value,
                 WarehouseEventType.PUTAWAY_COMPLETED,
@@ -570,7 +677,7 @@ class WarehouseWritePathService:
                 event_type=WarehouseEventType.PUTAWAY_COMPLETED.value,
                 stock_context_type=snapshot.source_context_type,
                 stock_context_id=snapshot.source_context_id,
-                container=snapshot.container,
+                container=move_container,
                 operation=operation,
                 from_location=snapshot.location,
                 to_location=destination,
@@ -581,6 +688,10 @@ class WarehouseWritePathService:
                 performed_by_role=cls._role_of(performed_by) or "reachtruck",
                 occurred_at=timezone.now(),
             )
+            if snapshot.container_id:
+                touched_container_ids.add(int(snapshot.container_id))
+            if snapshot.parent_container_id:
+                touched_container_ids.add(int(snapshot.parent_container_id))
             snapshot.location = destination
             snapshot.zone_code = destination.zone_code
             snapshot.zone_kind = destination.zone_kind
@@ -601,6 +712,12 @@ class WarehouseWritePathService:
                 ]
             )
             total_done += int(snapshot.qty or 0)
+
+        if touched_container_ids:
+            WarehouseContainer.objects.filter(id__in=touched_container_ids).update(
+                current_location=destination,
+                updated_at=timezone.now(),
+            )
 
         operation.status = WarehouseOperation.STATUS_DONE
         operation.done_qty = total_done
@@ -636,61 +753,66 @@ class WarehouseWritePathService:
             qty = max(int(item.get("qty") or 0), 0)
             if qty <= 0:
                 continue
-            snapshot = cls._match_snapshot_for_processing_reserve(agency=agency, item=item, required_qty=qty)
-            transition = WarehouseTransitionService.apply_event(
-                snapshot.warehouse_state_code or WarehouseStateCode.UNKNOWN.value,
-                WarehouseEventType.PROCESSING_RESERVED,
-            )
-            reserve = WarehouseReserve.objects.create(
+            allocations = cls._match_snapshots_for_processing_reserve(
                 agency=agency,
-                reserve_type=WarehouseReserve.TYPE_PROCESSING,
-                context_type="processing",
-                context_id=order_key,
-                sku_ref=snapshot.sku_ref,
-                sku_code=snapshot.sku_code,
-                size=snapshot.size,
-                barcode=snapshot.barcode,
-                goods_type=snapshot.goods_type,
-                marking_code=snapshot.marking_code,
-                qty_reserved=qty,
-                status=WarehouseReserve.STATUS_ACTIVE,
-                source_document_type=source_document_type,
-                source_document_id=source_document_id,
-                created_by=created_by,
+                item=item,
+                required_qty=qty,
             )
-            event = WarehouseEvent.objects.create(
-                agency=agency,
-                event_type=WarehouseEventType.PROCESSING_RESERVED.value,
-                stock_context_type="processing",
-                stock_context_id=order_key,
-                container=snapshot.container,
-                reserve=reserve,
-                source_document_type=source_document_type,
-                source_document_id=source_document_id,
-                from_location=snapshot.location,
-                to_location=snapshot.location,
-                from_zone_code=snapshot.zone_code,
-                to_zone_code=snapshot.zone_code,
-                qty=qty,
-                performed_by=created_by,
-                performed_by_role=cls._role_of(created_by),
-                occurred_at=timezone.now(),
-                payload={"snapshot_id": snapshot.id},
-            )
-            snapshot.processing_reserved_qty += qty
-            snapshot.available_qty -= qty
-            snapshot.warehouse_state_code = transition.code.value
-            snapshot.last_event = event
-            snapshot.save(
-                update_fields=[
-                    "processing_reserved_qty",
-                    "available_qty",
-                    "warehouse_state_code",
-                    "last_event",
-                    "updated_at",
-                ]
-            )
-            reserves.append(reserve)
+            for snapshot, reserved_qty in allocations:
+                transition = WarehouseTransitionService.apply_event(
+                    snapshot.warehouse_state_code or WarehouseStateCode.UNKNOWN.value,
+                    WarehouseEventType.PROCESSING_RESERVED,
+                )
+                reserve = WarehouseReserve.objects.create(
+                    agency=agency,
+                    reserve_type=WarehouseReserve.TYPE_PROCESSING,
+                    context_type="processing",
+                    context_id=order_key,
+                    sku_ref=snapshot.sku_ref,
+                    sku_code=snapshot.sku_code,
+                    size=snapshot.size,
+                    barcode=snapshot.barcode,
+                    goods_type=snapshot.goods_type,
+                    marking_code=snapshot.marking_code,
+                    qty_reserved=reserved_qty,
+                    status=WarehouseReserve.STATUS_ACTIVE,
+                    source_document_type=source_document_type,
+                    source_document_id=source_document_id,
+                    created_by=created_by,
+                )
+                event = WarehouseEvent.objects.create(
+                    agency=agency,
+                    event_type=WarehouseEventType.PROCESSING_RESERVED.value,
+                    stock_context_type="processing",
+                    stock_context_id=order_key,
+                    container=snapshot.container,
+                    reserve=reserve,
+                    source_document_type=source_document_type,
+                    source_document_id=source_document_id,
+                    from_location=snapshot.location,
+                    to_location=snapshot.location,
+                    from_zone_code=snapshot.zone_code,
+                    to_zone_code=snapshot.zone_code,
+                    qty=reserved_qty,
+                    performed_by=created_by,
+                    performed_by_role=cls._role_of(created_by),
+                    occurred_at=timezone.now(),
+                    payload={"snapshot_id": snapshot.id},
+                )
+                snapshot.processing_reserved_qty += reserved_qty
+                snapshot.available_qty -= reserved_qty
+                snapshot.warehouse_state_code = transition.code.value
+                snapshot.last_event = event
+                snapshot.save(
+                    update_fields=[
+                        "processing_reserved_qty",
+                        "available_qty",
+                        "warehouse_state_code",
+                        "last_event",
+                        "updated_at",
+                    ]
+                )
+                reserves.append(reserve)
         return reserves
 
     @classmethod
@@ -1174,6 +1296,57 @@ class WarehouseWritePathService:
 
     @classmethod
     @transaction.atomic
+    def replace_shipping_reserves(
+        cls,
+        *,
+        agency: Agency,
+        order_id: str,
+        items: list[dict],
+        created_by=None,
+        source_document_type: str = "shipping_order",
+        source_document_id: str = "",
+    ) -> list[WarehouseReserve]:
+        order_key = str(order_id or "").strip()
+        if not order_key:
+            return []
+        active_reserves = list(
+            WarehouseReserve.objects.filter(
+                agency=agency,
+                reserve_type=WarehouseReserve.TYPE_SHIPPING,
+                context_type="shipping",
+                context_id=order_key,
+                status__in=[
+                    WarehouseReserve.STATUS_ACTIVE,
+                    WarehouseReserve.STATUS_PARTIALLY_ALLOCATED,
+                    WarehouseReserve.STATUS_ALLOCATED,
+                ],
+            ).order_by("id")
+        )
+        cls._release_reserves_from_snapshots(
+            reserves=active_reserves,
+            reserved_qty_field="shipping_reserved_qty",
+            release_event_type=WarehouseEventType.SHIPPING_RESERVE_RELEASED,
+            performed_by=created_by,
+        )
+        if active_reserves:
+            WarehouseReserve.objects.filter(id__in=[reserve.id for reserve in active_reserves]).update(
+                status=WarehouseReserve.STATUS_RELEASED,
+                released_by=created_by if getattr(created_by, "is_authenticated", False) else None,
+                updated_at=timezone.now(),
+            )
+        if not items:
+            return []
+        return cls.reserve_for_shipping(
+            agency=agency,
+            order_id=order_key,
+            items=items,
+            created_by=created_by,
+            source_document_type=source_document_type,
+            source_document_id=source_document_id,
+        )
+
+    @classmethod
+    @transaction.atomic
     def reserve_for_shipping(
         cls,
         *,
@@ -1193,61 +1366,66 @@ class WarehouseWritePathService:
             qty = max(int(item.get("qty") or 0), 0)
             if qty <= 0:
                 continue
-            snapshot = cls._match_snapshot_for_shipping_reserve(agency=agency, item=item, required_qty=qty)
-            transition = WarehouseTransitionService.apply_event(
-                snapshot.warehouse_state_code or WarehouseStateCode.UNKNOWN.value,
-                WarehouseEventType.SHIPPING_RESERVED,
-            )
-            reserve = WarehouseReserve.objects.create(
+            allocations = cls._match_snapshots_for_shipping_reserve(
                 agency=agency,
-                reserve_type=WarehouseReserve.TYPE_SHIPPING,
-                context_type="shipping",
-                context_id=order_key,
-                sku_ref=snapshot.sku_ref,
-                sku_code=snapshot.sku_code,
-                size=snapshot.size,
-                barcode=snapshot.barcode,
-                goods_type=snapshot.goods_type,
-                marking_code=snapshot.marking_code,
-                qty_reserved=qty,
-                status=WarehouseReserve.STATUS_ACTIVE,
-                source_document_type=source_document_type,
-                source_document_id=source_document_id,
-                created_by=created_by,
+                item=item,
+                required_qty=qty,
             )
-            event = WarehouseEvent.objects.create(
-                agency=agency,
-                event_type=WarehouseEventType.SHIPPING_RESERVED.value,
-                stock_context_type="shipping",
-                stock_context_id=order_key,
-                container=snapshot.container,
-                reserve=reserve,
-                source_document_type=source_document_type,
-                source_document_id=source_document_id,
-                from_location=snapshot.location,
-                to_location=snapshot.location,
-                from_zone_code=snapshot.zone_code,
-                to_zone_code=snapshot.zone_code,
-                qty=qty,
-                performed_by=created_by,
-                performed_by_role=cls._role_of(created_by),
-                occurred_at=timezone.now(),
-                payload={"snapshot_id": snapshot.id},
-            )
-            snapshot.shipping_reserved_qty += qty
-            snapshot.available_qty -= qty
-            snapshot.warehouse_state_code = transition.code.value
-            snapshot.last_event = event
-            snapshot.save(
-                update_fields=[
-                    "shipping_reserved_qty",
-                    "available_qty",
-                    "warehouse_state_code",
-                    "last_event",
-                    "updated_at",
-                ]
-            )
-            reserves.append(reserve)
+            for snapshot, reserved_qty in allocations:
+                transition = WarehouseTransitionService.apply_event(
+                    snapshot.warehouse_state_code or WarehouseStateCode.UNKNOWN.value,
+                    WarehouseEventType.SHIPPING_RESERVED,
+                )
+                reserve = WarehouseReserve.objects.create(
+                    agency=agency,
+                    reserve_type=WarehouseReserve.TYPE_SHIPPING,
+                    context_type="shipping",
+                    context_id=order_key,
+                    sku_ref=snapshot.sku_ref,
+                    sku_code=snapshot.sku_code,
+                    size=snapshot.size,
+                    barcode=snapshot.barcode,
+                    goods_type=snapshot.goods_type,
+                    marking_code=snapshot.marking_code,
+                    qty_reserved=reserved_qty,
+                    status=WarehouseReserve.STATUS_ACTIVE,
+                    source_document_type=source_document_type,
+                    source_document_id=source_document_id,
+                    created_by=created_by,
+                )
+                event = WarehouseEvent.objects.create(
+                    agency=agency,
+                    event_type=WarehouseEventType.SHIPPING_RESERVED.value,
+                    stock_context_type="shipping",
+                    stock_context_id=order_key,
+                    container=snapshot.container,
+                    reserve=reserve,
+                    source_document_type=source_document_type,
+                    source_document_id=source_document_id,
+                    from_location=snapshot.location,
+                    to_location=snapshot.location,
+                    from_zone_code=snapshot.zone_code,
+                    to_zone_code=snapshot.zone_code,
+                    qty=reserved_qty,
+                    performed_by=created_by,
+                    performed_by_role=cls._role_of(created_by),
+                    occurred_at=timezone.now(),
+                    payload={"snapshot_id": snapshot.id},
+                )
+                snapshot.shipping_reserved_qty += reserved_qty
+                snapshot.available_qty -= reserved_qty
+                snapshot.warehouse_state_code = transition.code.value
+                snapshot.last_event = event
+                snapshot.save(
+                    update_fields=[
+                        "shipping_reserved_qty",
+                        "available_qty",
+                        "warehouse_state_code",
+                        "last_event",
+                        "updated_at",
+                    ]
+                )
+                reserves.append(reserve)
         return reserves
 
     @classmethod
@@ -1893,29 +2071,58 @@ class WarehouseWritePathService:
     def _resolve_container(cls, *, agency: Agency, item: dict, current_location: WarehouseLocation, performed_by=None):
         pallet_code = str(item.get("pallet_code") or "").strip()
         box_code = str(item.get("box_code") or "").strip()
-        if pallet_code:
-            container_type = WarehouseContainer.TYPE_PALLET
-            container_code = pallet_code
-        elif box_code:
-            container_type = WarehouseContainer.TYPE_BOX
-            container_code = box_code
-        else:
+        order_key = str(item.get("order_id") or "").strip()
+        if not pallet_code and not box_code:
             return None
-        container, _ = WarehouseContainer.objects.get_or_create(
-            agency=agency,
-            container_code=container_code,
-            defaults={
-                "container_type": container_type,
-                "current_location": current_location,
-                "created_by": performed_by,
-                "source_context_type": "receiving",
-                "source_context_id": str(item.get("order_id") or "").strip(),
-            },
-        )
-        if container.current_location_id != current_location.id:
-            container.current_location = current_location
-            container.save(update_fields=["current_location", "updated_at"])
-        return container
+
+        def ensure_container(
+            *,
+            container_code: str,
+            container_type: str,
+            parent_container: WarehouseContainer | None = None,
+        ) -> WarehouseContainer:
+            container, _ = WarehouseContainer.objects.get_or_create(
+                agency=agency,
+                container_code=container_code,
+                defaults={
+                    "container_type": container_type,
+                    "parent_container": parent_container,
+                    "current_location": current_location,
+                    "created_by": performed_by,
+                    "source_context_type": "receiving",
+                    "source_context_id": order_key,
+                },
+            )
+            update_fields: list[str] = []
+            if container.current_location_id != current_location.id:
+                container.current_location = current_location
+                update_fields.append("current_location")
+            if parent_container is not None and container.parent_container_id != parent_container.id:
+                container.parent_container = parent_container
+                update_fields.append("parent_container")
+            if not container.source_context_type:
+                container.source_context_type = "receiving"
+                update_fields.append("source_context_type")
+            if order_key and not container.source_context_id:
+                container.source_context_id = order_key
+                update_fields.append("source_context_id")
+            if update_fields:
+                container.save(update_fields=[*update_fields, "updated_at"])
+            return container
+
+        pallet_container = None
+        if pallet_code:
+            pallet_container = ensure_container(
+                container_code=pallet_code,
+                container_type=WarehouseContainer.TYPE_PALLET,
+            )
+        if box_code:
+            return ensure_container(
+                container_code=box_code,
+                container_type=WarehouseContainer.TYPE_BOX,
+                parent_container=pallet_container,
+            )
+        return pallet_container
 
     @staticmethod
     def _resolve_sku_ref(*, agency: Agency, item: dict):
@@ -1968,6 +2175,46 @@ class WarehouseWritePathService:
         raise ValueError(f"No stored snapshot with enough available qty for {sku_code}")
 
     @staticmethod
+    def _match_snapshots_for_processing_reserve(
+        *,
+        agency: Agency,
+        item: dict,
+        required_qty: int,
+    ) -> list[tuple[WarehouseStockSnapshot, int]]:
+        sku_code = str(item.get("sku_code") or item.get("sku") or "").strip()
+        size = str(item.get("size") or "").strip()
+        barcode = str(item.get("barcode") or "").strip()
+        goods_type = str(item.get("goods_type") or "").strip()
+        remaining_qty = max(int(required_qty or 0), 0)
+        allocations: list[tuple[WarehouseStockSnapshot, int]] = []
+        qs = (
+            WarehouseStockSnapshot.objects.select_for_update()
+            .filter(
+                agency=agency,
+                sku_code=sku_code,
+                size=size,
+                barcode=barcode,
+                goods_type=goods_type,
+                warehouse_state_code__in=[
+                    WarehouseStateCode.STORED.value,
+                    WarehouseStateCode.RESERVED_FOR_PROCESSING.value,
+                ],
+                is_archived=False,
+            )
+            .order_by("id")
+        )
+        for snapshot in qs:
+            available_qty = int(snapshot.available_qty or 0)
+            if available_qty <= 0:
+                continue
+            reserved_qty = min(available_qty, remaining_qty)
+            allocations.append((snapshot, reserved_qty))
+            remaining_qty -= reserved_qty
+            if remaining_qty <= 0:
+                return allocations
+        raise ValueError(f"No stored snapshots with enough available qty for {sku_code}")
+
+    @staticmethod
     def _snapshot_matches_shipping_context(snapshot: WarehouseStockSnapshot, order_id: str) -> bool:
         return WarehouseReserve.objects.filter(
             agency=snapshot.agency,
@@ -2009,6 +2256,81 @@ class WarehouseWritePathService:
             if int(snapshot.available_qty or 0) >= required_qty:
                 return snapshot
         raise ValueError(f"No snapshot with enough available qty for shipping reserve: {sku_code}")
+
+    @staticmethod
+    def _match_snapshots_for_shipping_reserve(
+        *,
+        agency: Agency,
+        item: dict,
+        required_qty: int,
+    ) -> list[tuple[WarehouseStockSnapshot, int]]:
+        sku_code = str(item.get("sku_code") or item.get("sku") or "").strip()
+        size = str(item.get("size") or "").strip()
+        barcode = str(item.get("barcode") or "").strip()
+        goods_type = str(item.get("goods_type") or "").strip()
+        remaining_qty = max(int(required_qty or 0), 0)
+        allocations: list[tuple[WarehouseStockSnapshot, int]] = []
+        qs = (
+            WarehouseStockSnapshot.objects.select_for_update()
+            .filter(
+                agency=agency,
+                sku_code=sku_code,
+                size=size,
+                barcode=barcode,
+                goods_type=goods_type,
+                warehouse_state_code__in=[
+                    WarehouseStateCode.STORED.value,
+                    WarehouseStateCode.PLACED_AFTER_PROCESSING.value,
+                    WarehouseStateCode.RESERVED_FOR_SHIPPING.value,
+                ],
+                is_archived=False,
+            )
+            .order_by("id")
+        )
+        for snapshot in qs:
+            available_qty = int(snapshot.available_qty or 0)
+            if available_qty <= 0:
+                continue
+            reserved_qty = min(available_qty, remaining_qty)
+            allocations.append((snapshot, reserved_qty))
+            remaining_qty -= reserved_qty
+            if remaining_qty <= 0:
+                return allocations
+        raise ValueError(f"No snapshots with enough available qty for shipping reserve: {sku_code}")
+
+    @staticmethod
+    def _state_for_location(location: WarehouseLocation) -> str:
+        zone = str(getattr(location, "zone_code", "") or "").strip().upper()
+        if zone == "PR":
+            return WarehouseStateCode.PLACED_IN_RECEIVING.value
+        if zone in {"OS", "MR"}:
+            return WarehouseStateCode.STORED.value
+        if zone == "OBR":
+            return WarehouseStateCode.IN_PROCESSING_ZONE.value
+        if zone == "OTG":
+            return WarehouseStateCode.IN_OTG.value
+        return WarehouseStateCode.UNKNOWN.value
+
+    @classmethod
+    def _location_from_item(
+        cls,
+        *,
+        item: dict,
+        fallback: WarehouseLocation,
+        warehouse_code: str,
+    ) -> WarehouseLocation:
+        location = item.get("location") if isinstance(item.get("location"), dict) else {}
+        zone = str(location.get("zone") or location.get("zone_code") or "").strip().upper()
+        if not zone:
+            return fallback
+        return cls.ensure_location(
+            warehouse_code=warehouse_code,
+            zone_code=zone,
+            row_no=int(location.get("row") or location.get("row_no") or 0),
+            section_no=int(location.get("section") or location.get("section_no") or 0),
+            tier_no=int(location.get("tier") or location.get("tier_no") or 0),
+            cell_no=int(location.get("cell") or location.get("cell_no") or 0),
+        )
 
     @staticmethod
     def _role_of(user) -> str:
@@ -2058,8 +2380,10 @@ class WarehouseWritePathService:
             boxes = []
         if not isinstance(pallets, list):
             pallets = []
+        default_goods_type = str(payload.get("goods_type") or "").strip()
 
         box_to_pallet: dict[str, str] = {}
+        box_to_location: dict[str, dict] = {}
         items: list[dict] = []
         for pallet in pallets:
             if not isinstance(pallet, dict):
@@ -2067,16 +2391,21 @@ class WarehouseWritePathService:
             pallet_code = str(pallet.get("code") or "").strip()
             if not pallet_code:
                 continue
+            pallet_goods_type = str(pallet.get("goods_type") or default_goods_type).strip()
+            pallet_location = pallet.get("location") if isinstance(pallet.get("location"), dict) else {}
             for box_code in pallet.get("boxes") or []:
                 normalized_box_code = str(box_code or "").strip()
                 if normalized_box_code:
                     box_to_pallet[normalized_box_code] = pallet_code
+                    box_to_location[normalized_box_code] = dict(pallet_location or {})
             for item in pallet.get("items") or []:
                 normalized = cls._normalize_receiving_item(
                     item=item,
                     order_id=order_id,
                     pallet_code=pallet_code,
                     box_code="",
+                    default_goods_type=pallet_goods_type,
+                    location=pallet_location,
                 )
                 if normalized:
                     items.append(normalized)
@@ -2085,12 +2414,20 @@ class WarehouseWritePathService:
                 continue
             box_code = str(box.get("code") or "").strip()
             pallet_code = box_to_pallet.get(box_code, "")
+            box_goods_type = str(box.get("goods_type") or default_goods_type).strip()
+            box_location = (
+                box.get("location")
+                if isinstance(box.get("location"), dict)
+                else box_to_location.get(box_code, {})
+            )
             for item in box.get("items") or []:
                 normalized = cls._normalize_receiving_item(
                     item=item,
                     order_id=order_id,
                     pallet_code=pallet_code,
                     box_code=box_code,
+                    default_goods_type=box_goods_type,
+                    location=box_location,
                 )
                 if normalized:
                     items.append(normalized)
@@ -2103,6 +2440,8 @@ class WarehouseWritePathService:
         order_id: str,
         pallet_code: str,
         box_code: str,
+        default_goods_type: str = "",
+        location: dict | None = None,
     ) -> dict | None:
         if not isinstance(item, dict):
             return None
@@ -2116,9 +2455,10 @@ class WarehouseWritePathService:
             "name": str(item.get("name") or "").strip(),
             "size": str(item.get("size") or "").strip(),
             "barcode": str(item.get("barcode") or "").strip(),
-            "goods_type": str(item.get("goods_type") or "").strip(),
+            "goods_type": str(item.get("goods_type") or default_goods_type or "").strip(),
             "marking_code": str(item.get("marking_code") or "").strip(),
             "qty": qty,
             "pallet_code": str(pallet_code or "").strip(),
             "box_code": str(box_code or "").strip(),
+            "location": dict(location or {}),
         }

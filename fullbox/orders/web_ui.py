@@ -3701,6 +3701,15 @@ class ReceivingActView(RoleRequiredMixin, TemplateView):
         status_entry = _current_status_entry(entries)
         latest = entries[-1]
         act_payload = dict((status_entry.payload or {}) if status_entry else {})
+        goods_type = str(act_payload.get("goods_type") or "").strip().lower()
+        if goods_type == "op":
+            ReceivingWorkflowService._attach_receiving_nomenclature_metadata(
+                agency=latest.agency,
+                items=act_items,
+                goods_type=goods_type,
+                order_id=str(order_id or ""),
+                order_type="receiving",
+            )
         if not act_payload.get("status"):
             act_payload["status"] = "warehouse"
         act_payload["status_label"] = (

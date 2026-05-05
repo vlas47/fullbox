@@ -109,7 +109,20 @@
     }
     .split-grid { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 16px; }
     .split-col { display: grid; gap: 12px; align-content: start; }
-    .section-title { font-weight: 600; margin: 12px 0 6px; }
+    .section-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      align-items: center;
+      margin: 12px 0 6px;
+      flex-wrap: wrap;
+    }
+    .section-title { font-weight: 600; margin: 0; }
+    .opt-flow-note {
+      margin: -2px 0 8px;
+      font-size: 12px;
+      line-height: 1.4;
+    }
       .table-wrap { overflow: auto; border-radius: 12px; border: 1px solid var(--stroke); }
       .remaining-table {
         max-height: clamp(220px, 36vh, 360px);
@@ -153,14 +166,65 @@
       background: #fff;
       font-size: 13px;
     }
+    .catalog-input.is-new-draft {
+      border-color: rgba(199,154,28,0.75);
+      box-shadow: 0 0 0 2px rgba(199,154,28,0.16);
+      background: rgba(255,250,235,0.95);
+    }
     .row-actions { display: flex; gap: 6px; align-items: center; }
     .row-actions .btn { padding: 6px 10px; font-size: 12px; }
+    .row-actions .icon-action-btn {
+      min-width: 38px;
+      width: 38px;
+      height: 38px;
+      padding: 0;
+      font-size: 22px;
+      line-height: 1;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .row-actions .clear-action-btn {
+      white-space: nowrap;
+    }
+    .add-row-actions {
+      align-items: flex-start;
+      gap: 4px;
+    }
+    .add-row-actions .qty-input {
+      width: 70px;
+    }
+    .add-row-icon-stack {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      align-items: center;
+    }
+    .add-row-icon-stack .btn {
+      min-width: 18px;
+      width: 18px;
+      height: 18px;
+      padding: 0;
+      border-radius: 6px;
+      font-size: 13px;
+      line-height: 1;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
     .row-negative { color: var(--danger); font-weight: 600; }
     .remaining-item-row td { cursor: context-menu; }
     .row-done td { background: rgba(31,157,85,0.12); }
     .row-done td:first-child { box-shadow: inset 3px 0 0 rgba(31,157,85,0.55); }
     .row-scan td { background: rgba(242,212,140,0.45); }
     .row-scan td:first-child { box-shadow: inset 3px 0 0 rgba(199,154,28,0.9); }
+    .row-new-candidate td { background: rgba(199,154,28,0.1); }
+    .row-new-candidate td:first-child { box-shadow: inset 3px 0 0 rgba(199,154,28,0.7); }
+    .new-item-badge {
+      border-color: rgba(199,154,28,0.55);
+      background: rgba(199,154,28,0.16);
+      color: #7a4c00;
+    }
     .box-card { border: 1px dashed var(--stroke); border-radius: 14px; padding: 12px; background: var(--card-soft); }
     .box-meta { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
     .box-code { font-weight: 600; }
@@ -392,6 +456,25 @@
     .context-menu button[disabled] { opacity: 0.5; cursor: not-allowed; }
     .is-hidden { display: none !important; }
     .context-menu .danger { color: var(--danger); }
+    .context-menu-inline {
+      display: grid;
+      gap: 6px;
+      padding: 4px;
+    }
+    .context-menu-input {
+      width: 100%;
+      border: 1px solid var(--stroke);
+      border-radius: 8px;
+      padding: 8px 10px;
+      background: #fff;
+      font: inherit;
+      color: var(--text);
+      outline: none;
+    }
+    .context-menu-input:focus {
+      border-color: rgba(199,154,28,0.6);
+      box-shadow: 0 0 0 2px rgba(199,154,28,0.14);
+    }
     .scanner-block {
       position: absolute;
       width: 1px;
@@ -708,13 +791,25 @@
 
           <div class="split-grid">
             <div class="split-col">
-              <div class="section-title">Неразмещенные товары</div>
+              <div class="section-head">
+                <div class="section-title">Неразмещенные товары</div>
+                {% if goods_type == "op" and not flow_locked %}
+                  <button class="btn" type="button" id="opt-add-item-btn">NEW</button>
+                {% endif %}
+              </div>
+              {% if goods_type == "op" %}
+                <div class="muted opt-flow-note">Для новой оптовой позиции введите артикул, наименование, бренд, цвет, размер и количество прямо в верхней строке таблицы.</div>
+              {% endif %}
               <div class="table-wrap remaining-table">
                 <table>
                   <thead>
                     <tr>
                       <th>SKU</th>
                       <th>Наименование</th>
+                      {% if goods_type == "op" %}
+                        <th>Бренд</th>
+                        <th>Цвет</th>
+                      {% endif %}
                       <th>Размер</th>
                       <th>По заявке</th>
                       <th>Факт</th>
@@ -725,6 +820,8 @@
                 </table>
                 <datalist id="catalog-sku-list"></datalist>
                 <datalist id="catalog-name-list"></datalist>
+                <datalist id="catalog-brand-list"></datalist>
+                <datalist id="catalog-color-list"></datalist>
                 <datalist id="catalog-size-list"></datalist>
               </div>
 
@@ -804,6 +901,10 @@
     <button type="button" data-action="delete-selected" class="danger">Удалить выделенные короба</button>
   </div>
   <div class="context-menu" id="item-context-menu" aria-hidden="true">
+    <div class="context-menu-inline is-hidden" id="item-size-context-block">
+      <input type="text" id="item-size-context-input" class="context-menu-input" placeholder="Новый размер" autocomplete="off">
+      <button type="button" data-action="add-size">Добавить размер</button>
+    </div>
     <button type="button" data-action="set-weight">Установить вес за единицу товара</button>
   </div>
 
@@ -844,11 +945,14 @@
       <div class="box-modal-card">
         <div class="box-modal-header">
         <div class="box-modal-title">Короб <span id="box-view-code">-</span></div>
-        <button type="button" class="btn" id="box-view-close">Закрыть</button>
-      </div>
+        <div class="row-actions">
+          <button type="button" class="btn" id="box-view-print">Печать QR</button>
+          <button type="button" class="btn" id="box-view-close">Закрыть</button>
+        </div>
+        </div>
       <div class="box-modal-meta" id="box-view-meta">-</div>
       <div class="box-modal-list" id="box-view-body"></div>
-      </div>
+    </div>
     </div>
 
     <div class="box-modal" id="box-copy-modal" aria-hidden="true">
@@ -962,7 +1066,7 @@
           </div>
           <div class="notice warn warehouse-move-alert" id="warehouse-move-alert" style="display:none;"></div>
           <div class="location-actions">
-            <button type="button" class="btn" id="warehouse-move-open-map">Карта склада</button>
+            <button type="button" class="btn warehouse-move-picker-btn" id="warehouse-move-open-map">Карта склада</button>
             <button type="button" class="btn" id="warehouse-move-cancel">Отмена</button>
             <button type="submit" class="btn primary">Отправить задания</button>
           </div>
@@ -1029,6 +1133,7 @@
       const labelSettingsData = labelSettingsDataEl ? JSON.parse(labelSettingsDataEl.textContent || '{}') : {};
       const flowLocked = Boolean(window.__flowLocked);
       const goodsType = String("{{ goods_type|escapejs }}").trim().toLowerCase();
+      const isOptGoodsType = goodsType === 'op';
       const receivingMode = String("{{ receiving_mode|escapejs }}").trim().toLowerCase() || 'standard';
       const isCzMode = receivingMode === 'cz';
       const markingScanUrl = String("{{ marking_scan_url|escapejs }}").trim();
@@ -1038,7 +1143,10 @@
       const remainingBody = document.getElementById('remaining-items');
       const catalogSkuList = document.getElementById('catalog-sku-list');
       const catalogNameList = document.getElementById('catalog-name-list');
+      const catalogBrandList = document.getElementById('catalog-brand-list');
+      const catalogColorList = document.getElementById('catalog-color-list');
       const catalogSizeList = document.getElementById('catalog-size-list');
+      const optAddItemBtn = document.getElementById('opt-add-item-btn');
       const currentBoxSection = document.getElementById('current-box-section');
       const currentBoxItems = document.getElementById('current-box-items');
       const currentBoxCode = document.getElementById('current-box-code');
@@ -1080,6 +1188,8 @@
       const palletContextMenu = document.getElementById('pallet-context-menu');
       const groupContextMenu = document.getElementById('group-box-context-menu');
       const itemContextMenu = document.getElementById('item-context-menu');
+      const itemSizeContextBlock = document.getElementById('item-size-context-block');
+      const itemSizeContextInput = document.getElementById('item-size-context-input');
       const boxSelectionStrip = document.getElementById('box-selection-strip');
       const boxSelectionSummary = document.getElementById('box-selection-summary');
       const boxSelectionClear = document.getElementById('box-selection-clear');
@@ -1095,6 +1205,7 @@
         const boxViewCode = document.getElementById('box-view-code');
         const boxViewMeta = document.getElementById('box-view-meta');
         const boxViewBody = document.getElementById('box-view-body');
+        const boxViewPrint = document.getElementById('box-view-print');
         const boxViewClose = document.getElementById('box-view-close');
         const boxCopyModal = document.getElementById('box-copy-modal');
         const boxCopyCode = document.getElementById('box-copy-code');
@@ -1633,13 +1744,17 @@
       const makeKey = (item) => {
         const sku = normalizeText(item.sku_code || item.sku || '');
         const name = normalizeText(item.name || '');
+        const brand = normalizeText(item.brand || '');
+        const color = normalizeText(item.color || '');
         const size = normalizeText(item.size || '');
-        return `${sku}|${name}|${size}`.toLowerCase();
+        return `${sku}|${name}|${brand}|${color}|${size}`.toLowerCase();
       };
 
       const plannedItems = itemsData.map((item) => ({
         sku_code: normalizeText(item.sku_code),
         name: normalizeText(item.name),
+        brand: normalizeText(item.brand),
+        color: normalizeText(item.color),
         size: normalizeText(item.size),
         qty: Number(item.qty || 0),
         weight_kg: parseWeightKg(item.weight_kg),
@@ -1740,6 +1855,57 @@
         }
         return plannedByKey.get(normalizedKey) || null;
       };
+      const duplicateFlowItemWithSize = (itemKey, rawSize) => {
+        if (!isOptGoodsType) {
+          return { ok: false, error: 'Добавление размера доступно только для оптовой приемки.' };
+        }
+        if (flowLocked) {
+          return { ok: false, error: 'Поток приемки закрыт.' };
+        }
+        const source = getFlowItemByKey(itemKey);
+        if (!source) {
+          return { ok: false, error: 'Исходная позиция не найдена.' };
+        }
+        const nextSize = normalizeText(rawSize);
+        if (!nextSize) {
+          return { ok: false, error: 'Введите новый размер.' };
+        }
+        if (nextSize.toLowerCase() === normalizeText(source.size).toLowerCase()) {
+          return { ok: false, error: 'Укажите размер, отличный от текущего.' };
+        }
+        const mapped = {
+          sku_code: source.sku_code,
+          name: source.name,
+          brand: source.brand,
+          color: source.color,
+          size: nextSize,
+          weight_kg: getItemWeightKg(source),
+        };
+        const existingKey = makeKey(mapped);
+        if (plannedByKey.has(existingKey)) {
+          flashScan(existingKey);
+          suppressBlurApply = true;
+          pendingFocusKey = existingKey;
+          renderAll();
+          return { ok: true, existing: true };
+        }
+        const planned = ensurePlannedItem(mapped);
+        if (!planned) {
+          return { ok: false, error: 'Не удалось создать новую размерную позицию.' };
+        }
+        const plannedKey = makeKey(planned);
+        const itemWeight = getItemWeightKg(source);
+        if (itemWeight > 0) {
+          itemWeightByKey.set(plannedKey, itemWeight);
+        }
+        manualInputByKey.set(plannedKey, '');
+        markDraftDirty();
+        flashScan(plannedKey);
+        suppressBlurApply = true;
+        pendingFocusKey = plannedKey;
+        renderAll();
+        return { ok: true, existing: false, key: plannedKey };
+      };
       const formatFlowItemLabel = (item) => {
         if (!item) {
           return '-';
@@ -1806,6 +1972,8 @@
       const normalizeMappedItem = (mapped) => ({
         sku_code: normalizeText(mapped.sku_code || mapped.sku || ''),
         name: normalizeText(mapped.name || ''),
+        brand: normalizeText(mapped.brand || ''),
+        color: normalizeText(mapped.color || ''),
         size: normalizeText(mapped.size || ''),
         qty: 0,
         weight_kg: parseWeightKg(mapped.weight_kg),
@@ -1822,6 +1990,8 @@
         const entry = {
           sku_code: normalized.sku_code,
           name: normalized.name || normalized.sku_code,
+          brand: normalized.brand,
+          color: normalized.color,
           size: normalized.size,
           qty: 0,
         };
@@ -1848,11 +2018,17 @@
       const catalogKeySet = new Set();
       const catalogBySku = new Map();
       const catalogByName = new Map();
+      const catalogByBrand = new Map();
+      const catalogByColor = new Map();
       const catalogBySize = new Map();
       const catalogSkuValues = [];
       const catalogSkuSet = new Set();
       const catalogNameValues = [];
       const catalogNameSet = new Set();
+      const catalogBrandValues = [];
+      const catalogBrandSet = new Set();
+      const catalogColorValues = [];
+      const catalogColorSet = new Set();
       const catalogSizeValues = [];
       const catalogSizeSet = new Set();
       const addCatalogValue = (value, set, list) => {
@@ -1882,6 +2058,8 @@
         }
         addCatalogValue(normalized.sku_code, catalogSkuSet, catalogSkuValues);
         addCatalogValue(normalized.name, catalogNameSet, catalogNameValues);
+        addCatalogValue(normalized.brand, catalogBrandSet, catalogBrandValues);
+        addCatalogValue(normalized.color, catalogColorSet, catalogColorValues);
         addCatalogValue(normalized.size, catalogSizeSet, catalogSizeValues);
       };
       (catalogItems || []).forEach(addCatalogItem);
@@ -1901,6 +2079,8 @@
       catalogOptions.forEach((item) => {
         addToCatalogIndex(catalogBySku, item.sku_code, item);
         addToCatalogIndex(catalogByName, item.name, item);
+        addToCatalogIndex(catalogByBrand, item.brand, item);
+        addToCatalogIndex(catalogByColor, item.color, item);
         addToCatalogIndex(catalogBySize, item.size, item);
         registerItemWeight(item);
       });
@@ -1917,12 +2097,16 @@
       };
       fillCatalogList(catalogSkuList, catalogSkuValues);
       fillCatalogList(catalogNameList, catalogNameValues);
+      fillCatalogList(catalogBrandList, catalogBrandValues);
+      fillCatalogList(catalogColorList, catalogColorValues);
       fillCatalogList(catalogSizeList, catalogSizeValues);
-      const getCatalogMatches = (skuValue, nameValue, sizeValue) => {
+      const getCatalogMatches = (skuValue, nameValue, brandValue, colorValue, sizeValue) => {
         const skuKey = normalizeText(skuValue).toLowerCase();
         const nameKey = normalizeText(nameValue).toLowerCase();
+        const brandKey = normalizeText(brandValue).toLowerCase();
+        const colorKey = normalizeText(colorValue).toLowerCase();
         const sizeKey = normalizeText(sizeValue).toLowerCase();
-        if (!skuKey && !nameKey && !sizeKey) {
+        if (!skuKey && !nameKey && !brandKey && !colorKey && !sizeKey) {
           return [];
         }
         let candidates = [];
@@ -1930,17 +2114,29 @@
           candidates = catalogBySku.get(skuKey) || [];
         } else if (nameKey) {
           candidates = catalogByName.get(nameKey) || [];
+        } else if (brandKey) {
+          candidates = catalogByBrand.get(brandKey) || [];
+        } else if (colorKey) {
+          candidates = catalogByColor.get(colorKey) || [];
         } else if (sizeKey) {
           candidates = catalogBySize.get(sizeKey) || [];
         }
         const matches = candidates.filter((item) => {
           const itemSku = (item.sku_code || '').toLowerCase();
           const itemName = (item.name || '').toLowerCase();
+          const itemBrand = (item.brand || '').toLowerCase();
+          const itemColor = (item.color || '').toLowerCase();
           const itemSize = (item.size || '').toLowerCase();
           if (skuKey && itemSku !== skuKey) {
             return false;
           }
           if (nameKey && itemName !== nameKey) {
+            return false;
+          }
+          if (brandKey && itemBrand !== brandKey) {
+            return false;
+          }
+          if (colorKey && itemColor !== colorKey) {
             return false;
           }
           if (sizeKey && itemSize !== sizeKey) {
@@ -1956,6 +2152,12 @@
           score += 1;
         }
         if (normalizeText(item.name)) {
+          score += 1;
+        }
+        if (normalizeText(item.brand)) {
+          score += 1;
+        }
+        if (normalizeText(item.color)) {
           score += 1;
         }
         if (normalizeText(item.size)) {
@@ -1978,8 +2180,8 @@
         }
         return best;
       };
-      const getSelectedCatalogItem = (skuValue, nameValue, sizeValue) => {
-        const matches = getCatalogMatches(skuValue, nameValue, sizeValue);
+      const getSelectedCatalogItem = (skuValue, nameValue, brandValue, colorValue, sizeValue) => {
+        const matches = getCatalogMatches(skuValue, nameValue, brandValue, colorValue, sizeValue);
         return pickCatalogItem(matches);
       };
       let highlightedKey = '';
@@ -1990,9 +2192,12 @@
       let suppressBlurApply = false;
       let addRowSku = '';
       let addRowName = '';
+      let addRowBrand = '';
+      let addRowColor = '';
       let addRowSize = '';
       let addRowQty = '';
       let addRowItem = null;
+      let addRowRefs = null;
       let pendingAddRowFocus = false;
       const manualInputByKey = new Map();
       const boxAdjustByKey = new Map();
@@ -2191,6 +2396,8 @@
             sku_code: item.sku_code,
             sku: item.sku_code,
             name: item.name,
+            brand: item.brand,
+            color: item.color,
             size: item.size,
             qty,
           });
@@ -2198,11 +2405,48 @@
         markDraftDirty();
         return true;
       };
+      const buildManualOptAddItem = () => {
+        if (!isOptGoodsType) {
+          return null;
+        }
+        const skuCode = normalizeText(addRowSku);
+        const name = normalizeText(addRowName);
+        const brand = normalizeText(addRowBrand);
+        const color = normalizeText(addRowColor);
+        const size = normalizeText(addRowSize);
+        if (!skuCode && !name) {
+          return null;
+        }
+        return {
+          sku_code: skuCode,
+          name: name || skuCode,
+          brand,
+          color,
+          size,
+          qty: 0,
+        };
+      };
+      const resetAddRowDraft = (keepFocus = false) => {
+        addRowSku = '';
+        addRowName = '';
+        addRowBrand = '';
+        addRowColor = '';
+        addRowSize = '';
+        addRowQty = '';
+        addRowItem = null;
+        addRowRefs = null;
+        pendingAddRowFocus = keepFocus;
+        suppressBlurApply = true;
+        pendingFocusKey = '__add-row__';
+        renderAll();
+      };
       const applyAddRow = (keepFocus) => {
         if (flowLocked) {
           return;
         }
-        const selected = addRowItem || getSelectedCatalogItem(addRowSku, addRowName, addRowSize);
+        const selected = addRowItem
+          || getSelectedCatalogItem(addRowSku, addRowName, addRowBrand, addRowColor, addRowSize)
+          || buildManualOptAddItem();
         if (!selected) {
           return;
         }
@@ -2221,15 +2465,7 @@
           return;
         }
         manualInputByKey.set(plannedKey, '');
-        addRowSku = '';
-        addRowName = '';
-        addRowSize = '';
-        addRowQty = '';
-        addRowItem = null;
-        pendingAddRowFocus = keepFocus;
-        suppressBlurApply = true;
-        pendingFocusKey = '__add-row__';
-        renderAll();
+        resetAddRowDraft(keepFocus);
       };
 
       const setBoxItemQty = (item, qty) => {
@@ -2257,6 +2493,8 @@
             sku_code: item.sku_code,
             sku: item.sku_code,
             name: item.name,
+            brand: item.brand,
+            color: item.color,
             size: item.size,
             qty,
           });
@@ -2576,21 +2814,39 @@
         pendingFocusEl = null;
         remainingBody.innerHTML = '';
         const remaining = getRemaining();
+        const columnsCount = isOptGoodsType ? 8 : 6;
         const addRow = document.createElement('tr');
-        addRow.innerHTML = `
-          <td></td>
-          <td></td>
-          <td></td>
-          <td class="muted">-</td>
-          <td class="muted">-</td>
-          <td></td>
-        `;
+        addRow.innerHTML = isOptGoodsType
+          ? `
+              <td></td>
+              <td></td>
+              <td></td>
+              <td></td>
+              <td></td>
+              <td class="muted">-</td>
+              <td class="muted">-</td>
+              <td></td>
+            `
+          : `
+              <td></td>
+              <td></td>
+              <td></td>
+              <td class="muted">-</td>
+              <td class="muted">-</td>
+              <td></td>
+            `;
         const skuCell = addRow.children[0];
         const nameCell = addRow.children[1];
-        const sizeCell = addRow.children[2];
-        const qtyCell = addRow.children[5];
+        const brandCell = isOptGoodsType ? addRow.children[2] : null;
+        const colorCell = isOptGoodsType ? addRow.children[3] : null;
+        const sizeCell = isOptGoodsType ? addRow.children[4] : addRow.children[2];
+        const plannedCell = isOptGoodsType ? addRow.children[5] : addRow.children[3];
+        const factCell = isOptGoodsType ? addRow.children[6] : addRow.children[4];
+        const qtyCell = isOptGoodsType ? addRow.children[7] : addRow.children[5];
         const skuInput = document.createElement('input');
         const nameInput = document.createElement('input');
+        const brandInput = document.createElement('input');
+        const colorInput = document.createElement('input');
         const sizeInput = document.createElement('input');
         const qtyInput = document.createElement('input');
         skuInput.type = 'text';
@@ -2603,6 +2859,16 @@
         nameInput.placeholder = 'Наименование';
         nameInput.setAttribute('list', 'catalog-name-list');
         nameInput.value = addRowName;
+        brandInput.type = 'text';
+        brandInput.className = 'catalog-input';
+        brandInput.placeholder = 'Бренд';
+        brandInput.setAttribute('list', 'catalog-brand-list');
+        brandInput.value = addRowBrand;
+        colorInput.type = 'text';
+        colorInput.className = 'catalog-input';
+        colorInput.placeholder = 'Цвет';
+        colorInput.setAttribute('list', 'catalog-color-list');
+        colorInput.value = addRowColor;
         sizeInput.type = 'text';
         sizeInput.className = 'catalog-input';
         sizeInput.placeholder = 'Размер';
@@ -2611,11 +2877,57 @@
         if (flowLocked) {
           skuInput.disabled = true;
           nameInput.disabled = true;
+          brandInput.disabled = true;
+          colorInput.disabled = true;
           sizeInput.disabled = true;
         }
+        const setDraftMetaCell = (cell, html) => {
+          if (!cell) {
+            return;
+          }
+          cell.innerHTML = html;
+        };
+        const setAddRowButtonLabel = (isNewCandidate = false) => {
+          if (!addRowButton) {
+            return;
+          }
+          if (isOptGoodsType) {
+            const label = isNewCandidate ? 'Добавить новую позицию' : 'Добавить позицию';
+            addRowButton.textContent = '+';
+            addRowButton.title = label;
+            addRowButton.setAttribute('aria-label', label);
+            return;
+          }
+          addRowButton.textContent = 'OK';
+          addRowButton.title = 'Добавить';
+          addRowButton.setAttribute('aria-label', 'Добавить');
+        };
+        const syncAddRowDraftState = (selected = addRowItem) => {
+          const evidence = [
+            normalizeText(addRowSku).length >= 2,
+            normalizeText(addRowName).length >= 3,
+            normalizeText(addRowBrand).length >= 2,
+            normalizeText(addRowColor).length >= 2,
+            normalizeText(addRowSize).length >= 1,
+          ].filter(Boolean).length;
+          const isNewCandidate = isOptGoodsType && !selected && evidence >= 2;
+          addRow.classList.toggle('row-new-candidate', isNewCandidate);
+          [skuInput, nameInput, brandInput, colorInput, sizeInput]
+            .filter(Boolean)
+            .forEach((field) => field.classList.toggle('is-new-draft', isNewCandidate));
+          if (isNewCandidate) {
+            setDraftMetaCell(plannedCell, '<span class="chip new-item-badge">NEW</span>');
+            setDraftMetaCell(factCell, '<span class="muted">новая позиция</span>');
+          } else {
+            setDraftMetaCell(plannedCell, '<span class="muted">-</span>');
+            setDraftMetaCell(factCell, '<span class="muted">-</span>');
+          }
+          setAddRowButtonLabel(isNewCandidate);
+        };
         const updateAddRowItem = () => {
-          addRowItem = getSelectedCatalogItem(addRowSku, addRowName, addRowSize);
+          addRowItem = getSelectedCatalogItem(addRowSku, addRowName, addRowBrand, addRowColor, addRowSize);
           if (!addRowItem) {
+            syncAddRowDraftState(null);
             return;
           }
           if (!addRowSku && addRowItem.sku_code) {
@@ -2626,10 +2938,19 @@
             addRowName = addRowItem.name;
             nameInput.value = addRowName;
           }
+          if (!addRowBrand && addRowItem.brand) {
+            addRowBrand = addRowItem.brand;
+            brandInput.value = addRowBrand;
+          }
+          if (!addRowColor && addRowItem.color) {
+            addRowColor = addRowItem.color;
+            colorInput.value = addRowColor;
+          }
           if (!addRowSize && addRowItem.size) {
             addRowSize = addRowItem.size;
             sizeInput.value = addRowSize;
           }
+          syncAddRowDraftState(addRowItem);
         };
         const handleAddRowEnter = (event) => {
           if (event.key !== 'Enter') {
@@ -2661,6 +2982,24 @@
           updateAddRowItem();
         });
         nameInput.addEventListener('keydown', handleAddRowEnter);
+        brandInput.addEventListener('input', () => {
+          addRowBrand = brandInput.value;
+          updateAddRowItem();
+        });
+        brandInput.addEventListener('change', () => {
+          addRowBrand = brandInput.value;
+          updateAddRowItem();
+        });
+        brandInput.addEventListener('keydown', handleAddRowEnter);
+        colorInput.addEventListener('input', () => {
+          addRowColor = colorInput.value;
+          updateAddRowItem();
+        });
+        colorInput.addEventListener('change', () => {
+          addRowColor = colorInput.value;
+          updateAddRowItem();
+        });
+        colorInput.addEventListener('keydown', handleAddRowEnter);
         sizeInput.addEventListener('input', () => {
           addRowSize = sizeInput.value;
           updateAddRowItem();
@@ -2694,21 +3033,67 @@
           if (suppressBlurApply) {
             return;
           }
-          applyAddRow(false);
+          if (!isOptGoodsType) {
+            applyAddRow(false);
+          }
+        });
+        const addRowButton = document.createElement('button');
+        addRowButton.type = 'button';
+        addRowButton.className = isOptGoodsType ? 'btn icon-action-btn' : 'btn';
+        setAddRowButtonLabel(false);
+        if (flowLocked) {
+          addRowButton.disabled = true;
+        }
+        addRowButton.addEventListener('click', () => {
+          applyAddRow(true);
+        });
+        const clearAddRowButton = document.createElement('button');
+        clearAddRowButton.type = 'button';
+        clearAddRowButton.className = 'btn icon-action-btn clear-action-btn';
+        clearAddRowButton.textContent = 'x';
+        clearAddRowButton.title = 'Очистить поля новой позиции';
+        clearAddRowButton.setAttribute('aria-label', 'Очистить поля новой позиции');
+        if (flowLocked) {
+          clearAddRowButton.disabled = true;
+        }
+        clearAddRowButton.addEventListener('click', () => {
+          resetAddRowDraft(true);
         });
         skuCell.appendChild(skuInput);
         nameCell.appendChild(nameInput);
+        if (brandCell) {
+          brandCell.appendChild(brandInput);
+        }
+        if (colorCell) {
+          colorCell.appendChild(colorInput);
+        }
         sizeCell.appendChild(sizeInput);
-        qtyCell.appendChild(qtyInput);
+        const addRowActions = document.createElement('div');
+        addRowActions.className = isOptGoodsType ? 'row-actions add-row-actions' : 'row-actions';
+        addRowActions.appendChild(qtyInput);
+        if (isOptGoodsType) {
+          const addRowButtons = document.createElement('div');
+          addRowButtons.className = 'add-row-icon-stack';
+          addRowButtons.appendChild(addRowButton);
+          addRowButtons.appendChild(clearAddRowButton);
+          addRowActions.appendChild(addRowButtons);
+        } else {
+          qtyCell.appendChild(qtyInput);
+        }
+        if (isOptGoodsType) {
+          qtyCell.appendChild(addRowActions);
+        }
+        addRowRefs = { skuInput, nameInput, brandInput, colorInput, sizeInput, qtyInput };
+        syncAddRowDraftState(addRowItem);
         remainingBody.appendChild(addRow);
         if (pendingAddRowFocus) {
           pendingFocusKey = '__add-row__';
-          pendingFocusEl = skuInput;
+          pendingFocusEl = nameInput;
           pendingAddRowFocus = false;
         }
         if (!remaining.length) {
           const row = document.createElement('tr');
-          row.innerHTML = '<td colspan="6" class="muted">Нет данных.</td>';
+          row.innerHTML = `<td colspan="${columnsCount}" class="muted">Нет данных.</td>`;
           remainingBody.appendChild(row);
           return;
         }
@@ -2720,7 +3105,8 @@
           row.innerHTML = `
             <td>${item.sku_code || '-'}</td>
             <td>${item.name || '-'}</td>
-            <td>${item.size || '-'}</td>
+            ${isOptGoodsType ? `<td>${item.brand || '-'}</td><td>${item.color || '-'}</td>` : ''}
+            <td data-item-field="size">${item.size || '-'}</td>
             <td>${item.qty}</td>
             <td>${factValue}</td>
             <td></td>
@@ -2818,12 +3204,14 @@
         }
         (box.items || []).forEach((item) => {
           const itemKey = makeKey(item);
+          const metaParts = [item.brand, item.color, item.size].filter((value) => String(value || '').trim());
+          const metaLine = metaParts.length ? metaParts.join(' · ') : '-';
           const row = document.createElement('div');
           row.className = 'box-item';
           row.innerHTML = `
             <div>
               <strong>${item.name || item.sku_code || '-'}</strong>
-              <small>${item.size || '-'} · <span class="box-qty">${item.qty} шт.</span></small>
+              <small>${metaLine} · <span class="box-qty">${item.qty} шт.</span></small>
             </div>
           `;
           const actions = document.createElement('div');
@@ -3062,6 +3450,27 @@
           row.innerHTML = `<span>${label}</span><span>${total} шт.</span>`;
           closedBoxesEl.appendChild(row);
         });
+      };
+
+      const focusOptAddRow = () => {
+        if (!addRowRefs) {
+          return;
+        }
+        const candidates = [
+          addRowRefs.skuInput,
+          addRowRefs.nameInput,
+          addRowRefs.brandInput,
+          addRowRefs.colorInput,
+          addRowRefs.sizeInput,
+          addRowRefs.qtyInput,
+        ].filter(Boolean);
+        const target = candidates.find((field) => !String(field.value || '').trim()) || candidates[0];
+        if (target) {
+          target.focus();
+          if (typeof target.select === 'function') {
+            target.select();
+          }
+        }
       };
 
       const renderAll = () => {
@@ -4269,7 +4678,9 @@
       let locationModalPalletCode = '';
       let copyModalBoxCode = '';
       let itemContextKey = '';
+      let itemContextField = '';
       let itemWeightModalKey = '';
+      let boxViewModalCode = '';
       const normalizeSelectedBoxCodes = () => {
         const normalized = [];
         const seen = new Set();
@@ -4361,8 +4772,12 @@
         itemContextMenu.classList.remove('is-open');
         itemContextMenu.setAttribute('aria-hidden', 'true');
         itemContextKey = '';
+        itemContextField = '';
+        if (itemSizeContextInput) {
+          itemSizeContextInput.value = '';
+        }
       };
-      const openItemContextMenu = (event, itemKey) => {
+      const openItemContextMenu = (event, itemKey, field = '') => {
         if (!itemContextMenu || !itemKey) {
           return;
         }
@@ -4370,13 +4785,24 @@
         closeGroupContextMenu();
         closePalletContextMenu();
         const item = getFlowItemByKey(itemKey);
-        if (!item || !item.sku_code) {
+        if (!item) {
           return;
         }
         itemContextKey = item.key || itemKey;
+        itemContextField = String(field || '').trim();
         const setWeightBtn = itemContextMenu.querySelector('[data-action="set-weight"]');
         if (setWeightBtn) {
           setWeightBtn.disabled = !item.sku_code;
+        }
+        const addSizeVisible = isOptGoodsType && itemContextField === 'size' && !flowLocked;
+        if (itemSizeContextBlock) {
+          itemSizeContextBlock.classList.toggle('is-hidden', !addSizeVisible);
+        }
+        if (itemSizeContextInput) {
+          itemSizeContextInput.value = '';
+          itemSizeContextInput.placeholder = addSizeVisible
+            ? `Новый размер вместо ${item.size || 'текущего'}`
+            : 'Новый размер';
         }
         const menuWidth = itemContextMenu.offsetWidth || 260;
         const menuHeight = itemContextMenu.offsetHeight || 64;
@@ -4392,6 +4818,12 @@
         itemContextMenu.style.top = `${top}px`;
         itemContextMenu.classList.add('is-open');
         itemContextMenu.setAttribute('aria-hidden', 'false');
+        if (addSizeVisible && itemSizeContextInput) {
+          window.requestAnimationFrame(() => {
+            itemSizeContextInput.focus();
+            itemSizeContextInput.select();
+          });
+        }
       };
       const setItemWeightErrorText = (text) => {
         if (!itemWeightError) {
@@ -4646,9 +5078,13 @@
         }
         const box = getBox(boxCode);
         const info = findBoxPalletInfo(boxCode);
+        boxViewModalCode = box ? (boxCode || '') : '';
         boxViewCode.textContent = boxCode || '-';
         boxViewMeta.textContent = '';
         boxViewBody.innerHTML = '';
+        if (boxViewPrint) {
+          boxViewPrint.disabled = !boxViewModalCode;
+        }
         if (!box) {
           const row = document.createElement('div');
           row.className = 'muted';
@@ -4689,6 +5125,7 @@
         }
         boxViewModal.classList.remove('is-open');
         boxViewModal.setAttribute('aria-hidden', 'true');
+        boxViewModalCode = '';
       };
 
       const closePalletLocationModal = () => {
@@ -6095,7 +6532,9 @@ ${labels}
             return;
           }
           event.preventDefault();
-          openItemContextMenu(event, row.dataset.key || '');
+          const fieldCell = event.target.closest('[data-item-field]');
+          const field = fieldCell ? (fieldCell.dataset.itemField || '') : '';
+          openItemContextMenu(event, row.dataset.key || '', field);
         });
       }
       if (contextMenu) {
@@ -6136,6 +6575,35 @@ ${labels}
           }
           if (button.dataset.action === 'set-weight') {
             openItemWeightModal(itemContextKey);
+            closeItemContextMenu();
+            return;
+          }
+          if (button.dataset.action === 'add-size') {
+            const result = duplicateFlowItemWithSize(itemContextKey, itemSizeContextInput ? itemSizeContextInput.value : '');
+            if (!result.ok) {
+              alert(result.error || 'Не удалось добавить размер.');
+              if (itemSizeContextInput) {
+                itemSizeContextInput.focus();
+                itemSizeContextInput.select();
+              }
+              return;
+            }
+          }
+          closeItemContextMenu();
+        });
+      }
+      if (itemSizeContextInput) {
+        itemSizeContextInput.addEventListener('keydown', (event) => {
+          if (event.key !== 'Enter') {
+            return;
+          }
+          event.preventDefault();
+          const result = duplicateFlowItemWithSize(itemContextKey, itemSizeContextInput.value);
+          if (!result.ok) {
+            alert(result.error || 'Не удалось добавить размер.');
+            itemSizeContextInput.focus();
+            itemSizeContextInput.select();
+            return;
           }
           closeItemContextMenu();
         });
@@ -6296,6 +6764,19 @@ ${labels}
         if (boxViewClose) {
           boxViewClose.addEventListener('click', closeBoxView);
         }
+        if (boxViewPrint) {
+          boxViewPrint.addEventListener('click', async () => {
+            if (!boxViewModalCode) {
+              return;
+            }
+            boxViewPrint.disabled = true;
+            try {
+              await enqueueReceivingBoxLabels([boxViewModalCode]);
+            } finally {
+              boxViewPrint.disabled = !boxViewModalCode;
+            }
+          });
+        }
         if (boxCopyModal) {
           boxCopyModal.addEventListener('click', (event) => {
             if (event.target === boxCopyModal) {
@@ -6446,6 +6927,11 @@ ${labels}
             }
           });
         }
+      if (optAddItemBtn) {
+        optAddItemBtn.addEventListener('click', () => {
+          focusOptAddRow();
+        });
+      }
       if (closeBoxBtn) {
         closeBoxBtn.addEventListener('click', () => {
           if (lastFocusedRowKey) {

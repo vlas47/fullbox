@@ -13,7 +13,7 @@ from logistics.models import LogisticsTrip, LogisticsTripOrder
 from shipping.models import ShippingOrder
 from reachtruck.models import MoveRequest, MoveTask
 from sku.models import Agency
-from sklad.models import WarehouseReserve, WarehouseStockSnapshot
+from sklad.models import WarehouseLocation, WarehouseReserve, WarehouseStockSnapshot
 from sklad.services.warehouse_write_path import WarehouseWritePathService
 
 from .models import Task
@@ -373,6 +373,46 @@ class TodoDisplayTitleTests(TestCase):
         self.assertEqual(html.count("Заявка на приемку №1_PR"), 1)
         self.assertIn('href="/orders/receiving/1/act/print/"', html)
         self.assertNotIn('href="/orders/receiving/1/"', html)
+        self.assertNotIn("Подписать акт приемки по заявке №1", html)
+
+    def test_task_panel_hides_receiving_sign_duplicate_for_storekeeper(self):
+        user_model = get_user_model()
+        agency = Agency.objects.create(agn_name="Клиент приемки склада")
+        storekeeper_user = user_model.objects.create_user(username="todo_storekeeper_receiving", password="pwd")
+        storekeeper = Employee.objects.create(full_name="Кладовщиков Алексей", role="storekeeper", user=storekeeper_user)
+        manager = Employee.objects.create(full_name="Менеджеров Сергей", role="manager")
+        OrderAuditEntry.objects.create(
+            order_id="2",
+            order_type="receiving",
+            action="status",
+            agency=agency,
+            payload={
+                "act_storekeeper_signed": True,
+                "act_manager_signed": False,
+                "status": "warehouse",
+            },
+        )
+        Task.objects.create(
+            title="Заявка на приемку без указания товара",
+            route="/orders/receiving/2/",
+            status="in_progress",
+            assigned_to=storekeeper,
+        )
+        Task.objects.create(
+            title="Подписать акт приемки по заявке №2",
+            route="/orders/receiving/2/act/print/",
+            status="in_progress",
+            assigned_to=manager,
+            created_by=storekeeper_user,
+        )
+
+        html = Template(
+            "{% load todo_panel %}{% task_panel role='storekeeper' %}"
+        ).render(Context({}))
+
+        self.assertEqual(html.count("Заявка на приемку без указания товара №2_PR"), 1)
+        self.assertNotIn("Подписать акт приемки по заявке №2", html)
+        self.assertIn("Принято складом, акт приемки отправлен менеджеру", html)
 
     def test_task_panel_filters_by_order_type(self):
         agency = Agency.objects.create(agn_name="Клиент фильтра типов")
@@ -597,6 +637,54 @@ class TodoDisplayTitleTests(TestCase):
         self.assertRegex(html, r'(?s)value="shipping".*?task-filter-tab-count">\((0)\)</span>')
         self.assertRegex(html, r'(?s)value="logistics".*?task-filter-tab-count">\((1)\)</span>')
 
+    def test_task_panel_uses_warehouse_status_for_receiving_before_storage(self):
+        agency = Agency.objects.create(agn_name="Клиент статуса склада")
+        storekeeper = Employee.objects.create(full_name="Кладовщиков Алексей", role="storekeeper")
+        order_id = "91"
+        OrderAuditEntry.objects.create(
+            order_id=order_id,
+            order_type="receiving",
+            action="status",
+            agency=agency,
+            payload={
+                "act": "placement",
+                "act_state": "closed",
+                "status": "warehouse",
+                "status_label": "Товар принят и размещен на складе",
+            },
+        )
+        location = WarehouseWritePathService.ensure_location(warehouse_code="MSK", zone_code="PR")
+        WarehouseStockSnapshot.objects.create(
+            agency=agency,
+            source_context_type="receiving",
+            source_context_id=order_id,
+            sku_code="SKU-STATUS-91",
+            name="Товар статуса",
+            size="42",
+            barcode="200000009901",
+            goods_type="gv",
+            qty=2,
+            available_qty=2,
+            container_code="PAL-STATUS-91",
+            location=location,
+            zone_code=location.zone_code,
+            zone_kind=location.zone_kind,
+            warehouse_state_code="placed_in_receiving",
+        )
+        Task.objects.create(
+            title="Приемка со статусом склада",
+            route=f"/orders/receiving/{order_id}/",
+            status="in_progress",
+            assigned_to=storekeeper,
+        )
+
+        html = Template(
+            "{% load todo_panel %}{% task_panel role='storekeeper' %}"
+        ).render(Context({}))
+
+        self.assertIn("Завершена приемка", html)
+        self.assertNotIn("Товар принят и размещен на складе", html)
+
     def test_head_manager_tabs_include_logistics_and_filter_trip_tasks(self):
         agency = Agency.objects.create(agn_name="Клиент логистики ГМ")
         head_manager = Employee.objects.create(full_name="Главменеджеров Павел", role="head_manager")
@@ -676,6 +764,38 @@ class TodoDisplayTitleTests(TestCase):
 
         self.assertIn("Статус рейса:", html)
         self.assertIn("Погрузка", html)
+
+    def test_build_trip_context_uses_shipping_ui_status_label(self):
+        agency = Agency.objects.create(agn_name="Клиент статуса логистики")
+        logistician = Employee.objects.create(full_name="Логистов Сергей", role="logistician")
+        storekeeper = Employee.objects.create(full_name="Кладовщиков Алексей", role="storekeeper")
+        order = ShippingOrder.objects.create(
+            number="SO-000401",
+            agency=agency,
+            status=ShippingOrder.STATUS_PACKED,
+        )
+        trip = LogisticsTrip.objects.create(
+            number="11_RS",
+            status=LogisticsTrip.STATUS_PLANNED,
+            assigned_logistician=logistician,
+        )
+        LogisticsTripOrder.objects.create(
+            trip=trip,
+            shipping_order=order,
+            loading_sequence=1,
+            delivery_sequence=1,
+        )
+        task = Task.objects.create(
+            title="Рейс №11_RS",
+            route=f"/logistics/trips/{trip.pk}/",
+            status="backlog",
+            assigned_to=storekeeper,
+        )
+
+        context = build_trip_context(task)
+
+        self.assertIsNotNone(context)
+        self.assertEqual(context["orders"][0]["status_label"], "Подготовка к рейсу")
 
 
 class TodoReturnUrlTests(TestCase):

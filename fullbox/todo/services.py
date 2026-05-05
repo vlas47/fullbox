@@ -12,6 +12,7 @@ from django.utils.http import url_has_allowed_host_and_scheme
 from audit.models import OrderAuditEntry, log_order_action
 from employees.models import Employee
 from logistics.models import LogisticsTrip, LogisticsTripOrder
+from shipping.selectors import shipping_ui_status_label
 from .models import Task, TaskAttachment
 
 
@@ -67,7 +68,7 @@ def build_trip_context(task: Task) -> dict | None:
                 "slot_date_label": order.slot_date.strftime("%d.%m.%Y") if order.slot_date else "-",
                 "pallet_count": int(packing_payload.get("pallet_count") or 0),
                 "box_count": int(packing_payload.get("delivered_box_count") or order.expected_boxes or 0),
-                "status_label": order.get_status_display() or "-",
+                "status_label": shipping_ui_status_label(order),
                 "comment": item.comment or "-",
             }
         )

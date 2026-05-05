@@ -1,3 +1,4 @@
+{% load static %}
 <!doctype html>
 <html lang="ru">
 <head>
@@ -400,7 +401,7 @@
     .mobile-menu-top,
     .mobile-task-top {
       display: flex;
-      justify-content: space-between;
+      justify-content: flex-start;
       align-items: center;
       gap: 10px;
       flex-wrap: wrap;
@@ -429,17 +430,28 @@
       font-size: 19px;
       line-height: 1;
     }
+    .mobile-task-order-id {
+      color: #1c1f1a;
+    }
     .mobile-request-card .mobile-task-badge {
       padding: 2px 7px;
       font-size: 13px;
       line-height: 1.1;
     }
     .mobile-task-meta {
-      display: flex;
-      gap: 10px;
-      flex-wrap: wrap;
-      font-size: 13px;
-      opacity: 0.92;
+      display: grid;
+      gap: 8px;
+    }
+    .mobile-task-destination {
+      display: block;
+      padding: 10px 12px;
+      border-radius: 12px;
+      background: rgba(255,253,248,0.18);
+      border: 1px solid rgba(255,253,248,0.26);
+      color: #fff7d1;
+      font-size: 17px;
+      font-weight: 800;
+      line-height: 1.25;
     }
     .mobile-request-card .mobile-task-top {
       gap: 10px;
@@ -484,6 +496,10 @@
     .mobile-exec {
       display: grid;
       gap: 16px;
+    }
+    .mobile-request-batch-card {
+      border-color: rgba(27,106,91,0.34);
+      box-shadow: 0 14px 28px rgba(27,106,91,0.16);
     }
     .mobile-task-summary {
       display: grid;
@@ -587,6 +603,42 @@
       font-size: 13px;
       opacity: 0.95;
     }
+    .scan-collapse {
+      display: grid;
+      gap: 10px;
+    }
+    .scan-collapse-summary {
+      list-style: none;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 14px 16px;
+      border-radius: 16px;
+      border: 1px solid rgba(28,31,26,0.12);
+      background: var(--surface);
+      color: var(--ink);
+      font-size: 16px;
+      font-weight: 800;
+      cursor: pointer;
+      box-shadow: 0 10px 22px rgba(15,23,42,0.08);
+    }
+    .scan-collapse-summary::-webkit-details-marker {
+      display: none;
+    }
+    .scan-collapse-summary::after {
+      content: "Показать";
+      color: var(--accent-strong);
+      font-size: 13px;
+      font-weight: 800;
+    }
+    .scan-collapse[open] .scan-collapse-summary::after {
+      content: "Скрыть";
+    }
+    .scan-collapse-content {
+      display: grid;
+      gap: 10px;
+    }
     .scan-form {
       display: grid;
       gap: 10px;
@@ -597,6 +649,10 @@
       border-radius: 14px;
       border: 2px solid rgba(255,253,248,0.5);
       background: rgba(255,253,248,0.96);
+    }
+    .scan-input.mobile-capture {
+      caret-color: transparent;
+      user-select: none;
     }
     .scan-actions {
       display: grid;
@@ -657,6 +713,8 @@
   </style>
 </head>
 <body class="{% if mobile_flash_state == 'error' %}mobile-flash-error{% elif mobile_flash_state == 'success' %}mobile-flash-success{% endif %}">
+  <audio id="scan-success-audio" preload="auto" src="{% static 'reachtruck/audio/scan-success.mp3' %}"></audio>
+  <audio id="scan-error-audio" preload="auto" src="{% static 'reachtruck/audio/scan-error.mp3' %}"></audio>
   <div class="wrap">
     <div class="layout">
       <aside class="side">
@@ -728,6 +786,28 @@
                 <div class="panel-subtitle">Выберите тип задач для ричтрака.</div>
               </div>
             </div>
+            {% if mobile_current_requests %}
+              <div class="panel-header" style="margin-top: 4px;">
+                <div>
+                  <h3 class="panel-title" style="font-size:18px;">Продолжить текущую работу</h3>
+                  <div class="panel-subtitle">Если вышли со страницы сканирования, вернитесь в активную заявку отсюда.</div>
+                </div>
+              </div>
+              <div class="mobile-task-list" style="margin-bottom: 10px;">
+                {% for request_card in mobile_current_requests %}
+                  <a class="mobile-task-btn mobile-request-card mobile-request-batch-card" href="{{ request_card.url }}">
+                    <div class="mobile-request-topline">
+                      <div class="mobile-task-number">{{ request_card.type_label }} №{{ request_card.label }}</div>
+                      <div class="mobile-request-client">{{ request_card.agency_name_short }}</div>
+                    </div>
+                    <div class="mobile-request-bottomline">
+                      <span class="mobile-request-route">{{ request_card.prompt|default:request_card.summary }}</span>
+                      <div class="mobile-task-badge">{{ request_card.remaining_label }}</div>
+                    </div>
+                  </a>
+                {% endfor %}
+              </div>
+            {% endif %}
             <div class="mobile-menu">
               {% for category in mobile_categories %}
                 <a class="mobile-menu-btn" href="{{ category.url }}">
@@ -735,7 +815,13 @@
                     <div class="mobile-menu-title">{{ category.label }}</div>
                     <div class="mobile-menu-count">{{ category.count }}</div>
                   </div>
-                  <div class="mobile-menu-sub">Показать задачи категории</div>
+                  <div class="mobile-menu-sub">
+                    {% if category.in_progress_count %}
+                      В работе: {{ category.in_progress_count }}
+                    {% else %}
+                      Показать задачи категории
+                    {% endif %}
+                  </div>
                 </a>
               {% endfor %}
             </div>
@@ -747,41 +833,110 @@
                 <div class="panel-subtitle">Сначала выберите заявку, затем конкретное задание.</div>
               </div>
             </div>
+            {% if mobile_current_requests %}
+              <div class="mobile-task-list" style="margin-bottom: 10px;">
+                {% for request_card in mobile_current_requests %}
+                  <a class="mobile-task-btn mobile-request-card mobile-request-batch-card" href="{{ request_card.url }}">
+                    <div class="mobile-request-topline">
+                      <div class="mobile-task-number">Продолжить {{ request_card.type_label|lower }} №{{ request_card.label }}</div>
+                    </div>
+                    <div class="mobile-request-bottomline">
+                      <span class="mobile-request-route">{{ request_card.prompt|default:request_card.summary }}</span>
+                      <div class="mobile-task-badge">{{ request_card.remaining_label }}</div>
+                    </div>
+                  </a>
+                {% endfor %}
+              </div>
+            {% endif %}
             <div class="mobile-task-list">
               {% for request_card in mobile_requests %}
                 <a class="mobile-task-btn mobile-request-card" href="{{ request_card.url }}">
                   <div class="mobile-request-topline">
-                    <div class="mobile-task-number">{{ request_card.label }}</div>
+                    <div class="mobile-task-number">{{ request_card.type_label }} №{{ request_card.label }}</div>
                     <div class="mobile-request-client">{{ request_card.agency_name_short }}</div>
                   </div>
                   <div class="mobile-request-bottomline">
                     <span class="mobile-request-route">{{ request_card.summary }}</span>
-                    <div class="mobile-task-badge">{{ request_card.count_label }}</div>
+                    <div class="mobile-task-badge">{{ request_card.pallet_count_label }}</div>
                   </div>
                 </a>
               {% empty %}
                 <div class="move-card">Заявок в этой категории пока нет.</div>
               {% endfor %}
             </div>
+          {% elif mobile_category and mobile_request_key and mobile_request_batch_mode %}
+            <a class="mobile-back" href="/reachtruck/?mobile_category={{ mobile_category }}&amp;mobile_show_list=1">← К списку заявок</a>
+            <div class="mobile-exec">
+              <div class="panel-header">
+                <div>
+                  <h2 class="panel-title">{{ mobile_request_type_label }} №{{ mobile_request_label }}</h2>
+                  <div class="panel-subtitle">{{ mobile_request_client_label }}</div>
+                </div>
+              </div>
+
+              {% if mobile_request_execution.can_take %}
+                <form method="post" class="scan-actions">
+                  {% csrf_token %}
+                  <input type="hidden" name="action" value="take_request">
+                  <input type="hidden" name="mobile_category" value="{{ mobile_category }}">
+                  <input type="hidden" name="mobile_request" value="{{ mobile_request_key }}">
+                  <button class="btn primary" type="submit">Взять заявку в работу</button>
+                </form>
+              {% elif mobile_request_execution.can_scan %}
+                <div class="scan-panel">
+                  <div class="scan-panel-head">
+                    <div class="scan-panel-title">{{ mobile_request_prompt_title }}</div>
+                    <div class="scan-panel-subtitle">{{ mobile_request_prompt_subtitle }}</div>
+                  </div>
+                  <form method="post" class="scan-form">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="scan_request">
+                    <input type="hidden" name="mobile_category" value="{{ mobile_category }}">
+                    <input type="hidden" name="mobile_request" value="{{ mobile_request_key }}">
+                    <input
+                      class="scan-input"
+                      type="text"
+                      name="scan_value"
+                      inputmode="none"
+                      autocomplete="off"
+                      autocapitalize="off"
+                      autocorrect="off"
+                      spellcheck="false"
+                      enterkeyhint="done"
+                      placeholder="Сканируйте код">
+                    <button class="btn primary" type="submit">Подтвердить скан</button>
+                  </form>
+                  <div class="scan-hint">Зеленый экран и короткий сигнал означают верный скан, красный экран и тревожный звук — неверный.</div>
+                </div>
+              {% endif %}
+
+              {% if mobile_request_remaining_pallets %}
+                <div class="mobile-task-summary" style="margin-top: 10px;">
+                  <div class="mobile-task-summary-title">
+                    <strong>Осталось паллет</strong>
+                    <span class="scan-status-badge">{{ mobile_request_remaining_label }}</span>
+                  </div>
+                  <div>{{ mobile_request_remaining_pallets|join:", " }}</div>
+                </div>
+              {% endif %}
+            </div>
           {% elif mobile_category and mobile_request_key and not mobile_selected_task %}
-            <a class="mobile-back" href="/reachtruck/?mobile_category={{ mobile_category }}">← К списку заявок</a>
+            <a class="mobile-back" href="/reachtruck/?mobile_category={{ mobile_category }}&amp;mobile_show_list=1">← К списку заявок</a>
             <div class="panel-header">
               <div>
-                <h2 class="panel-title">{{ mobile_request_label }}</h2>
-                <div class="panel-subtitle">Выберите задание внутри заявки.</div>
+                <h2 class="panel-title">{{ mobile_request_heading }}</h2>
+                <div class="panel-subtitle">Выберите паллету для перевозки.</div>
               </div>
             </div>
             <div class="mobile-task-list">
               {% for move in mobile_request_tasks %}
                 <a class="mobile-task-btn" href="/reachtruck/?mobile_category={{ mobile_category }}&amp;mobile_request={{ mobile_request_key }}&amp;mobile_task={{ move.order_id }}">
                   <div class="mobile-task-top">
-                    <div class="mobile-task-number">{{ move.mobile_number }}</div>
-                    <div class="mobile-task-badge">{{ move.status_label }}</div>
+                    <div class="mobile-task-number"><span class="mobile-task-order-id">№{{ move.order_id }}</span> {{ move.mobile_route_title }}</div>
                   </div>
                   <div class="mobile-task-sub">Паллета {{ move.pallet_code }}</div>
                   <div class="mobile-task-meta">
-                    <span>{{ move.from_label }}</span>
-                    <span>{{ move.mobile_destination|default:move.to_label }}</span>
+                    <span class="mobile-task-destination">{{ move.to_label }}</span>
                   </div>
                 </a>
               {% empty %}
@@ -838,7 +993,17 @@
                     <input type="hidden" name="mobile_task" value="{{ mobile_selected_task.order_id }}">
                     <input type="hidden" name="mobile_category" value="{{ mobile_category }}">
                     <input type="hidden" name="mobile_request" value="{{ mobile_request_key }}">
-                    <input class="scan-input" type="text" name="scan_value" inputmode="search" placeholder="Сканируйте код">
+                    <input
+                      class="scan-input"
+                      type="text"
+                      name="scan_value"
+                      inputmode="none"
+                      autocomplete="off"
+                      autocapitalize="off"
+                      autocorrect="off"
+                      spellcheck="false"
+                      enterkeyhint="done"
+                      placeholder="Сканируйте код">
                     <button class="btn primary" type="submit">Подтвердить скан</button>
                   </form>
                   <div class="scan-hint">Неверный скан даст красный экран и предупреждение. Прогресс сохраняется после каждого правильного скана.</div>
@@ -859,76 +1024,81 @@
               </div>
 
               {% if mobile_selected_execution.boxes %}
-                <div class="scan-progress">Найдено {{ mobile_selected_execution.boxes_completed }} из {{ mobile_selected_execution.boxes_total }}</div>
-                <div class="scan-panel">
-                  <div class="scan-panel-head">
-                    <div class="scan-panel-title">Короба задания</div>
-                    <div class="scan-panel-subtitle">Сканируйте короба в любом порядке. Для штучного отбора затем сканируйте каждую единицу товара.</div>
-                  </div>
-                  <div class="mobile-box-list">
-                    <div class="mobile-box-section">
-                      <div class="mobile-box-section-title">Не найдены</div>
-                      <div class="mobile-box-grid">
-                        {% for box in mobile_selected_execution.boxes_pending %}
-                          <div class="scan-box {% if mobile_selected_execution.boxes_ready %}waiting{% endif %}">
-                            <div class="scan-box-code">{{ box.box_code }}</div>
-                            <div class="scan-box-name">
-                              {% if box.requires_unit_scan %}
-                                {{ box.unit_scanned_total }} из {{ box.units_required }} шт.
-                              {% else %}
-                                Короб целиком
-                              {% endif %}
-                            </div>
-                            <div class="scan-box-sub">
-                              {% if box.requires_unit_scan %}
-                                ШК: {{ box.unit_barcode_preview|default:"по списку задания" }}
-                              {% else %}
-                                В коробе: {{ box.box_qty }} шт.
-                              {% endif %}
-                            </div>
+                <details class="scan-collapse">
+                  <summary class="scan-collapse-summary">Содержимое паллеты</summary>
+                  <div class="scan-collapse-content">
+                    <div class="scan-progress">Найдено {{ mobile_selected_execution.boxes_completed }} из {{ mobile_selected_execution.boxes_total }}</div>
+                    <div class="scan-panel">
+                      <div class="scan-panel-head">
+                        <div class="scan-panel-title">Короба паллеты</div>
+                        <div class="scan-panel-subtitle">Сканируйте короба в любом порядке. Для штучного отбора затем сканируйте каждую единицу товара.</div>
+                      </div>
+                      <div class="mobile-box-list">
+                        <div class="mobile-box-section">
+                          <div class="mobile-box-section-title">Не найдены</div>
+                          <div class="mobile-box-grid">
+                            {% for box in mobile_selected_execution.boxes_pending %}
+                              <div class="scan-box {% if mobile_selected_execution.boxes_ready %}waiting{% endif %}">
+                                <div class="scan-box-code">{{ box.box_code }}</div>
+                                <div class="scan-box-name">
+                                  {% if box.requires_unit_scan %}
+                                    {{ box.unit_scanned_total }} из {{ box.units_required }} шт.
+                                  {% else %}
+                                    Короб целиком
+                                  {% endif %}
+                                </div>
+                                <div class="scan-box-sub">
+                                  {% if box.requires_unit_scan %}
+                                    ШК: {{ box.unit_barcode_preview|default:"по списку задания" }}
+                                  {% else %}
+                                    В коробе: {{ box.box_qty }} шт.
+                                  {% endif %}
+                                </div>
+                              </div>
+                            {% empty %}
+                              <div class="scan-box ready">
+                                <div class="scan-box-code">Все найдены</div>
+                                <div class="scan-box-sub">Ненайденных коробов не осталось.</div>
+                              </div>
+                            {% endfor %}
                           </div>
-                        {% empty %}
-                          <div class="scan-box ready">
-                            <div class="scan-box-code">Все найдены</div>
-                            <div class="scan-box-sub">Ненайденных коробов не осталось.</div>
+                        </div>
+                        <div class="mobile-box-section">
+                          <div class="mobile-box-section-title">Найдены</div>
+                          <div class="mobile-box-grid">
+                            {% for box in mobile_selected_execution.boxes_found %}
+                              <div class="scan-box ready">
+                                <div class="scan-box-code">{{ box.box_code }}</div>
+                                <div class="scan-box-name">
+                                  {% if box.requires_unit_scan %}
+                                    {{ box.unit_scanned_total }} из {{ box.units_required }} шт.
+                                  {% else %}
+                                    Короб целиком
+                                  {% endif %}
+                                </div>
+                                <div class="scan-box-sub">
+                                  {% if box.requires_unit_scan %}
+                                    ШК: {{ box.unit_barcode_preview|default:"по списку задания" }}
+                                  {% else %}
+                                    В коробе: {{ box.box_qty }} шт.
+                                  {% endif %}
+                                </div>
+                                {% if box.return_required %}
+                                  <div class="scan-return-note">Верни короб на место</div>
+                                {% endif %}
+                              </div>
+                            {% empty %}
+                              <div class="scan-box">
+                                <div class="scan-box-code">Пока пусто</div>
+                                <div class="scan-box-sub">Найденные короба будут появляться здесь.</div>
+                              </div>
+                            {% endfor %}
                           </div>
-                        {% endfor %}
+                        </div>
                       </div>
                     </div>
-                    <div class="mobile-box-section">
-                      <div class="mobile-box-section-title">Найдены</div>
-                      <div class="mobile-box-grid">
-                        {% for box in mobile_selected_execution.boxes_found %}
-                          <div class="scan-box ready">
-                            <div class="scan-box-code">{{ box.box_code }}</div>
-                            <div class="scan-box-name">
-                              {% if box.requires_unit_scan %}
-                                {{ box.unit_scanned_total }} из {{ box.units_required }} шт.
-                              {% else %}
-                                Короб целиком
-                              {% endif %}
-                            </div>
-                            <div class="scan-box-sub">
-                              {% if box.requires_unit_scan %}
-                                ШК: {{ box.unit_barcode_preview|default:"по списку задания" }}
-                              {% else %}
-                                В коробе: {{ box.box_qty }} шт.
-                              {% endif %}
-                            </div>
-                            {% if box.return_required %}
-                              <div class="scan-return-note">Верни короб на место</div>
-                            {% endif %}
-                          </div>
-                        {% empty %}
-                          <div class="scan-box">
-                            <div class="scan-box-code">Пока пусто</div>
-                            <div class="scan-box-sub">Найденные короба будут появляться здесь.</div>
-                          </div>
-                        {% endfor %}
-                      </div>
-                    </div>
                   </div>
-                </div>
+                </details>
               {% endif %}
 
               {% if mobile_selected_execution.all_boxes_complete %}
@@ -1210,15 +1380,15 @@
             </select>
           </div>
           <div data-edit-field="row">
-            <label for="edit-move-row">Ряд</label>
+            <label for="edit-move-row">Стеллаж</label>
             <input id="edit-move-row" name="to_row" type="number" min="1" step="1">
           </div>
           <div data-edit-field="section">
-            <label for="edit-move-section">Секция</label>
+            <label for="edit-move-section">Линия</label>
             <input id="edit-move-section" name="to_section" type="number" min="1" step="1">
           </div>
           <div data-edit-field="tier">
-            <label for="edit-move-tier">Ярус</label>
+            <label for="edit-move-tier">Этаж</label>
             <input id="edit-move-tier" name="to_tier" type="number" min="1" step="1">
           </div>
           <div data-edit-field="cell">
@@ -1360,7 +1530,88 @@
         palletInput.focus();
       }
       const scanInput = document.querySelector('.scan-input');
-      if (scanInput && window.matchMedia('(max-width: 900px)').matches) {
+      const scanForm = scanInput ? scanInput.closest('.scan-form') : null;
+      const scanPanel = scanInput ? scanInput.closest('.scan-panel') : null;
+      const mobileScanMode = Boolean(scanInput && window.matchMedia('(max-width: 900px)').matches);
+      if (mobileScanMode && scanInput && scanForm) {
+        let scanBuffer = String(scanInput.value || '');
+        const syncScanBuffer = () => {
+          scanInput.value = scanBuffer;
+        };
+        const focusScanPanel = () => {
+          if (!scanPanel) {
+            return;
+          }
+          try {
+            scanPanel.focus({ preventScroll: true });
+          } catch (e) {
+            scanPanel.focus();
+          }
+        };
+        scanInput.readOnly = true;
+        scanInput.classList.add('mobile-capture');
+        scanInput.setAttribute('tabindex', '-1');
+        scanInput.setAttribute('aria-readonly', 'true');
+        if (scanPanel) {
+          scanPanel.setAttribute('tabindex', '-1');
+          scanPanel.addEventListener('click', () => focusScanPanel());
+        }
+        scanForm.addEventListener('submit', () => {
+          scanInput.value = scanBuffer.trim();
+        });
+        document.addEventListener('keydown', (event) => {
+          if (!scanForm || !document.body.contains(scanForm)) {
+            return;
+          }
+          if (event.defaultPrevented || event.ctrlKey || event.altKey || event.metaKey) {
+            return;
+          }
+          const target = event.target;
+          if (
+            target instanceof HTMLElement
+            && target.closest('input:not(.scan-input), textarea, select, [contenteditable="true"]')
+          ) {
+            return;
+          }
+          const key = String(event.key || '');
+          if (!key) {
+            return;
+          }
+          if (key === 'Enter' || key === 'NumpadEnter' || key === 'Tab') {
+            if (!scanBuffer.trim()) {
+              return;
+            }
+            event.preventDefault();
+            scanInput.value = scanBuffer.trim();
+            if (typeof scanForm.requestSubmit === 'function') {
+              scanForm.requestSubmit();
+            } else {
+              scanForm.submit();
+            }
+            return;
+          }
+          if (key === 'Escape') {
+            scanBuffer = '';
+            syncScanBuffer();
+            event.preventDefault();
+            return;
+          }
+          if (key === 'Backspace') {
+            scanBuffer = scanBuffer.slice(0, -1);
+            syncScanBuffer();
+            event.preventDefault();
+            return;
+          }
+          if (key.length !== 1) {
+            return;
+          }
+          scanBuffer += key;
+          syncScanBuffer();
+          event.preventDefault();
+        }, true);
+        syncScanBuffer();
+        focusScanPanel();
+      } else if (scanInput && window.matchMedia('(max-width: 900px)').matches) {
         try {
           scanInput.focus({ preventScroll: true });
         } catch (e) {
@@ -1369,9 +1620,12 @@
       }
       const flashState = '{{ mobile_flash_state|default:""|escapejs }}';
       if (flashState === 'error' || flashState === 'success') {
-        try {
-          const AudioCtx = window.AudioContext || window.webkitAudioContext;
-          if (AudioCtx) {
+        const playFallbackTone = () => {
+          try {
+            const AudioCtx = window.AudioContext || window.webkitAudioContext;
+            if (!AudioCtx) {
+              return;
+            }
             const ctx = new AudioCtx();
             const osc = ctx.createOscillator();
             const gain = ctx.createGain();
@@ -1388,8 +1642,23 @@
             );
             gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.18);
             osc.stop(ctx.currentTime + 0.18);
+          } catch (e) {}
+        };
+        try {
+          const audioId = flashState === 'error' ? 'scan-error-audio' : 'scan-success-audio';
+          const audioEl = document.getElementById(audioId);
+          if (audioEl) {
+            audioEl.currentTime = 0;
+            const playPromise = audioEl.play();
+            if (playPromise && typeof playPromise.catch === 'function') {
+              playPromise.catch(() => playFallbackTone());
+            }
+          } else {
+            playFallbackTone();
           }
-        } catch (e) {}
+        } catch (e) {
+          playFallbackTone();
+        }
       }
     })();
   </script>

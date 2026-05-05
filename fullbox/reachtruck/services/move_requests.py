@@ -6,16 +6,13 @@ from itertools import combinations
 import json
 
 from django.db import transaction
-from django.db.models import Q
 from django.utils import timezone
 
 from audit.models import OrderAuditEntry, log_order_action, log_stock_move
 from reachtruck.models import MoveRequest, MoveRequestItem, MoveTask
-from sklad.models import StockPalletState
 from sklad.services import OperationalStockService
 from sklad.services.stock_availability import StockAvailabilityService
-from sklad.services.warehouse_stock_rows import legacy_stock_rows, snapshot_stock_rows
-from sklad.stock_state import rebuild_stock_snapshot
+from sklad.services.warehouse_stock_rows import snapshot_stock_rows
 
 from .pallet_ops import (
     MOVE_MODE_BOX_FULL,
@@ -86,6 +83,23 @@ def _normalize_goods_type(raw: str | None) -> str:
     return StockAvailabilityService.normalize_goods_type(raw)
 
 
+_OS_LINE_DISPLAY_LABELS = {
+    1: "0",
+    2: "A",
+    3: "B",
+    4: "C",
+    5: "D",
+    6: "E",
+    7: "F",
+    8: "G",
+    9: "I",
+}
+
+
+def _os_line_display_label(section: int) -> str:
+    return _OS_LINE_DISPLAY_LABELS.get(_as_int(section), str(_as_int(section) or ""))
+
+
 def _shipping_task_kind_label(move_mode: str) -> str:
     if str(move_mode or "").strip() == MoveTask.MODE_PALLET_FULL:
         return "Паллета целиком"
@@ -152,10 +166,11 @@ def _location_label(location: dict | None) -> str:
     if zone == "MR":
         return f"MR · Между рядами · Ряд {row}" if row else "MR · Между рядами"
     if zone == "OS":
-        if row and section and tier and cell:
-            return f"OS · Ряд {row} · Секция {section} · Ярус {tier} · Ячейка {cell}"
-        if row:
-            return f"OS · Ряд {row}"
+        line_label = _os_line_display_label(section)
+        if line_label and row and tier and cell:
+            return f"OS · Линия {line_label} · Стеллаж {row} · Этаж {tier} · Ячейка {cell}"
+        if line_label and row:
+            return f"OS · Линия {line_label} · Стеллаж {row}"
         return "OS · Основной склад"
     return zone
 
@@ -673,47 +688,7 @@ def _warehouse_base_rows_for_planning(
         barcode_values=barcode_values,
         require_pallet=True,
     )
-    if rows:
-        return rows
-
-    qs = (
-        StockPalletState.objects.filter(state=StockPalletState.STATE_WAREHOUSE)
-        .exclude(pallet_code="")
-        .order_by("created_at", "id")
-    )
-    if agency_id:
-        qs = qs.filter(agency_id=agency_id)
-    if sku_values:
-        if barcode_values:
-            qs = qs.filter(Q(sku__in=sku_values) | Q(barcode__in=barcode_values))
-        else:
-            qs = qs.filter(sku__in=sku_values)
-    elif barcode_values:
-        qs = qs.filter(barcode__in=barcode_values)
-    rows = legacy_stock_rows(qs)
-    if rows:
-        return rows
-
-    try:
-        rebuild_stock_snapshot()
-    except Exception:
-        pass
-
-    qs = (
-        StockPalletState.objects.filter(state=StockPalletState.STATE_WAREHOUSE)
-        .exclude(pallet_code="")
-        .order_by("created_at", "id")
-    )
-    if agency_id:
-        qs = qs.filter(agency_id=agency_id)
-    if sku_values:
-        if barcode_values:
-            qs = qs.filter(Q(sku__in=sku_values) | Q(barcode__in=barcode_values))
-        else:
-            qs = qs.filter(sku__in=sku_values)
-    elif barcode_values:
-        qs = qs.filter(barcode__in=barcode_values)
-    return legacy_stock_rows(qs)
+    return rows
 
 
 def _candidate_pallets_for_rows(
@@ -1259,21 +1234,8 @@ def _plan_move_request_to_tasks(
             move_request=move_request,
         )
         if processing_order_id:
-            from sklad.models import WarehouseStockSnapshot
             from sklad.services.warehouse_write_path import WarehouseWritePathService
 
-            has_warehouse_snapshot = WarehouseStockSnapshot.objects.filter(
-                agency=move_request.agency,
-                container_code=pallet_code,
-                is_archived=False,
-            ).exists()
-            if not has_warehouse_snapshot:
-                WarehouseWritePathService.sync_legacy_storage_pallet(
-                    agency=move_request.agency,
-                    pallet_code=pallet_code,
-                    source_document_type="legacy_stock",
-                    source_document_id=processing_order_id,
-                )
             try:
                 warehouse_operation = WarehouseWritePathService.request_move_to_processing(
                     agency=move_request.agency,

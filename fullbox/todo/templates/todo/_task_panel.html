@@ -5,10 +5,9 @@
   .task-col-header { display:flex; justify-content:space-between; align-items:center; padding:10px 12px; border-bottom:1px dashed var(--stroke); font-weight:600; }
   .task-col-body { display:grid; gap:8px; padding:10px; align-content:start; align-items:start; }
   .task-card { padding:10px; border:1px solid var(--stroke); border-radius:12px; background:var(--card, rgba(255,255,255,0.02)); }
-  .task-card-link { display:block; color:inherit; text-decoration:none; }
   .task-card.clickable { cursor:pointer; transition: transform 0.16s ease, box-shadow 0.16s ease; }
-  .task-card-link:hover .task-card.clickable,
-  .task-card-link:focus-visible .task-card.clickable {
+  .task-card.clickable:hover,
+  .task-card.clickable:focus-visible {
     transform: translateY(-1px);
     box-shadow: 0 12px 24px rgba(15, 23, 42, 0.08);
   }
@@ -27,7 +26,7 @@
     animation: pulse 1.8s ease-in-out infinite;
   }
   .task-title { font-weight:600; margin-bottom:6px; }
-  .task-title a { color:inherit; }
+  .task-title a { color:inherit; text-decoration:none; }
   .task-meta { color:var(--muted); font-size:12px; line-height:1.4; }
   .task-meta-label { color:var(--muted); }
   .task-meta-value { color:#0e6b5b; font-weight:600; }
@@ -52,6 +51,35 @@
   .task-tag.urgent { color:#ef4444; }
   .task-summary { display:flex; gap:8px; flex-wrap:wrap; margin-top:10px; }
   .task-summary .pill { font-size:12px; }
+  .task-filters { display:grid; gap:10px; margin-top:14px; }
+  .task-filter-tabs { display:flex; gap:8px; flex-wrap:wrap; }
+  .task-filter-tab {
+    display:inline-flex;
+    align-items:center;
+    gap:6px;
+    padding:8px 12px;
+    border-radius:999px;
+    border:1px solid var(--stroke);
+    background:transparent;
+    cursor:pointer;
+    font:inherit;
+    color:inherit;
+  }
+  .task-filter-tab.active {
+    background:#0e6b5b;
+    border-color:#0e6b5b;
+    color:#fff;
+  }
+  .task-filter-tab-count { opacity:0.82; }
+  .task-filter-row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+  .task-filter-select {
+    min-width:220px;
+    padding:8px 10px;
+    border-radius:10px;
+    border:1px solid var(--stroke);
+    background:var(--card-soft, rgba(255,255,255,0.04));
+    color:inherit;
+  }
   @keyframes pulse {
     0% { transform: translateY(0); box-shadow: 0 0 0 2px rgba(245,158,11,0.1), 0 18px 40px rgba(245,158,11,0.18); }
     50% { transform: translateY(-1px); box-shadow: 0 0 0 6px rgba(245,158,11,0.18), 0 22px 46px rgba(245,158,11,0.22); }
@@ -74,10 +102,34 @@
       {% endif %}
     </div>
     <div style="display:flex; gap:8px; flex-wrap:wrap;">
-      <a class="btn" href="{% url 'todo:create' %}">Создать</a>
-      <a class="btn" href="{% url 'todo:list' %}">Все задачи</a>
+      <a class="btn" href="{{ task_panel_create_url }}">Создать</a>
+      <a class="btn" href="{{ task_panel_list_url }}">Все задачи</a>
     </div>
   </div>
+
+  {% if task_panel_filter_tabs %}
+    <form class="task-filters" method="get">
+      <input type="hidden" name="todo_filters_applied" value="1">
+      <div class="task-filter-tabs">
+        {% for tab in task_panel_filter_tabs %}
+          <button type="submit" name="todo_filter_type" value="{{ tab.value }}" class="task-filter-tab{% if tab.active %} active{% endif %}">
+            <span>{{ tab.label }}</span>
+            <span class="task-filter-tab-count">({{ tab.count }})</span>
+          </button>
+        {% endfor %}
+      </div>
+      <div class="task-filter-row">
+        <select class="task-filter-select" name="todo_filter_client">
+          <option value="">Все клиенты</option>
+          {% for option in task_panel_client_options %}
+            <option value="{{ option.id }}"{% if option.selected %} selected{% endif %}>{{ option.label }}</option>
+          {% endfor %}
+        </select>
+        <button class="btn" type="submit" name="todo_filter_type" value="{{ task_panel_active_filter_type }}">Применить</button>
+        <a class="btn" href="?todo_filters_reset=1">Сбросить</a>
+      </div>
+    </form>
+  {% endif %}
 
   <div class="task-summary">
     {% for stat in task_panel_stats %}
@@ -95,9 +147,8 @@
         <div class="task-col-body">
           {% if column.tasks %}
             {% for task in column.tasks %}
-              <a class="task-card-link" href="{{ task.panel_url }}">
-              <div class="task-card clickable{% if task.route and "/orders/receiving/" in task.route %} order-receiving{% elif task.route and "/orders/processing/" in task.route %} order-processing{% endif %}{% if task_panel_attention_employee_id and task.assigned_to_id == task_panel_attention_employee_id %}{% if task_panel_role == "manager" and task.status == "done" %}{% elif task.route and "/orders/receiving/" in task.route and "/act/print/" not in task.route %}{% else %} attention{% endif %}{% endif %}">
-                <div class="task-title">{{ task.panel_title }}</div>
+              <div class="task-card clickable{% if task.route and "/orders/receiving/" in task.route %} order-receiving{% elif task.route and "/orders/processing/" in task.route %} order-processing{% endif %}{% if task_panel_attention_employee_id and task.assigned_to_id == task_panel_attention_employee_id %}{% if task_panel_role == "manager" and task.status == "done" %}{% elif task.route and "/orders/receiving/" in task.route and "/act/print/" not in task.route %}{% else %} attention{% endif %}{% endif %}"{% if task.panel_url %} onclick="window.location.href='{{ task.panel_url }}'"{% endif %}>
+                <div class="task-title"><a href="{{ task.panel_url }}">{{ task.panel_title }}</a></div>
                 {% if task_panel_role == "storekeeper" and task.route %}
                   {% if "/orders/receiving/" in task.route or "/orders/processing/" in task.route %}
                   {% else %}
@@ -175,20 +226,20 @@
                     {% if "в ожидании" in status_lower %}
                       {% with status_class="status-waiting" %}
                   <div class="task-meta">
-                    <span class="task-meta-label">Статус заявки:</span>
+                    <span class="task-meta-label">{{ task.status_meta_label|default:"Статус заявки" }}:</span>
                     <span class="task-meta-value {{ status_class }}">{{ task.order_status_label }}</span>
                   </div>
                       {% endwith %}
                     {% elif "выполн" in status_lower %}
                       {% with status_class="status-done" %}
                   <div class="task-meta">
-                    <span class="task-meta-label">Статус заявки:</span>
+                    <span class="task-meta-label">{{ task.status_meta_label|default:"Статус заявки" }}:</span>
                     <span class="task-meta-value {{ status_class }}">{{ task.order_status_label }}</span>
                   </div>
                       {% endwith %}
                     {% else %}
                   <div class="task-meta">
-                    <span class="task-meta-label">Статус заявки:</span>
+                    <span class="task-meta-label">{{ task.status_meta_label|default:"Статус заявки" }}:</span>
                     <span class="task-meta-value">{{ task.order_status_label }}</span>
                   </div>
                     {% endif %}
@@ -212,7 +263,6 @@
                   </div>
                 {% endif %}
               </div>
-              </a>
             {% endfor %}
           {% else %}
             <div class="task-empty">Нет задач</div>

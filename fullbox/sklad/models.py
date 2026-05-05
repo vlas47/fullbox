@@ -116,6 +116,61 @@ class StockPalletState(models.Model):
         return f"{self.pallet_code or '-'} · {self.sku} · {self.qty}"
 
 
+class WarehouseTemporaryNomenclature(models.Model):
+    agency = models.ForeignKey(
+        Agency,
+        on_delete=models.CASCADE,
+        related_name="warehouse_temporary_nomenclature",
+        verbose_name="Клиент",
+    )
+    identity_key = models.CharField(max_length=512)
+    item_code = models.CharField("Временный артикул", max_length=64, blank=True)
+    name = models.CharField("Наименование", max_length=255)
+    brand = models.CharField("Бренд", max_length=255, blank=True)
+    color = models.CharField("Цвет", max_length=64, blank=True)
+    size = models.CharField("Размер", max_length=64, blank=True)
+    barcode = models.CharField("Штрихкод", max_length=64, blank=True)
+    goods_type = models.CharField("Тип товара", max_length=64, default="op", blank=True)
+    first_context_type = models.CharField(max_length=32, blank=True)
+    first_context_id = models.CharField(max_length=64, blank=True)
+    last_context_type = models.CharField(max_length=32, blank=True)
+    last_context_id = models.CharField(max_length=64, blank=True)
+    normalized_sku_ref = models.ForeignKey(
+        SKU,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="temporary_nomenclature_sources",
+        verbose_name="Нормализованный SKU",
+    )
+    normalized_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "warehouse_temporary_nomenclature"
+        verbose_name = "Временная номенклатура склада"
+        verbose_name_plural = "Временная номенклатура склада"
+        ordering = ["item_code", "name", "size", "id"]
+        indexes = [
+            models.Index(fields=["agency", "item_code"]),
+            models.Index(fields=["agency", "normalized_at"]),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["agency", "identity_key"],
+                name="uniq_warehouse_temp_nomenclature_identity",
+            )
+        ]
+
+    def __str__(self) -> str:
+        code = self.item_code or f"TEMP-{self.pk or '-'}"
+        brand = f" · {self.brand}" if self.brand else ""
+        color = f" · {self.color}" if self.color else ""
+        size = f" · {self.size}" if self.size else ""
+        return f"{code} · {self.name}{brand}{color}{size}"
+
+
 class WarehouseLocation(models.Model):
     ZONE_KIND_RECEIVING = "receiving"
     ZONE_KIND_STORAGE = "storage"

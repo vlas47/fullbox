@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-from collections import defaultdict
 from datetime import timedelta
 import json
 import logging
 
 from django.contrib import messages
 from django.core.exceptions import ValidationError
-from django.db import models, transaction
+from django.db import transaction
 from django.http import FileResponse, Http404, HttpResponse, HttpResponseForbidden, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -18,16 +17,15 @@ from employees.access import resolve_cabinet_url
 from employees.models import Employee
 from reachtruck.models import MoveTask
 from reachtruck.services import create_shipping_pick_request
-from sklad.models import StockPalletState, WarehouseStockSnapshot
+from sklad.models import WarehouseReserve, WarehouseStockSnapshot
 from sklad.services.stock_availability import StockAvailabilityService
-from sklad.services.warehouse_stock_rows import legacy_stock_rows, snapshot_stock_rows
+from sklad.services.warehouse_stock_rows import snapshot_stock_rows
 from sklad.services.warehouse_transitions import WarehouseStateCode
 from sklad.services.warehouse_write_path import WarehouseWritePathService
-from sklad.stock_state import refresh_materialized_stock_state_for_keys
 from sku.models import Agency
 from todo.models import Task
 
-from .models import ShippingOrder, ShippingOrderItem, ShippingReserve
+from .models import ShippingOrder, ShippingOrderItem
 
 
 logger = logging.getLogger(__name__)
@@ -57,32 +55,6 @@ def _key(sku_code: str, size: str, goods_type: str) -> tuple[str, str, str]:
         (size or "").strip().lower(),
         StockAvailabilityService.normalize_goods_type(goods_type),
     )
-
-
-def _reserve_refresh_keys_for_items(items) -> set[tuple[str, str, str]]:
-    return {
-        _key(
-            getattr(item, "sku_code", ""),
-            getattr(item, "size", ""),
-            getattr(item, "goods_type", ""),
-        )
-        for item in (items or [])
-        if str(getattr(item, "sku_code", "") or "").strip()
-    }
-
-
-def _build_shipping_reserve_map(
-    order: ShippingOrder,
-    *,
-    exclude_order: ShippingOrder | None = None,
-) -> dict[tuple[str, str, str], int]:
-    reserve_map: dict[tuple[str, str, str], int] = defaultdict(int)
-    reserve_qs = ShippingReserve.objects.filter(agency=order.agency)
-    if exclude_order is not None:
-        reserve_qs = reserve_qs.exclude(order=exclude_order)
-    for reserve in reserve_qs:
-        reserve_map[_key(reserve.sku_code, reserve.size, reserve.goods_type)] += int(reserve.qty or 0)
-    return dict(reserve_map)
 
 
 def _first_active_employee_by_roles(*roles: str) -> Employee | None:
@@ -408,27 +380,36 @@ def reserve_order(
     if shortages:
         raise ValidationError("Недостаточно товара для резерва: " + "; ".join(shortages))
 
-    existing_reserves = list(ShippingReserve.objects.filter(order=order).only("sku_code", "size", "goods_type"))
-    ShippingReserve.objects.filter(order=order).delete()
+    warehouse_items: list[dict] = []
     for item in items:
         qty = int(item.qty_requested or 0)
         if qty <= 0:
             item.qty_reserved = 0
             item.save(update_fields=["qty_reserved", "updated_at"])
             continue
-        ShippingReserve.objects.create(
-            order=order,
-            item=item,
-            agency=order.agency,
-            sku_code=item.sku_code,
-            size=item.size,
-            barcode=item.barcode,
-            goods_type=item.goods_type,
-            qty=qty,
-            created_by=user if getattr(user, "is_authenticated", False) else None,
+        warehouse_items.append(
+            {
+                "sku": item.sku_code,
+                "sku_code": item.sku_code,
+                "size": item.size,
+                "barcode": item.barcode,
+                "goods_type": item.goods_type,
+                "qty": qty,
+            }
         )
         item.qty_reserved = qty
         item.save(update_fields=["qty_reserved", "updated_at"])
+    try:
+        WarehouseWritePathService.replace_shipping_reserves(
+            agency=order.agency,
+            order_id=order.number,
+            items=warehouse_items,
+            created_by=user if getattr(user, "is_authenticated", False) else None,
+            source_document_type="shipping_order",
+            source_document_id=order.number,
+        )
+    except ValueError as exc:
+        raise ValidationError(str(exc)) from exc
 
     update_fields = ["reserved_at", "updated_at"]
     if target_status is not None and order.status != target_status:
@@ -436,16 +417,6 @@ def reserve_order(
         update_fields.append("status")
     order.reserved_at = timezone.now()
     order.save(update_fields=update_fields)
-    affected_keys = _reserve_refresh_keys_for_items(items)
-    affected_keys.update(
-        {
-            _key(row.sku_code, row.size, row.goods_type)
-            for row in existing_reserves
-            if str(row.sku_code or "").strip()
-        }
-    )
-    if affected_keys:
-        refresh_materialized_stock_state_for_keys(order.agency, affected_keys)
     _log_order(order, action="status", user=user, description=log_description)
 
 
@@ -453,8 +424,14 @@ def reserve_order(
 def release_order_reserves(order: ShippingOrder, user=None) -> None:
     if order.is_closed():
         raise ValidationError("Нельзя снять резерв с закрытой заявки.")
-    existing_reserves = list(ShippingReserve.objects.filter(order=order).only("sku_code", "size", "goods_type"))
-    ShippingReserve.objects.filter(order=order).delete()
+    WarehouseWritePathService.replace_shipping_reserves(
+        agency=order.agency,
+        order_id=order.number,
+        items=[],
+        created_by=user if getattr(user, "is_authenticated", False) else None,
+        source_document_type="shipping_order",
+        source_document_id=order.number,
+    )
     order.items.update(qty_reserved=0)
     if order.status in {
         ShippingOrder.STATUS_RESERVED,
@@ -464,13 +441,6 @@ def release_order_reserves(order: ShippingOrder, user=None) -> None:
     }:
         order.status = ShippingOrder.STATUS_SUBMITTED
         order.save(update_fields=["status", "updated_at"])
-    affected_keys = {
-        _key(row.sku_code, row.size, row.goods_type)
-        for row in existing_reserves
-        if str(row.sku_code or "").strip()
-    }
-    if affected_keys:
-        refresh_materialized_stock_state_for_keys(order.agency, affected_keys)
     _log_order(order, action="status", user=user, description="Резерв снят")
 
 
@@ -513,26 +483,9 @@ def shipping_pick_readiness(order: ShippingOrder) -> dict[str, str | bool]:
     if not items:
         return {"can_pick": False, "reason": "В заявке нет позиций для отбора."}
 
-    base_rows = snapshot_stock_rows(agency=order.agency, require_pallet=True)
-    if not base_rows:
-        base_rows = legacy_stock_rows(
-            StockPalletState.objects.filter(
-                agency=order.agency,
-                state=StockPalletState.STATE_WAREHOUSE,
-            ).order_by("created_at", "id")
-        )
+    base_rows = snapshot_stock_rows(agency=order.agency)
     if not base_rows:
         return {"can_pick": False, "reason": "На складе нет остатков клиента для отбора."}
-
-    pallet_rows = [
-        row for row in base_rows
-        if str(row.get("pallet_code") or "").strip() and int(row.get("qty") or 0) > 0
-    ]
-    if not pallet_rows:
-        return {
-            "can_pick": False,
-            "reason": "Нельзя дать задание ричтраку: зарезервированный товар не размещен на паллетах.",
-        }
 
     blocked_pallets = {
         str(task.pallet_code or "").strip()
@@ -825,7 +778,6 @@ def handle_shipping_create_request(
                         order.status = edit_order.status
                         order.expected_boxes = int(max(selected_box_count, 0))
                         order.save()
-                        ShippingReserve.objects.filter(order=order).delete()
                         order.items.all().delete()
                         for row in selected_rows:
                             ShippingOrderItem.objects.create(order=order, **row)
@@ -1261,55 +1213,6 @@ def handle_shipping_packing_slips_status_request(*, request, pk: int):
     return JsonResponse({"ok": True, **payload, "refresh_message": refresh_message})
 
 
-def _consume_stock(order: ShippingOrder, item: ShippingOrderItem, qty: int) -> None:
-    if qty <= 0:
-        return
-    sku_code = (item.sku_code or "").strip()
-    size = (item.size or "").strip()
-    goods_key = StockAvailabilityService.normalize_goods_type(item.goods_type)
-    if not sku_code:
-        raise ValidationError("У позиции отгрузки не указан артикул.")
-
-    rows = StockPalletState.objects.select_for_update().filter(
-        agency=order.agency,
-        state=StockPalletState.STATE_WAREHOUSE,
-        sku__iexact=sku_code,
-    ).order_by("created_at", "id")
-    if size:
-        rows = rows.filter(size__iexact=size)
-    else:
-        rows = rows.filter(models.Q(size="") | models.Q(size__isnull=True))
-
-    row_list = list(rows)
-    if goods_key:
-        row_list = [
-            row
-            for row in row_list
-            if StockAvailabilityService.normalize_goods_type(row.goods_type) == goods_key
-        ]
-
-    remain = int(qty)
-    for row in row_list:
-        current_qty = int(row.qty or 0)
-        if current_qty <= 0:
-            continue
-        delta = min(current_qty, remain)
-        remain -= delta
-        current_qty -= delta
-        if current_qty <= 0:
-            row.delete()
-        else:
-            row.qty = current_qty
-            row.save(update_fields=["qty", "updated_at"])
-        if remain <= 0:
-            break
-
-    if remain > 0:
-        raise ValidationError(
-            f"Недостаточно остатков для {sku_code}/{size or '-'}: не хватает {remain} шт."
-        )
-
-
 def _warehouse_trip_number_for_shipping(order: ShippingOrder) -> str:
     from .dispatch import shipping_dispatch_trip_link
 
@@ -1442,6 +1345,63 @@ def _can_ship_via_warehouse_write_path(
     return trip_number
 
 
+def _ship_reserved_order_without_trip(order: ShippingOrder) -> None:
+    snapshots = list(
+        WarehouseStockSnapshot.objects.select_for_update()
+        .filter(
+            agency=order.agency,
+            shipping_reserved_qty__gt=0,
+            is_archived=False,
+        )
+        .order_by("id")
+    )
+    snapshots = [
+        snapshot
+        for snapshot in snapshots
+        if WarehouseWritePathService._snapshot_matches_shipping_context(snapshot, order.number)
+    ]
+    if not snapshots:
+        raise ValidationError(
+            "Для прямой отгрузки без рейса не найден зарезервированный товар в складском контуре."
+        )
+
+    for snapshot in snapshots:
+        reserved_qty = int(snapshot.shipping_reserved_qty or 0)
+        if reserved_qty <= 0:
+            continue
+        remaining_qty = max(int(snapshot.qty or 0) - reserved_qty, 0)
+        snapshot.qty = remaining_qty
+        snapshot.shipping_reserved_qty = 0
+        snapshot.available_qty = max(
+            remaining_qty
+            - int(snapshot.processing_reserved_qty or 0)
+            - int(snapshot.shipping_reserved_qty or 0),
+            0,
+        )
+        if remaining_qty <= 0:
+            snapshot.warehouse_state_code = WarehouseStateCode.SHIPPED.value
+            snapshot.is_archived = True
+        elif int(snapshot.processing_reserved_qty or 0) > 0:
+            snapshot.warehouse_state_code = WarehouseStateCode.RESERVED_FOR_PROCESSING.value
+            snapshot.is_archived = False
+        elif str(snapshot.zone_code or "").strip().upper() == "OTG":
+            snapshot.warehouse_state_code = WarehouseStateCode.IN_OTG.value
+            snapshot.is_archived = False
+        else:
+            snapshot.warehouse_state_code = WarehouseStateCode.STORED.value
+            snapshot.is_archived = False
+        snapshot.save(
+            update_fields=[
+                "qty",
+                "shipping_reserved_qty",
+                "available_qty",
+                "warehouse_state_code",
+                "is_archived",
+                "updated_at",
+            ]
+        )
+
+
 @transaction.atomic
 def ship_order(order: ShippingOrder, user=None, *, shipped_qty_by_item: dict[int, int] | None = None) -> None:
     if order.is_closed():
@@ -1449,7 +1409,6 @@ def ship_order(order: ShippingOrder, user=None, *, shipped_qty_by_item: dict[int
     items = list(order.items.order_by("id"))
     if not items:
         raise ValidationError("В заявке нет позиций для отгрузки.")
-    affected_keys = _reserve_refresh_keys_for_items(items)
 
     overrides = shipped_qty_by_item or {}
     normalized_shipped_qty: dict[int, int] = {}
@@ -1478,12 +1437,32 @@ def ship_order(order: ShippingOrder, user=None, *, shipped_qty_by_item: dict[int
             trip_id=warehouse_trip_number,
             performed_by=user,
         )
+    else:
+        can_ship_directly = all(
+            int(normalized_shipped_qty.get(item.id, 0) or 0) == max(int(item.qty_reserved or 0), 0)
+            for item in items
+        )
+        if not can_ship_directly:
+            raise ValidationError(
+                "Отгрузка должна быть подтверждена через складской контур: товар должен быть загружен в рейс в центре истины."
+            )
+        has_order_reserves = WarehouseReserve.objects.filter(
+            agency=order.agency,
+            reserve_type=WarehouseReserve.TYPE_SHIPPING,
+            context_type="shipping",
+            context_id=order.number,
+        ).exclude(
+            status__in=[
+                WarehouseReserve.STATUS_RELEASED,
+                WarehouseReserve.STATUS_CANCELED,
+            ]
+        ).exists()
+        if has_order_reserves:
+            _ship_reserved_order_without_trip(order)
 
     shipped_items: list[dict] = []
     for item in items:
         qty = int(normalized_shipped_qty.get(item.id, 0) or 0)
-        if not warehouse_trip_number:
-            _consume_stock(order, item, qty)
         item.qty_shipped = qty
         item.qty_reserved = max(int(item.qty_reserved or 0) - qty, 0)
         item.save(update_fields=["qty_shipped", "qty_reserved", "updated_at"])
@@ -1497,7 +1476,14 @@ def ship_order(order: ShippingOrder, user=None, *, shipped_qty_by_item: dict[int
             }
         )
 
-    ShippingReserve.objects.filter(order=order).delete()
+    WarehouseWritePathService.replace_shipping_reserves(
+        agency=order.agency,
+        order_id=order.number,
+        items=[],
+        created_by=user if getattr(user, "is_authenticated", False) else None,
+        source_document_type="shipping_order",
+        source_document_id=order.number,
+    )
     order.status = (
         ShippingOrder.STATUS_SHIPPED
         if all(int(item.qty_shipped or 0) >= int(item.qty_requested or 0) for item in items)
@@ -1505,8 +1491,6 @@ def ship_order(order: ShippingOrder, user=None, *, shipped_qty_by_item: dict[int
     )
     order.shipped_at = timezone.now()
     order.save(update_fields=["status", "shipped_at", "updated_at"])
-    if affected_keys:
-        refresh_materialized_stock_state_for_keys(order.agency, affected_keys)
 
     log_stock_move(
         action="update",

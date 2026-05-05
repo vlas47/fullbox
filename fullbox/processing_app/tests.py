@@ -13,11 +13,11 @@ from audit.models import AuditEntry, OrderAuditEntry
 from employees.models import Employee
 from marking.models import MarkingCode
 from reachtruck.models import MoveTask
-from shipping.models import ShippingOrder, ShippingOrderItem, ShippingReserve
-from sklad.models import InventoryState, StockPalletState, WarehouseOperation, WarehouseReserve, WarehouseStockSnapshot
+from sklad.models import WarehouseOperation, WarehouseReserve, WarehouseStockSnapshot
+from sklad.services import WarehouseStateCode
 from sklad.services.stock_availability import StockAvailabilityService
 from sklad.services.warehouse_write_path import WarehouseWritePathService
-from sklad.stock_state import rebuild_stock_snapshot_for_agency
+from sklad.test_utils import create_warehouse_snapshot_row
 from sku.models import Agency
 from todo.models import Task
 
@@ -1251,16 +1251,6 @@ class ProcessingWorkflowServiceTests(TestCase):
             route=f"/orders/processing/{order_id}/",
             assigned_to=Employee.objects.get(user=self.user),
         )
-        InventoryState.objects.create(
-            agency=self.agency,
-            order_type="processing",
-            order_id=order_id,
-            sku="SKU-A",
-            size="42",
-            goods_type="Не обработанный",
-            qty=10,
-            state="processing",
-        )
         request = self.request_factory.post(
             f"/orders/processing/{order_id}/work/",
             data={"action": "finish_processing"},
@@ -1296,18 +1286,10 @@ class ProcessingWorkflowServiceTests(TestCase):
         self.assertIsNotNone(latest)
         self.assertEqual((latest.payload or {}).get("status"), "done")
         self.assertFalse(
-            InventoryState.objects.filter(
-                agency=self.agency,
-                order_type="processing",
-                order_id=order_id,
-                state="processing",
-            ).exists()
-        )
-        self.assertFalse(
             Task.objects.filter(route=f"/orders/processing/{order_id}/").exclude(status="done").exists()
         )
 
-    def test_finish_processing_refreshes_materialized_keys_from_warehouse_reserve_when_inventory_state_missing(self):
+    def test_finish_processing_releases_warehouse_reserve_when_processing_closes(self):
         order_id = "622-WH-REFRESH"
         entries = self._create_ready_processing_entries(order_id)
         WarehouseReserve.objects.create(
@@ -1339,9 +1321,7 @@ class ProcessingWorkflowServiceTests(TestCase):
                 "warehouse_move_completed": True,
                 "warehouse_move_progress": {"total_pallets": 1, "done_count": 1},
             },
-        ), mock.patch("processing_app.views._processing_discrepancy_rows", return_value=[]), mock.patch(
-            "processing_app.services.refresh_materialized_stock_state_for_keys"
-        ) as refresh_keys:
+        ), mock.patch("processing_app.views._processing_discrepancy_rows", return_value=[]):
             result = ProcessingWorkflowService.finish_processing(
                 order_id=order_id,
                 entries=entries,
@@ -1350,9 +1330,13 @@ class ProcessingWorkflowServiceTests(TestCase):
             )
 
         self.assertEqual(result.status, "done")
-        refresh_keys.assert_called_once()
-        affected_keys = refresh_keys.call_args.args[1]
-        self.assertIn(("sku-a", "42", "готовый"), affected_keys)
+        reserve = WarehouseReserve.objects.get(
+            agency=self.agency,
+            reserve_type=WarehouseReserve.TYPE_PROCESSING,
+            context_type="processing",
+            context_id=order_id,
+        )
+        self.assertEqual(reserve.status, WarehouseReserve.STATUS_RELEASED)
 
     def test_build_processing_card_page_context_returns_selected_card_context(self):
         order_id = "623"
@@ -1987,7 +1971,7 @@ class ProcessingWorkflowServiceTests(TestCase):
             agency=self.agency,
             payload={"status": "processing_in_work", "status_label": "Взята в работу"},
         )
-        StockPalletState.objects.create(
+        create_warehouse_snapshot_row(
             agency=self.agency,
             order_type="receiving",
             order_id="500",
@@ -1996,17 +1980,20 @@ class ProcessingWorkflowServiceTests(TestCase):
             size="42",
             goods_type="Не обработанный",
             qty=50,
-            state=StockPalletState.STATE_WAREHOUSE,
+            available_qty=0,
+            processing_reserved_qty=50,
+            pallet_code="PAL-RES-631",
         )
-        InventoryState.objects.create(
+        WarehouseReserve.objects.create(
             agency=self.agency,
-            order_type="processing",
-            order_id=order_id,
-            sku="SKU-RES",
+            reserve_type=WarehouseReserve.TYPE_PROCESSING,
+            context_type="processing",
+            context_id=order_id,
+            sku_code="SKU-RES",
             size="42",
             goods_type="Не обработанный",
-            qty=50,
-            state=InventoryState.STATE_PROCESSING,
+            qty_reserved=50,
+            status=WarehouseReserve.STATUS_ACTIVE,
         )
         request = self.request_factory.get(
             "/orders/processing/stock/",
@@ -2482,17 +2469,18 @@ class ProcessingFlowOperationalStockTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 302)
-        stock_row = StockPalletState.objects.get(
+        snapshot = WarehouseStockSnapshot.objects.get(
             agency=self.agency,
-            order_type="processing",
-            order_id=order_id,
-            pallet_code="PAL-FLOW-1",
+            source_context_type="processing",
+            source_context_id=order_id,
         )
-        self.assertEqual(stock_row.sku, "SKU-FLOW")
-        self.assertEqual(stock_row.box_code, "BOX-FLOW-1")
-        self.assertEqual(stock_row.zone, "OBR")
-        self.assertEqual(stock_row.goods_type, "Готовый")
-        self.assertEqual(stock_row.available_qty, 10)
+        self.assertEqual(snapshot.sku_code, "SKU-FLOW")
+        self.assertEqual(snapshot.container.container_code, "BOX-FLOW-1")
+        self.assertEqual(snapshot.parent_container.container_code, "PAL-FLOW-1")
+        self.assertEqual(snapshot.zone_code, "OBR")
+        self.assertEqual(snapshot.goods_type, "Готовый")
+        self.assertEqual(snapshot.warehouse_state_code, WarehouseStateCode.IN_PROCESSING_ZONE.value)
+        self.assertEqual(snapshot.available_qty, 10)
 
 
 class ProcessingPackagingAssignmentFlowTests(TestCase):
@@ -2653,7 +2641,7 @@ class ProcessingStockPickerReserveExclusionTests(TestCase):
             agency=self.agency,
             payload={"status": "processing_in_work", "status_label": "Взята в работу"},
         )
-        StockPalletState.objects.create(
+        create_warehouse_snapshot_row(
             agency=self.agency,
             order_type="receiving",
             order_id="500",
@@ -2662,17 +2650,20 @@ class ProcessingStockPickerReserveExclusionTests(TestCase):
             size="42",
             goods_type="Не обработанный",
             qty=50,
-            state=StockPalletState.STATE_WAREHOUSE,
+            available_qty=0,
+            processing_reserved_qty=50,
+            pallet_code="PAL-RES-9901",
         )
-        InventoryState.objects.create(
+        WarehouseReserve.objects.create(
             agency=self.agency,
-            order_type="processing",
-            order_id=self.order_id,
-            sku="SKU-RES",
+            reserve_type=WarehouseReserve.TYPE_PROCESSING,
+            context_type="processing",
+            context_id=self.order_id,
+            sku_code="SKU-RES",
             size="42",
             goods_type="Не обработанный",
-            qty=50,
-            state=InventoryState.STATE_PROCESSING,
+            qty_reserved=50,
+            status=WarehouseReserve.STATUS_ACTIVE,
         )
 
     def _stock_picker_qty(self, response) -> int:
@@ -2702,30 +2693,23 @@ class ProcessingStockPickerReserveExclusionTests(TestCase):
         self.assertEqual(self._stock_picker_qty(response), 50)
 
     def test_stock_picker_hides_stock_reserved_for_shipping(self):
-        InventoryState.objects.filter(agency=self.agency).delete()
-        shipping_order = ShippingOrder.objects.create(
-            number="SO-RES-1",
-            agency=self.agency,
-            status=ShippingOrder.STATUS_SUBMITTED,
+        WarehouseReserve.objects.filter(agency=self.agency).delete()
+        WarehouseStockSnapshot.objects.filter(agency=self.agency, sku_code="SKU-RES").update(
+            available_qty=0,
+            processing_reserved_qty=0,
+            shipping_reserved_qty=50,
         )
-        shipping_item = ShippingOrderItem.objects.create(
-            order=shipping_order,
-            sku_code="SKU-RES",
-            name="Reserved item",
-            size="42",
-            goods_type="Не обработанный",
-            qty_requested=50,
-        )
-        ShippingReserve.objects.create(
-            order=shipping_order,
-            item=shipping_item,
+        WarehouseReserve.objects.create(
             agency=self.agency,
+            reserve_type=WarehouseReserve.TYPE_SHIPPING,
+            context_type="shipping",
+            context_id="SO-RES-1",
             sku_code="SKU-RES",
             size="42",
             goods_type="Не обработанный",
-            qty=50,
+            qty_reserved=50,
+            status=WarehouseReserve.STATUS_ACTIVE,
         )
-        rebuild_stock_snapshot_for_agency(self.agency)
 
         response = self.client.get(f"/orders/processing/stock/?client={self.agency.id}")
 
@@ -2735,7 +2719,7 @@ class ProcessingStockPickerReserveExclusionTests(TestCase):
 class ProcessingStockAvailabilityContractTests(TestCase):
     def setUp(self):
         self.agency = Agency.objects.create(agn_name="Contract Agency")
-        StockPalletState.objects.create(
+        create_warehouse_snapshot_row(
             agency=self.agency,
             order_type="receiving",
             order_id="901",
@@ -2744,27 +2728,31 @@ class ProcessingStockAvailabilityContractTests(TestCase):
             size="44",
             goods_type="Не обработанный",
             qty=70,
-            state=StockPalletState.STATE_WAREHOUSE,
+            available_qty=10,
+            processing_reserved_qty=60,
+            pallet_code="PAL-CONTRACT",
         )
-        InventoryState.objects.create(
+        WarehouseReserve.objects.create(
             agency=self.agency,
-            order_type="processing",
-            order_id="5001",
-            sku="SKU-CONTRACT",
+            reserve_type=WarehouseReserve.TYPE_PROCESSING,
+            context_type="processing",
+            context_id="5001",
+            sku_code="SKU-CONTRACT",
             size="44",
             goods_type="Не обработанный",
-            qty=50,
-            state=InventoryState.STATE_PROCESSING,
+            qty_reserved=50,
+            status=WarehouseReserve.STATUS_ACTIVE,
         )
-        InventoryState.objects.create(
+        WarehouseReserve.objects.create(
             agency=self.agency,
-            order_type="processing",
-            order_id="5002",
-            sku="SKU-CONTRACT",
+            reserve_type=WarehouseReserve.TYPE_PROCESSING,
+            context_type="processing",
+            context_id="5002",
+            sku_code="SKU-CONTRACT",
             size="44",
             goods_type="Не обработанный",
-            qty=10,
-            state=InventoryState.STATE_PROCESSING,
+            qty_reserved=10,
+            status=WarehouseReserve.STATUS_ACTIVE,
         )
 
     @staticmethod
@@ -2794,7 +2782,7 @@ class ProcessingStockAvailabilityContractTests(TestCase):
 class ProcessingReserveMaterializedAvailabilityTests(TestCase):
     def setUp(self):
         self.agency = Agency.objects.create(agn_name="Reserve Refresh Agency")
-        StockPalletState.objects.create(
+        create_warehouse_snapshot_row(
             agency=self.agency,
             order_type="receiving",
             order_id="910",
@@ -2804,7 +2792,11 @@ class ProcessingReserveMaterializedAvailabilityTests(TestCase):
             goods_type="Не обработанный",
             qty=70,
             available_qty=70,
-            state=StockPalletState.STATE_WAREHOUSE,
+            pallet_code="PAL-RESERVE-1",
+            row=1,
+            section=1,
+            tier=1,
+            cell=2,
         )
 
     def test_replace_processing_reserves_updates_available_qty_for_affected_key(self):
@@ -2821,22 +2813,12 @@ class ProcessingReserveMaterializedAvailabilityTests(TestCase):
             ],
         )
 
-        stock_row = StockPalletState.objects.get(agency=self.agency, sku="SKU-RESERVE", size="44")
-        self.assertEqual(stock_row.processing_reserved_qty, 50)
-        self.assertEqual(stock_row.shipping_reserved_qty, 0)
-        self.assertEqual(stock_row.available_qty, 20)
+        snapshot = WarehouseStockSnapshot.objects.get(agency=self.agency, sku_code="SKU-RESERVE", size="44")
+        self.assertEqual(snapshot.processing_reserved_qty, 50)
+        self.assertEqual(snapshot.shipping_reserved_qty, 0)
+        self.assertEqual(snapshot.available_qty, 20)
 
     def test_replace_processing_reserves_syncs_warehouse_reserve_when_pallet_known(self):
-        StockPalletState.objects.filter(agency=self.agency, sku="SKU-RESERVE", size="44").update(
-            pallet_code="PAL-RESERVE-1",
-            zone="OS",
-            row=1,
-            section=1,
-            tier=1,
-            cell=2,
-            location="OS · Ряд 1 · Секция 1 · Ярус 1 · Ячейка 2",
-        )
-
         _replace_processing_reserves(
             "P-101",
             self.agency,
@@ -3236,4 +3218,4 @@ class ProcessingWarehouseOperationBridgeTests(TestCase):
         self.assertEqual(snapshot.processing_reserved_qty, 0)
         self.assertEqual(snapshot.available_qty, 10)
         self.assertIsNone(snapshot.active_operation_id)
-        self.assertEqual(reserve.status, WarehouseReserve.STATUS_SATISFIED)
+        self.assertEqual(reserve.status, WarehouseReserve.STATUS_RELEASED)

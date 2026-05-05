@@ -348,7 +348,7 @@
                         data-detail-key="{{ cell.detail_key }}"
                         title="{{ cell.detail_summary|default:'Показать состав ячейки' }}"
                       >
-                        {{ cell.number }}
+                        {{ cell.display_marker|default:cell.number }}
                       </button>
                     {% else %}
                       <div class="rack-cell {% if cell.occupied %}occupied{% else %}free{% endif %}">
@@ -547,21 +547,7 @@
             <div class="modal-pallet-head">
               <div>
                 <div class="modal-pallet-title">Паллета ${escapeHtml(pallet.pallet_code || '—')}</div>
-                <div class="modal-pallet-meta">
-                  <span>Клиент: ${escapeHtml(pallet.client_name || '—')}</span>
-                  <span>Источник: ${escapeHtml(pallet.order_label || '—')}</span>
-                </div>
               </div>
-              <div class="modal-kpis">
-                <span class="modal-kpi">Всего: ${escapeHtml(pallet.total_qty || 0)} шт.</span>
-                <span class="modal-kpi">Доступно: ${escapeHtml(pallet.available_qty || 0)} шт.</span>
-                <span class="modal-kpi">OBR резерв: ${escapeHtml(pallet.processing_reserved_qty || 0)} шт.</span>
-                <span class="modal-kpi">OTG резерв: ${escapeHtml(pallet.shipping_reserved_qty || 0)} шт.</span>
-                <span class="modal-kpi">Коробов: ${escapeHtml(pallet.box_count || 0)}</span>
-              </div>
-            </div>
-            <div class="modal-pallet-meta">
-              <span>Локация: ${escapeHtml(pallet.location || '—')}</span>
             </div>
             ${renderItemsTable(pallet.items)}
           </section>

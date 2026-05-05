@@ -3,6 +3,7 @@ from django.contrib.auth import get_user_model
 from unittest.mock import patch
 
 from employees.models import Employee
+from sklad.models import WarehouseTemporaryNomenclature
 from .models import Agency, SKU, SKUBarcode, abbreviate_agency_name
 from .services import build_sku_duplicate_initial, suggest_sku_payload
 from .views import SKUListView
@@ -63,6 +64,32 @@ class SKUListViewTests(TestCase):
         self.assertContains(response, "SKU-A")
         self.assertContains(response, "Товар А")
         self.assertNotContains(response, "Активные SKU не найдены")
+
+    def test_temporary_catalog_table_renders_temp_rows(self):
+        agency = Agency.objects.create(agn_name="Клиент А")
+        WarehouseTemporaryNomenclature.objects.create(
+            agency=agency,
+            identity_key="temp-028",
+            item_code="028",
+            name="Джинсы синие",
+            size="27-35",
+            barcode="TEMP-BC-028",
+            first_context_type="receiving",
+            first_context_id="81",
+            last_context_type="receiving",
+            last_context_id="81",
+        )
+
+        request = self.factory.get("/sku/?view=table&catalog=temporary")
+        response = SKUListView.as_view()(request)
+        response.render()
+
+        self.assertContains(response, "Временная номенклатура")
+        self.assertContains(response, "Временные позиции склада")
+        self.assertContains(response, "028")
+        self.assertContains(response, "Джинсы синие")
+        self.assertContains(response, "TEMP-BC-028")
+        self.assertNotContains(response, "Создать первый SKU")
 
     def test_table_view_renders_size_picker_and_barcodes_by_selected_size(self):
         agency = Agency.objects.create(agn_name="Клиент А")
@@ -152,3 +179,19 @@ class SKUServiceTests(TestCase):
         self.assertEqual(initial["sku_code"], "SKU-BASE-copy1")
         self.assertEqual(initial["agency"], agency.id)
         self.assertFalse(initial["deleted"])
+
+    def test_suggest_sku_payload_returns_temporary_items_for_temp_catalog(self):
+        agency = Agency.objects.create(agn_name="Клиент А")
+        WarehouseTemporaryNomenclature.objects.create(
+            agency=agency,
+            identity_key="temp-028",
+            item_code="028",
+            name="Джинсы синие",
+            size="27-35",
+            barcode="TEMP-BC-028",
+        )
+
+        payload = suggest_sku_payload("028", catalog_mode="temporary")
+
+        self.assertEqual(payload["items"][0]["value"], "028")
+        self.assertEqual(payload["items"][0]["label"], "028 · Джинсы синие · 27-35")

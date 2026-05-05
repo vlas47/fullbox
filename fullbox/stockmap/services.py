@@ -408,6 +408,7 @@ def build_stock_map_visual_context(*, request) -> dict:
                             "state": "passage" if is_passage else ("stacked" if pallet_count > 1 else ("occupied" if pallet_count else "free")),
                             "detail_key": detail_key,
                             "detail_summary": (cell_details.get(detail_key) or {}).get("summary") or "",
+                            "display_marker": (cell_details.get(detail_key) or {}).get("display_marker") or "",
                             "location": location,
                             "location_label": _views()._location_label(location),
                         }
@@ -547,6 +548,7 @@ def build_stock_map_visual_context(*, request) -> dict:
                             "pallet_count": pallet_count,
                             "detail_key": detail_key,
                             "detail_summary": (details.get(detail_key) or {}).get("summary") or "",
+                            "display_marker": (details.get(detail_key) or {}).get("display_marker") or "",
                             "location_code": _views()._os_location_code(
                                 row=actual_row_num,
                                 section=section_num,
@@ -689,6 +691,7 @@ def build_stock_map_row_context(*, request, row_number: int) -> dict:
                         "occupied": key in occupied_cells,
                         "detail_key": key_token,
                         "detail_summary": (cell_details.get(key_token) or {}).get("summary") or "",
+                        "display_marker": (cell_details.get(key_token) or {}).get("display_marker") or "",
                     }
                 )
             tiers.append({"number": tier_number, "cells": cells})
@@ -706,16 +709,27 @@ def build_stock_map_row_context(*, request, row_number: int) -> dict:
 
 
 def parse_pr_destinations_json(raw: str) -> dict[str, dict]:
-    parsed, error = parse_putaway_destinations(
-        raw,
-        allowed_zones={"OS"},
-        allowed_zones_label="OS",
-    )
-    if error or parsed is None:
+    text = str(raw or "").strip()
+    if not text:
+        return {}
+    try:
+        source = json.loads(text)
+    except json.JSONDecodeError:
+        return {}
+    if not isinstance(source, list):
         return {}
     result: dict[str, dict] = {}
-    for pallet_code, destination in parsed.items():
+    seen_os: set[tuple[int, int, int, int]] = set()
+    for item in source:
+        if not isinstance(item, dict):
+            continue
+        pallet_code = str(item.get("pallet_code") or item.get("palletCode") or "").strip()
+        if not pallet_code:
+            continue
+        destination = item.get("destination") if isinstance(item.get("destination"), dict) else item
         normalized = normalize_putaway_location(destination)
+        if normalized.get("zone") != "OS":
+            continue
         row = _views()._int_value(normalized.get("row"))
         section = _views()._int_value(normalized.get("section"))
         tier = _views()._int_value(normalized.get("tier"))
@@ -724,6 +738,10 @@ def parse_pr_destinations_json(raw: str) -> dict[str, dict]:
             continue
         if _views()._os_is_passage_position(row, section, tier):
             continue
+        os_key = (row, section, tier, cell)
+        if os_key in seen_os:
+            continue
+        seen_os.add(os_key)
         result[pallet_code] = {
             "zone": "OS",
             "row": row,

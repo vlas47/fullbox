@@ -14,7 +14,7 @@ from django.utils import timezone
 
 from employees.access import get_request_role, resolve_cabinet_url
 from marking.models import MarkingCode
-from sklad.models import StockPalletState
+from sklad.models import WarehouseContainer, WarehouseStockSnapshot
 from sku.models import Agency, SKU, SKUBarcode
 
 
@@ -709,23 +709,36 @@ def build_marking_tools_context(*, selected_client) -> dict[str, Any]:
     if box_codes_by_order and selected_client:
         order_ids = list(box_codes_by_order.keys())
         stock_qs = (
-            StockPalletState.objects.filter(
+            WarehouseStockSnapshot.objects.select_related("container", "parent_container")
+            .filter(
                 agency=selected_client,
-                state=StockPalletState.STATE_WAREHOUSE,
-                order_type="processing",
-                order_id__in=order_ids,
+                source_context_type="processing",
+                source_context_id__in=order_ids,
+                is_archived=False,
             )
-            .exclude(pallet_code__isnull=True)
-            .exclude(pallet_code="")
-            .exclude(box_code__isnull=True)
-            .exclude(box_code="")
+            .exclude(container_code__isnull=True)
+            .exclude(container_code="")
         )
 
         pallet_boxes_map: dict[tuple[str, str], set[str]] = {}
-        for stock_row in stock_qs:
-            order_id = str(stock_row.order_id or "").strip()
-            pallet_code = str(stock_row.pallet_code or "").strip()
-            box_code = str(stock_row.box_code or "").strip()
+        for snapshot in stock_qs:
+            order_id = str(snapshot.source_context_id or "").strip()
+            container = snapshot.container
+            parent = snapshot.parent_container
+            box_code = ""
+            pallet_code = ""
+            if container is not None and container.container_type == WarehouseContainer.TYPE_BOX:
+                box_code = str(container.container_code or "").strip()
+                if parent is not None:
+                    pallet_code = str(parent.container_code or "").strip()
+            elif parent is not None:
+                pallet_code = str(parent.container_code or "").strip()
+                if container is not None:
+                    box_code = str(container.container_code or "").strip()
+            elif container is not None:
+                pallet_code = str(container.container_code or "").strip()
+            if not box_code and container is not None and container.container_type == WarehouseContainer.TYPE_BOX:
+                box_code = str(snapshot.container_code or "").strip()
             if not order_id or not pallet_code or not box_code:
                 continue
             order_boxes = box_codes_by_order.get(order_id, set())

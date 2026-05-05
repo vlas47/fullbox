@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import copy
+import re
+import unicodedata
 from dataclasses import dataclass
 from types import SimpleNamespace
 
@@ -10,16 +12,16 @@ from django.utils import timezone
 from audit.models import OrderAuditEntry, log_order_action, log_stock_move
 from reachtruck.models import MoveTask
 from sku.models import SKUBarcode
-from sklad.models import InventoryState, WarehouseOperation
+from sklad.models import WarehouseOperation
 from sklad.services.stock_operations import OperationalStockService
 from sklad.services.warehouse_write_path import WarehouseWritePathService
-from sklad.stock_state import refresh_materialized_stock_state_for_keys
 
 from .move_requests import (
     _as_int,
     _build_location,
     _normalize_goods_type,
     _normalize_zone_code,
+    _os_line_display_label,
     sync_task_status_by_legacy_order_id,
 )
 from .pallet_ops import (
@@ -57,6 +59,115 @@ class MoveTaskCommandResult:
     completed: bool = False
 
 
+def _normalize_legacy_order_ids(legacy_order_ids) -> list[str]:
+    result: list[str] = []
+    seen: set[str] = set()
+    for raw in legacy_order_ids or []:
+        value = str(raw or "").strip()
+        if not value or value in seen:
+            continue
+        seen.add(value)
+        result.append(value)
+    return result
+
+
+def _load_request_tasks(legacy_order_ids) -> list[MoveTask]:
+    normalized_ids = _normalize_legacy_order_ids(legacy_order_ids)
+    if not normalized_ids:
+        return []
+    tasks = list(
+        MoveTask.objects.select_related("request", "request__agency")
+        .filter(legacy_order_id__in=normalized_ids)
+        .order_by("created_at", "id")
+    )
+    by_id = {str(task.legacy_order_id or "").strip(): task for task in tasks}
+    return [by_id[target_id] for target_id in normalized_ids if target_id in by_id]
+
+
+def _request_task_runtime_state(task: MoveTask) -> dict:
+    payload = dict(task.payload or {})
+    execution = dict(payload.get("mobile_execution") or {})
+    status = _task_payload_status(task, payload)
+    assigned_to_id = _task_assignee_id(task, payload)
+    pallet_code = display_scan_text(payload.get("pallet_code"))
+    destination_code = _location_scan_code(payload.get("to_location") or {})
+    destination_label = str(payload.get("to_label") or destination_code).strip() or destination_code
+    return {
+        "task": task,
+        "payload": payload,
+        "execution": execution,
+        "status": status,
+        "assigned_to_id": assigned_to_id,
+        "pallet_code": pallet_code,
+        "destination_code": destination_code,
+        "destination_label": destination_label,
+        "pallet_confirmed": bool(execution.get("pallet_confirmed")),
+        "destination_confirmed": bool(execution.get("destination_confirmed")),
+    }
+
+
+def build_mobile_request_execution_snapshot(
+    legacy_order_ids,
+    *,
+    employee_id: int | None = None,
+) -> dict:
+    tasks = _load_request_tasks(legacy_order_ids)
+    if not tasks:
+        return {}
+
+    states = [_request_task_runtime_state(task) for task in tasks]
+    remaining = [state for state in states if state["status"] != MoveTask.STATUS_DONE]
+    active_task = next(
+        (
+            state
+            for state in remaining
+            if state["status"] == MoveTask.STATUS_IN_PROGRESS
+            and state["assigned_to_id"]
+            and (employee_id is None or state["assigned_to_id"] == employee_id)
+            and state["pallet_confirmed"]
+            and not state["destination_confirmed"]
+        ),
+        None,
+    )
+    taken_by_other = any(
+        state["status"] == MoveTask.STATUS_IN_PROGRESS
+        and state["assigned_to_id"]
+        and employee_id is not None
+        and state["assigned_to_id"] != employee_id
+        for state in remaining
+    )
+    all_taken_by_current = bool(remaining) and all(
+        state["status"] == MoveTask.STATUS_IN_PROGRESS
+        and state["assigned_to_id"]
+        and (employee_id is None or state["assigned_to_id"] == employee_id)
+        for state in remaining
+    )
+    can_take = bool(remaining) and not taken_by_other and not all_taken_by_current
+    can_scan = bool(remaining) and not taken_by_other and all_taken_by_current
+    prompt = "Отсканируйте QR-код паллеты из заявки."
+    expected_scan = ""
+    current_step = "pallet"
+    if active_task:
+        prompt = f"Отвези -> {active_task['destination_code']}"
+        expected_scan = active_task["destination_code"]
+        current_step = "destination"
+    return {
+        "total_count": len(tasks),
+        "remaining_count": len(remaining),
+        "completed_count": max(len(tasks) - len(remaining), 0),
+        "can_take": can_take,
+        "can_scan": can_scan,
+        "taken_by_other": taken_by_other,
+        "current_step": current_step,
+        "prompt": prompt,
+        "expected_scan": expected_scan,
+        "active_order_id": str(active_task["task"].legacy_order_id).strip() if active_task else "",
+        "active_pallet_code": active_task["pallet_code"] if active_task else "",
+        "active_destination_code": active_task["destination_code"] if active_task else "",
+        "active_destination_label": active_task["destination_label"] if active_task else "",
+    }
+
+
 def _load_task(legacy_order_id: str) -> MoveTask | None:
     target_id = str(legacy_order_id or "").strip()
     if not target_id:
@@ -86,7 +197,7 @@ def _task_assignee_id(task: MoveTask, payload: dict) -> int | None:
         return int(task.assigned_to_id) if task.assigned_to_id else None
 
 
-def _location_scan_code(location: dict | None) -> str:
+def _legacy_location_scan_code(location: dict | None) -> str:
     location = location or {}
     zone = _normalize_zone_code(location.get("zone") or "") or "PR"
     row = _as_int(location.get("row"))
@@ -100,8 +211,166 @@ def _location_scan_code(location: dict | None) -> str:
     return zone
 
 
+def _location_scan_code(location: dict | None) -> str:
+    location = location or {}
+    zone = _normalize_zone_code(location.get("zone") or "") or "PR"
+    row = _as_int(location.get("row"))
+    section = _as_int(location.get("section"))
+    tier = _as_int(location.get("tier"))
+    cell = _as_int(location.get("cell"))
+    if zone == "OS":
+        line_label = _os_line_display_label(section)
+        if line_label and row and tier and cell:
+            return f"{line_label}-{row}/{tier}-{cell}"
+        if line_label and row:
+            return f"{line_label}-{row}"
+    return _legacy_location_scan_code(location)
+
+
+_SCAN_REPAIR_STEPS = (
+    ("gb18030", "utf-8"),
+    ("gbk", "utf-8"),
+    ("cp1252", "utf-8"),
+    ("cp1251", "utf-8"),
+    ("latin1", "cp1251"),
+    ("latin1", "utf-8"),
+)
+_SCAN_DASH_TRANSLATION = str.maketrans(
+    {
+        "–": "-",
+        "—": "-",
+        "−": "-",
+        "‑": "-",
+        "‐": "-",
+        "‒": "-",
+        "﹣": "-",
+        "－": "-",
+    }
+)
+
+
+def _normalized_scan_text(value: str | None) -> str:
+    text = unicodedata.normalize("NFKC", str(value or ""))
+    text = text.translate(_SCAN_DASH_TRANSLATION)
+    text = text.replace("\u00a0", " ")
+    text = "".join(ch for ch in text if unicodedata.category(ch) != "Cf")
+    return "".join(text.split()).casefold()
+
+
+def _scan_compare_variants(value: str | None) -> set[str]:
+    source = str(value or "")
+    queue = [source]
+    seen_raw: set[str] = set()
+    variants: set[str] = set()
+    while queue and len(seen_raw) < 16:
+        current = queue.pop(0)
+        if current in seen_raw:
+            continue
+        seen_raw.add(current)
+        normalized = _normalized_scan_text(current)
+        if normalized:
+            variants.add(normalized)
+        for encoding, decoding in _SCAN_REPAIR_STEPS:
+            try:
+                repaired = current.encode(encoding).decode(decoding)
+            except (UnicodeEncodeError, UnicodeDecodeError, LookupError):
+                continue
+            if repaired and repaired not in seen_raw:
+                queue.append(repaired)
+    if not variants:
+        variants.add("")
+    return variants
+
+
+def _display_scan_variants(value: str | None) -> list[str]:
+    source = str(value or "").strip()
+    if not source:
+        return [""]
+    queue = [source]
+    seen_raw: set[str] = set()
+    variants: list[str] = []
+    while queue and len(seen_raw) < 16:
+        current = queue.pop(0)
+        if current in seen_raw:
+            continue
+        seen_raw.add(current)
+        variants.append(current)
+        for encoding, decoding in _SCAN_REPAIR_STEPS:
+            try:
+                repaired = current.encode(encoding).decode(decoding)
+            except (UnicodeEncodeError, UnicodeDecodeError, LookupError):
+                continue
+            repaired = str(repaired or "").strip()
+            if repaired and repaired not in seen_raw:
+                queue.append(repaired)
+    return variants or [source]
+
+
+def _display_variant_score(value: str) -> tuple[int, int, int, int, int]:
+    text = str(value or "")
+    cyrillic = sum(1 for ch in text if "\u0400" <= ch <= "\u04FF")
+    ascii_alnum = sum(1 for ch in text if ch.isascii() and ch.isalnum())
+    cjk = sum(
+        1
+        for ch in text
+        if (
+            "\u3400" <= ch <= "\u4DBF"
+            or "\u4E00" <= ch <= "\u9FFF"
+            or "\uF900" <= ch <= "\uFAFF"
+        )
+    )
+    replacements = text.count("�") + text.count("?")
+    normalized = sum(1 for ch in text if ch in "-_/ " or ch.isalnum())
+    return (cyrillic, -cjk, -replacements, normalized, ascii_alnum)
+
+
+def display_scan_text(value: str | None) -> str:
+    variants = _display_scan_variants(value)
+    return max(variants, key=_display_variant_score)
+
+
 def _same_scan_value(left: str | None, right: str | None) -> bool:
-    return str(left or "").strip().lower() == str(right or "").strip().lower()
+    return bool(_scan_compare_variants(left) & _scan_compare_variants(right))
+
+
+def _pallet_tail_variants(value: str | None) -> set[str]:
+    tails: set[str] = set()
+    for variant in _scan_compare_variants(value):
+        parts = [part for part in variant.split("-") if part]
+        if len(parts) >= 2:
+            tails.add("-".join(parts[1:]))
+    return tails
+
+
+def _pallet_numeric_variants(value: str | None) -> set[str]:
+    variants: set[str] = set()
+    for candidate in _scan_compare_variants(value):
+        digits = "".join(re.findall(r"\d+", candidate))
+        if len(digits) >= 8:
+            variants.add(digits)
+    return variants
+
+
+def _same_pallet_code_scan(left: str | None, right: str | None) -> bool:
+    if _same_scan_value(left, right):
+        return True
+    if _pallet_tail_variants(left) & _pallet_tail_variants(right):
+        return True
+    return bool(_pallet_numeric_variants(left) & _pallet_numeric_variants(right))
+
+
+def _location_scan_variants(location: dict | None) -> set[str]:
+    display_code = _location_scan_code(location)
+    legacy_code = _legacy_location_scan_code(location)
+    return {
+        code
+        for code in (display_code, legacy_code)
+        if str(code or "").strip()
+    }
+
+
+def _same_location_scan(scan_value: str | None, location: dict | None) -> bool:
+    return any(_same_scan_value(scan_value, candidate) for candidate in _location_scan_variants(location))
 
 
 def _mobile_selector_sets(payload: dict) -> tuple[set[str], set[str], set[str], int]:
@@ -517,7 +786,7 @@ def build_mobile_execution_snapshot(legacy_order_id: str) -> dict:
     prompt = f"Подъедь к месту {source_label or source_code} и отсканируй код места."
     if source_confirmed:
         current_step = "pallet"
-        expected_scan = str(payload.get("pallet_code") or "").strip()
+        expected_scan = display_scan_text(payload.get("pallet_code"))
         prompt = f"Отсканируй паллету {expected_scan}."
     if source_confirmed and pallet_confirmed:
         current_step = "boxes"
@@ -526,7 +795,7 @@ def build_mobile_execution_snapshot(legacy_order_id: str) -> dict:
     if source_confirmed and pallet_confirmed and all_boxes_complete:
         current_step = "destination"
         expected_scan = destination_code
-        prompt = f"Доставь груз в {destination_label or destination_code} и отсканируй место назначения."
+        prompt = f"Отвези -> {destination_code}"
     if destination_confirmed:
         current_step = "done"
         expected_scan = ""
@@ -535,7 +804,7 @@ def build_mobile_execution_snapshot(legacy_order_id: str) -> dict:
         "source_code": source_code,
         "source_label": source_label,
         "source_confirmed": source_confirmed,
-        "pallet_code": str(payload.get("pallet_code") or "").strip(),
+        "pallet_code": display_scan_text(payload.get("pallet_code")),
         "pallet_confirmed": pallet_confirmed,
         "destination_code": destination_code,
         "destination_label": destination_label,
@@ -579,6 +848,7 @@ def scan_move_task_step(
         return MoveTaskCommandResult(ok=False, error="Задание назначено другому водителю.")
 
     pallet_code = str(payload.get("pallet_code") or "").strip()
+    pallet_code_display = display_scan_text(pallet_code)
     placement_entry = _find_placement_entry_for_pallet(
         pallet_code,
         receiving_order_id=str(payload.get("receiving_order_id") or "").strip() or None,
@@ -600,9 +870,11 @@ def scan_move_task_step(
         return MoveTaskCommandResult(ok=False, error="Не удалось подготовить сценарий сканирования.")
     source_code = snapshot["source_code"]
     destination_code = snapshot["destination_code"]
+    from_location = payload.get("from_location") or {}
+    to_location = payload.get("to_location") or {}
 
     if not snapshot["source_confirmed"]:
-        if not _same_scan_value(scan_code, source_code):
+        if not _same_location_scan(scan_code, from_location):
             return MoveTaskCommandResult(
                 ok=False,
                 error=f"Неверный код места. Ожидалось: {source_code}.",
@@ -615,10 +887,10 @@ def scan_move_task_step(
         return MoveTaskCommandResult(ok=True, task=task, payload=payload, message="Место хранения подтверждено.")
 
     if not snapshot["pallet_confirmed"]:
-        if not _same_scan_value(scan_code, pallet_code):
+        if not _same_pallet_code_scan(scan_code, pallet_code):
             return MoveTaskCommandResult(
                 ok=False,
-                error=f"Неверный код паллеты. Ожидалось: {pallet_code}.",
+                error=f"Неверный код паллеты. Ожидалось: {pallet_code_display}.",
             )
         execution["pallet_confirmed"] = True
         execution["last_scan"] = scan_code
@@ -694,7 +966,7 @@ def scan_move_task_step(
 
     snapshot = build_mobile_execution_snapshot(legacy_order_id)
     if snapshot["all_boxes_complete"] and not snapshot["destination_confirmed"]:
-        if not _same_scan_value(scan_code, destination_code):
+        if not _same_location_scan(scan_code, to_location):
             return MoveTaskCommandResult(
                 ok=False,
                 error=f"Неверный код места назначения. Ожидалось: {destination_code}.",
@@ -844,80 +1116,6 @@ def _delivered_processing_specs_from_payload(payload: dict) -> list[dict]:
     return specs
 
 
-def _apply_processing_delivery_to_reserves(order_id: str, agency, move_payload: dict) -> int:
-    target_id = str(order_id or "").strip()
-    if not target_id or not agency:
-        return 0
-
-    reserve_rows = list(
-        InventoryState.objects.select_for_update()
-        .filter(
-            agency=agency,
-            order_type="processing",
-            order_id=target_id,
-            state=InventoryState.STATE_PROCESSING,
-        )
-        .order_by("barcode", "created_at", "id")
-    )
-    if not reserve_rows:
-        return 0
-
-    affected_keys = {
-        (
-            str(row.sku or "").strip().lower(),
-            str(row.size or "").strip().lower(),
-            _normalize_goods_type(row.goods_type),
-        )
-        for row in reserve_rows
-        if str(row.sku or "").strip()
-    }
-
-    def _consume_reserve_rows(*, qty: int, barcode: str = "", sku: str = "", goods_type: str = "") -> int:
-        remaining = _as_int(qty)
-        if remaining <= 0:
-            return 0
-        barcode = str(barcode or "").strip()
-        sku = str(sku or "").strip()
-        goods_type = _normalize_goods_type(goods_type)
-        for row in reserve_rows:
-            row_qty = _as_int(row.qty)
-            if row_qty <= 0:
-                continue
-            row_barcode = str(row.barcode or "").strip()
-            row_sku = str(row.sku or "").strip()
-            row_goods_type = _normalize_goods_type(row.goods_type)
-            if barcode and row_barcode != barcode:
-                continue
-            if sku and row_sku != sku:
-                continue
-            if goods_type and row_goods_type and row_goods_type != goods_type:
-                continue
-            taken = min(row_qty, remaining)
-            row.qty = row_qty - taken
-            remaining -= taken
-            if remaining <= 0:
-                break
-        return remaining
-
-    for spec in _delivered_processing_specs_from_payload(move_payload):
-        _consume_reserve_rows(
-            qty=_as_int(spec.get("qty")),
-            barcode=str(spec.get("barcode") or "").strip(),
-            sku=str(spec.get("sku") or "").strip(),
-            goods_type=str(spec.get("goods_type") or "").strip(),
-        )
-
-    delete_ids = [int(row.id) for row in reserve_rows if int(row.id or 0) > 0 and _as_int(row.qty) <= 0]
-    update_rows = [row for row in reserve_rows if int(row.id or 0) > 0 and _as_int(row.qty) > 0]
-    if delete_ids:
-        InventoryState.objects.filter(id__in=delete_ids).delete()
-    if update_rows:
-        InventoryState.objects.bulk_update(update_rows, ["qty", "updated_at"], batch_size=1000)
-    if affected_keys:
-        refresh_materialized_stock_state_for_keys(agency, affected_keys)
-    return len(update_rows)
-
-
 @transaction.atomic
 def take_move_task(
     *,
@@ -987,6 +1185,224 @@ def take_move_task(
 
 
 @transaction.atomic
+def take_move_request(
+    *,
+    legacy_order_ids,
+    user,
+    employee_id: int | None,
+    employee_name: str,
+) -> MoveTaskCommandResult:
+    tasks = _load_request_tasks(legacy_order_ids)
+    if not tasks:
+        return MoveTaskCommandResult(ok=False, error="Заявка ричтрака не найдена.")
+    if not employee_id:
+        return MoveTaskCommandResult(ok=False, error="Профиль сотрудника не найден.")
+
+    authenticated_user = user if getattr(user, "is_authenticated", False) else None
+    taken_count = 0
+    for task in tasks:
+        payload = dict(task.payload or {})
+        status = _task_payload_status(task, payload)
+        assigned_to_id = _task_assignee_id(task, payload)
+        if status == MoveTask.STATUS_DONE:
+            continue
+        if status == MoveTask.STATUS_IN_PROGRESS and assigned_to_id and assigned_to_id != employee_id:
+            return MoveTaskCommandResult(ok=False, error="Часть паллет заявки уже взята другим водителем.")
+
+    for task in tasks:
+        payload = dict(task.payload or {})
+        status = _task_payload_status(task, payload)
+        assigned_to_id = _task_assignee_id(task, payload)
+        if status == MoveTask.STATUS_DONE:
+            continue
+        execution = dict(payload.get("mobile_execution") or {})
+        if status != MoveTask.STATUS_IN_PROGRESS or assigned_to_id != employee_id:
+            payload["status"] = MoveTask.STATUS_IN_PROGRESS
+            payload["status_label"] = "В работе"
+            payload["assigned_to_id"] = employee_id
+            payload["assigned_to_name"] = employee_name
+            payload["taken_at"] = timezone.localtime().isoformat()
+            task.status = MoveTask.STATUS_IN_PROGRESS
+            task.assigned_to = authenticated_user
+            task.assigned_to_name = employee_name
+            task.started_at = task.started_at or timezone.now()
+            taken_count += 1
+        payload["mobile_request_batch_mode"] = True
+        execution.setdefault("pallet_confirmed", False)
+        execution.setdefault("destination_confirmed", False)
+        payload["mobile_execution"] = execution
+        task.save(
+            update_fields=[
+                "status",
+                "assigned_to",
+                "assigned_to_name",
+                "started_at",
+                "updated_at",
+            ]
+        )
+        sync_task_status_by_legacy_order_id(
+            task.legacy_order_id,
+            status=MoveTask.STATUS_IN_PROGRESS,
+            assigned_to=authenticated_user,
+            assigned_to_name=employee_name,
+        )
+        task.refresh_from_db()
+        task.payload = payload
+        task.started_at = task.started_at or timezone.now()
+        task.save(update_fields=["payload", "started_at", "updated_at"])
+        agency = getattr(task.request, "agency", None)
+        log_order_action(
+            "status",
+            order_id=task.legacy_order_id,
+            order_type="stock_move",
+            user=authenticated_user,
+            agency=agency,
+            description=f"Задание {task.legacy_order_id} взято в работу в составе заявки",
+            payload=payload,
+        )
+        log_stock_move(
+            "update",
+            user=authenticated_user,
+            agency=agency,
+            description=f"Задание {task.legacy_order_id} взято в работу в составе заявки",
+            snapshot={
+                "move_id": task.legacy_order_id,
+                "pallet_code": payload.get("pallet_code"),
+                "from_location": payload.get("from_location"),
+                "to_location": payload.get("to_location"),
+                "from_label": payload.get("from_label"),
+                "to_label": payload.get("to_label"),
+                "status": MoveTask.STATUS_IN_PROGRESS,
+                "assigned_to": employee_name,
+                "request_batch_mode": True,
+            },
+        )
+    message = "Заявка взята в работу." if taken_count else "Заявка уже в работе."
+    return MoveTaskCommandResult(ok=True, message=message)
+
+
+@transaction.atomic
+def scan_move_request_step(
+    *,
+    legacy_order_ids,
+    scan_value: str,
+    user,
+    employee_id: int | None,
+    employee_name: str,
+) -> MoveTaskCommandResult:
+    tasks = _load_request_tasks(legacy_order_ids)
+    if not tasks:
+        return MoveTaskCommandResult(ok=False, error="Заявка ричтрака не найдена.")
+    if not employee_id:
+        return MoveTaskCommandResult(ok=False, error="Профиль сотрудника не найден.")
+
+    snapshot = build_mobile_request_execution_snapshot(legacy_order_ids, employee_id=employee_id)
+    if not snapshot:
+        return MoveTaskCommandResult(ok=False, error="Не удалось подготовить заявку к сканированию.")
+    if not snapshot["can_scan"]:
+        return MoveTaskCommandResult(ok=False, error="Сначала возьмите всю заявку в работу.")
+
+    scan_code = str(scan_value or "").strip()
+    if not scan_code:
+        return MoveTaskCommandResult(ok=False, error="Отсканируйте код.")
+
+    task_map = {str(task.legacy_order_id or "").strip(): task for task in tasks}
+    authenticated_user = user if getattr(user, "is_authenticated", False) else None
+    active_order_id = str(snapshot.get("active_order_id") or "").strip()
+    if active_order_id:
+        active_task = task_map.get(active_order_id)
+        if not active_task:
+            return MoveTaskCommandResult(ok=False, error="Активная паллета заявки не найдена.")
+        active_payload = dict(active_task.payload or {})
+        expected_code = str(snapshot.get("active_destination_code") or "").strip()
+        if not _same_location_scan(scan_code, active_payload.get("to_location") or {}):
+            return MoveTaskCommandResult(
+                ok=False,
+                error=f"Неверный код места. Ожидалось: {expected_code}.",
+            )
+        payload = active_payload
+        execution = dict(payload.get("mobile_execution") or {})
+        execution["destination_confirmed"] = True
+        execution["last_scan"] = scan_code
+        payload["mobile_execution"] = execution
+        active_task.payload = payload
+        active_task.save(update_fields=["payload", "updated_at"])
+        complete_result = complete_move_task(
+            legacy_order_id=active_order_id,
+            user=user,
+            employee_id=employee_id,
+            employee_name=employee_name,
+        )
+        if not complete_result.ok:
+            return complete_result
+        for task in tasks:
+            task.refresh_from_db(fields=["status", "payload", "updated_at"])
+        remaining_count = sum(1 for task in tasks if task.status != MoveTask.STATUS_DONE)
+        if remaining_count <= 0:
+            return MoveTaskCommandResult(
+                ok=True,
+                message="Место подтверждено. Все паллеты по заявке доставлены.",
+                completed=True,
+            )
+        return MoveTaskCommandResult(
+            ok=True,
+            message="Место подтверждено. Паллета доставлена, сканируйте следующую.",
+            completed=False,
+        )
+
+    candidate = None
+    for task in tasks:
+        payload = dict(task.payload or {})
+        status = _task_payload_status(task, payload)
+        assigned_to_id = _task_assignee_id(task, payload)
+        if status != MoveTask.STATUS_IN_PROGRESS:
+            continue
+        if assigned_to_id and assigned_to_id != employee_id:
+            continue
+        if not _same_pallet_code_scan(scan_code, payload.get("pallet_code")):
+            continue
+        candidate = task
+        break
+    if not candidate:
+        return MoveTaskCommandResult(
+            ok=False,
+            error="Паллета не относится к этой заявке или уже доставлена.",
+        )
+
+    payload = dict(candidate.payload or {})
+    execution = dict(payload.get("mobile_execution") or {})
+    execution["source_confirmed"] = True
+    execution["pallet_confirmed"] = True
+    execution["last_scan"] = scan_code
+    payload["mobile_request_batch_mode"] = True
+    payload["mobile_execution"] = execution
+    candidate.payload = payload
+    candidate.save(update_fields=["payload", "updated_at"])
+    pallet_code = display_scan_text(payload.get("pallet_code") or scan_code)
+    destination_code = _location_scan_code(payload.get("to_location") or {})
+    agency = getattr(candidate.request, "agency", None)
+    log_stock_move(
+        "update",
+        user=authenticated_user,
+        agency=agency,
+        description=f"Для заявки выбрана паллета {payload.get('pallet_code')}",
+        snapshot={
+            "move_id": candidate.legacy_order_id,
+            "pallet_code": payload.get("pallet_code"),
+            "to_label": payload.get("to_label"),
+            "request_batch_mode": True,
+        },
+    )
+    return MoveTaskCommandResult(
+        ok=True,
+        task=candidate,
+        payload=payload,
+        message=f"Паллета {pallet_code} подтверждена. Отвези -> {destination_code}.",
+        completed=False,
+    )
+
+
+@transaction.atomic
 def complete_move_task(
     *,
     legacy_order_id: str,
@@ -1009,6 +1425,7 @@ def complete_move_task(
         return MoveTaskCommandResult(ok=False, error="Задание назначено другому водителю.")
 
     pallet_code = str(payload.get("pallet_code") or "").strip()
+    pallet_code_display = display_scan_text(pallet_code)
     if not pallet_code:
         return MoveTaskCommandResult(ok=False, error="Не найден код паллеты в задании.")
 
@@ -1349,16 +1766,83 @@ def complete_move_task(
     placement_payload["act_state"] = "closed"
     authenticated_user = user if getattr(user, "is_authenticated", False) else None
     move_agency = getattr(task.request, "agency", None)
-    stock_tree = getattr(placement_entry, "stock_tree", None)
-    if stock_tree is not None:
-        OperationalStockService.replace_pallet_tree(stock_tree, placement_payload)
-    else:
-        OperationalStockService.replace_order_placement(
-            placement_entry.agency,
-            placement_entry.order_type,
-            placement_entry.order_id,
-            placement_payload,
+    warehouse_operation_id = int(payload.get("warehouse_operation_id") or 0)
+    warehouse_operation_handled = False
+    if warehouse_operation_id:
+        putaway_operation = (
+            WarehouseOperation.objects.filter(
+                id=warehouse_operation_id,
+                operation_type=WarehouseOperation.TYPE_PUTAWAY,
+            )
+            .order_by("id")
+            .first()
         )
+        if putaway_operation and putaway_operation.status != WarehouseOperation.STATUS_DONE:
+            try:
+                WarehouseWritePathService.complete_putaway_operation(
+                    operation=putaway_operation,
+                    performed_by=authenticated_user,
+                )
+                warehouse_operation_handled = True
+            except ValueError:
+                pass
+        if to_zone == "OBR":
+            processing_move_operation = (
+                WarehouseOperation.objects.filter(
+                    id=warehouse_operation_id,
+                    operation_type=WarehouseOperation.TYPE_MOVE_TO_PROCESSING,
+                )
+                .order_by("id")
+                .first()
+            )
+            if processing_move_operation and processing_move_operation.status != WarehouseOperation.STATUS_DONE:
+                try:
+                    if processing_move_operation.status != WarehouseOperation.STATUS_IN_PROGRESS:
+                        WarehouseWritePathService.start_move_to_processing(
+                            operation=processing_move_operation,
+                            performed_by=authenticated_user,
+                        )
+                    WarehouseWritePathService.complete_move_to_processing(
+                        operation=processing_move_operation,
+                        performed_by=authenticated_user,
+                    )
+                    warehouse_operation_handled = True
+                except ValueError:
+                    pass
+            processing_order_id = str(
+                payload.get("processing_order_id")
+                or getattr(processing_move_operation, "context_id", "")
+                or ""
+            ).strip()
+            if processing_order_id and processing_move_operation and processing_move_operation.agency:
+                latest_processing_entry = (
+                    OrderAuditEntry.objects.filter(order_id=processing_order_id, order_type="processing")
+                    .order_by("-created_at", "-id")
+                    .first()
+                )
+                status_payload = latest_processing_entry.payload or {} if latest_processing_entry else {}
+                status_value = str(
+                    status_payload.get("status") or status_payload.get("submit_action") or ""
+                ).strip().lower()
+                status_label = str(status_payload.get("status_label") or "").strip().lower()
+                if status_value == "processing_in_work" or "взята" in status_label:
+                    WarehouseWritePathService.start_processing_if_ready(
+                        agency=processing_move_operation.agency,
+                        order_id=processing_order_id,
+                        started_by=authenticated_user,
+                        started_by_role="reachtruck",
+                    )
+    stock_tree = getattr(placement_entry, "stock_tree", None)
+    if not warehouse_operation_handled:
+        if stock_tree is not None:
+            OperationalStockService.replace_pallet_tree(stock_tree, placement_payload)
+        else:
+            OperationalStockService.replace_order_placement(
+                placement_entry.agency,
+                placement_entry.order_type,
+                placement_entry.order_id,
+                placement_payload,
+            )
     log_order_action(
         "status",
         order_id=placement_entry.order_id,
@@ -1406,22 +1890,10 @@ def complete_move_task(
         assigned_to_name=employee_name,
         qty_done=_as_int(payload.get("picked_qty") or payload.get("requested_qty")),
     )
-    if to_zone == "OBR":
-        processing_order_id = str(payload.get("processing_order_id") or "").strip()
-        if processing_order_id and placement_entry.agency:
-            try:
-                _apply_processing_delivery_to_reserves(
-                    processing_order_id,
-                    placement_entry.agency,
-                    payload,
-                )
-            except Exception:
-                pass
     task.refresh_from_db()
     task.payload = payload
     task.save(update_fields=["payload", "updated_at"])
-    warehouse_operation_id = int(payload.get("warehouse_operation_id") or 0)
-    if warehouse_operation_id:
+    if warehouse_operation_id and not warehouse_operation_handled:
         operation = (
             WarehouseOperation.objects.filter(
                 id=warehouse_operation_id,

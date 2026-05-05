@@ -1,6 +1,7 @@
 """Stock map UI helpers and class-based views."""
 
 import json
+import re
 from collections import Counter
 
 from django.http import Http404
@@ -10,9 +11,8 @@ from django.views.generic import TemplateView
 from employees.access import RoleRequiredMixin, get_request_role, resolve_cabinet_url
 from employees.models import Employee
 from reachtruck.models import MoveTask
-from sklad.models import StockPalletState, WarehouseContainer, WarehouseStockSnapshot
+from sklad.models import WarehouseContainer, WarehouseStockSnapshot
 from sklad.services.stock_availability import StockAvailabilityService
-from sklad.stock_state import rebuild_stock_snapshot
 from .services import (
     build_stock_map_context,
     build_stock_map_pr_context,
@@ -263,6 +263,27 @@ def _clean_text(value) -> str:
     return str(value or "").strip()
 
 
+_GENERIC_DISPLAY_MARKERS = {"PAL", "PALLET", "BOX", "SKU", "MIX", "PLT"}
+
+
+def _stock_display_marker_token(value) -> str:
+    text = _clean_text(value).upper()
+    if not text:
+        return ""
+    token = re.split(r"[\s/_-]+", text, maxsplit=1)[0]
+    token = "".join(char for char in token if char.isalnum())
+    return token[:4]
+
+
+def _stock_display_marker(*, pallet_code: str = "", sku_code: str = "") -> str:
+    pallet_marker = _stock_display_marker_token(pallet_code)
+    sku_marker = _stock_display_marker_token(sku_code)
+    for candidate in (pallet_marker, sku_marker):
+        if candidate and candidate not in _GENERIC_DISPLAY_MARKERS:
+            return candidate
+    return pallet_marker or sku_marker or ""
+
+
 def _location_parts_from_snapshot(snapshot: WarehouseStockSnapshot) -> tuple[str, int, int, int, int, str]:
     location = snapshot.location
     if location is not None:
@@ -330,32 +351,6 @@ def _stockmap_row_from_snapshot(snapshot: WarehouseStockSnapshot) -> dict | None
     }
 
 
-def _stockmap_row_from_state(stock_row: StockPalletState) -> dict:
-    return {
-        "agency": stock_row.agency,
-        "agency_id": int(stock_row.agency_id or 0),
-        "order_type": _clean_text(stock_row.order_type),
-        "order_id": _clean_text(stock_row.order_id),
-        "sku": _clean_text(stock_row.sku),
-        "name": _clean_text(stock_row.name),
-        "size": _clean_text(stock_row.size),
-        "barcode": _clean_text(stock_row.barcode),
-        "goods_type": _clean_text(stock_row.goods_type),
-        "qty": int(stock_row.qty or 0),
-        "available_qty": int(stock_row.available_qty or 0),
-        "processing_reserved_qty": int(stock_row.processing_reserved_qty or 0),
-        "shipping_reserved_qty": int(stock_row.shipping_reserved_qty or 0),
-        "pallet_code": _clean_text(stock_row.pallet_code),
-        "box_code": _clean_text(stock_row.box_code),
-        "zone": _normalize_zone(stock_row.zone),
-        "row": _int_value(stock_row.row),
-        "section": _int_value(stock_row.section),
-        "tier": _int_value(stock_row.tier),
-        "cell": _int_value(stock_row.cell),
-        "location": _clean_text(stock_row.location),
-    }
-
-
 def _warehouse_snapshot_rows(*, zone: str | None = None, row_number: int | None = None) -> list[dict]:
     qs = (
         WarehouseStockSnapshot.objects.filter(is_archived=False)
@@ -382,43 +377,16 @@ def _warehouse_snapshot_rows(*, zone: str | None = None, row_number: int | None 
     return rows
 
 
-def _legacy_stock_rows(*, zone: str | None = None, row_number: int | None = None, rebuild_if_empty: bool = False) -> list[dict]:
-    normalized_zone = _normalize_zone(zone or "")
-    qs = StockPalletState.objects.filter(state=StockPalletState.STATE_WAREHOUSE)
-    if normalized_zone:
-        qs = qs.filter(zone=normalized_zone)
-    if row_number:
-        qs = qs.filter(row=row_number)
-    qs = (
-        qs.exclude(pallet_code__isnull=True)
-        .exclude(pallet_code="")
-        .select_related("agency")
-        .order_by("section", "tier", "cell", "pallet_code", "box_code", "sku", "size", "barcode")
-    )
-    if rebuild_if_empty and not qs.exists():
-        try:
-            rebuild_stock_snapshot()
-        except Exception:
-            pass
-        qs = StockPalletState.objects.filter(state=StockPalletState.STATE_WAREHOUSE)
-        if normalized_zone:
-            qs = qs.filter(zone=normalized_zone)
-        if row_number:
-            qs = qs.filter(row=row_number)
-        qs = (
-            qs.exclude(pallet_code__isnull=True)
-            .exclude(pallet_code="")
-            .select_related("agency")
-            .order_by("section", "tier", "cell", "pallet_code", "box_code", "sku", "size", "barcode")
-        )
-    return [_stockmap_row_from_state(stock_row) for stock_row in qs]
-
-
 def _active_stockmap_rows(*, zone: str | None = None, row_number: int | None = None, rebuild_if_empty: bool = False) -> list[dict]:
     snapshot_rows = _warehouse_snapshot_rows(zone=zone, row_number=row_number)
-    if snapshot_rows:
-        return snapshot_rows
-    return _legacy_stock_rows(zone=zone, row_number=row_number, rebuild_if_empty=rebuild_if_empty)
+    return snapshot_rows
+
+
+def _resolved_box_count(box_codes: set[str], row_count: int) -> int:
+    explicit_count = len([code for code in box_codes if code])
+    if explicit_count:
+        return explicit_count
+    return int(row_count or 0) if int(row_count or 0) > 1 else 0
 
 
 def _os_row_cell_details(row_number: int) -> dict[str, dict]:
@@ -441,6 +409,10 @@ def _os_row_cell_details(row_number: int) -> dict[str, dict]:
             pallet_code,
             {
                 "pallet_code": pallet_code,
+                "display_marker": _stock_display_marker(
+                    pallet_code=pallet_code,
+                    sku_code=_clean_text(stock_row.get("sku")),
+                ),
                 "client_name": _clean_text(getattr(stock_row.get("agency"), "agn_name", "")) or f"Клиент {stock_row.get('agency_id')}",
                 "order_label": f"{_clean_text(stock_row.get('order_type')) or '-'} #{_clean_text(stock_row.get('order_id')) or '-'}",
                 "location": _clean_text(stock_row.get("location")) or f"OS · {_os_location_code(row=row_number, section=section, tier=tier, cell=cell)}",
@@ -449,6 +421,7 @@ def _os_row_cell_details(row_number: int) -> dict[str, dict]:
                 "processing_reserved_qty": 0,
                 "shipping_reserved_qty": 0,
                 "box_codes": set(),
+                "row_count": 0,
                 "items": {},
             },
         )
@@ -456,6 +429,7 @@ def _os_row_cell_details(row_number: int) -> dict[str, dict]:
         pallet_bucket["available_qty"] += int(stock_row.get("available_qty") or 0)
         pallet_bucket["processing_reserved_qty"] += int(stock_row.get("processing_reserved_qty") or 0)
         pallet_bucket["shipping_reserved_qty"] += int(stock_row.get("shipping_reserved_qty") or 0)
+        pallet_bucket["row_count"] += 1
         box_code = _clean_text(stock_row.get("box_code"))
         if box_code:
             pallet_bucket["box_codes"].add(box_code)
@@ -476,9 +450,11 @@ def _os_row_cell_details(row_number: int) -> dict[str, dict]:
                 "goods_type": item_key[4] or "—",
                 "qty": 0,
                 "boxes": set(),
+                "row_count": 0,
             },
         )
         item_bucket["qty"] += int(stock_row.get("qty") or 0)
+        item_bucket["row_count"] += 1
         if box_code:
             item_bucket["boxes"].add(box_code)
 
@@ -499,7 +475,7 @@ def _os_row_cell_details(row_number: int) -> dict[str, dict]:
                         "barcode": item["barcode"],
                         "goods_type": item["goods_type"],
                         "qty": item["qty"],
-                        "box_count": len(item["boxes"]),
+                        "box_count": _resolved_box_count(item["boxes"], item["row_count"]),
                     }
                 )
             items.sort(key=lambda row: (row["sku"], row["size"], row["barcode"]))
@@ -507,6 +483,7 @@ def _os_row_cell_details(row_number: int) -> dict[str, dict]:
             pallet_entries.append(
                 {
                     "pallet_code": pallet["pallet_code"],
+                    "display_marker": pallet["display_marker"],
                     "client_name": pallet["client_name"],
                     "order_label": pallet["order_label"],
                     "location": pallet["location"],
@@ -514,7 +491,7 @@ def _os_row_cell_details(row_number: int) -> dict[str, dict]:
                     "available_qty": pallet["available_qty"],
                     "processing_reserved_qty": pallet["processing_reserved_qty"],
                     "shipping_reserved_qty": pallet["shipping_reserved_qty"],
-                    "box_count": len(pallet["box_codes"]),
+                    "box_count": _resolved_box_count(pallet["box_codes"], pallet["row_count"]),
                     "items": items,
                 }
             )
@@ -522,6 +499,10 @@ def _os_row_cell_details(row_number: int) -> dict[str, dict]:
         details[_os_cell_key(section, tier, cell)] = {
             "cell_label": f"OS · {_os_location_code(row=row_number, section=section, tier=tier, cell=cell)}",
             "summary": " / ".join(client_names) if client_names else f"{len(pallet_entries)} паллет",
+            "display_marker": next(
+                (entry.get("display_marker") for entry in pallet_entries if _clean_text(entry.get("display_marker"))),
+                "",
+            ),
             "pallet_count": len(pallet_entries),
             "pallets": pallet_entries,
         }
@@ -660,6 +641,7 @@ def _pr_zone_rows(*, destinations_override: dict[str, dict] | None = None) -> li
                 "processing_reserved_qty": 0,
                 "shipping_reserved_qty": 0,
                 "box_codes": set(),
+                "row_count": 0,
                 "items": {},
             },
         )
@@ -667,6 +649,7 @@ def _pr_zone_rows(*, destinations_override: dict[str, dict] | None = None) -> li
         bucket["available_qty"] += int(stock_row.get("available_qty") or 0)
         bucket["processing_reserved_qty"] += int(stock_row.get("processing_reserved_qty") or 0)
         bucket["shipping_reserved_qty"] += int(stock_row.get("shipping_reserved_qty") or 0)
+        bucket["row_count"] += 1
         box_code = _clean_text(stock_row.get("box_code"))
         if box_code:
             bucket["box_codes"].add(box_code)
@@ -739,7 +722,7 @@ def _pr_zone_rows(*, destinations_override: dict[str, dict] | None = None) -> li
                 "available_qty": bucket["available_qty"],
                 "processing_reserved_qty": bucket["processing_reserved_qty"],
                 "shipping_reserved_qty": bucket["shipping_reserved_qty"],
-                "box_count": len(bucket["box_codes"]),
+                "box_count": _resolved_box_count(bucket["box_codes"], bucket["row_count"]),
                 "items": items,
                 "items_summary": items_summary or "Состав не найден",
                 "process_hint": process_hint,

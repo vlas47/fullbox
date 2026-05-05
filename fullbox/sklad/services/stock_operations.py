@@ -4,13 +4,11 @@ from dataclasses import dataclass
 from types import SimpleNamespace
 
 from django.db import transaction
-from django.db.models import Q
 
 from sku.models import Agency, SKU, SKUBarcode
-from sklad.models import StockPalletState
-from sklad.stock_state import refresh_materialized_stock_state_for_keys
+from sklad.models import WarehouseContainer, WarehouseEvent, WarehouseStockSnapshot
 
-from .stock_availability import StockAvailabilityService
+from .warehouse_write_path import WarehouseWritePathService
 
 
 def _as_int(value) -> int:
@@ -35,7 +33,7 @@ def _location_dict(*, zone: str, row: int = 0, section: int = 0, tier: int = 0, 
     }
 
 
-def _location_from_row(row: StockPalletState) -> dict:
+def _location_from_row(row) -> dict:
     return _location_dict(
         zone=row.zone,
         row=int(row.row or 0),
@@ -117,7 +115,7 @@ def _goods_type_label(order_type: str, payload: dict | None) -> str:
     return "Готовый" if str(order_type or "").strip().lower() == "processing" else "Оптовый"
 
 
-def _serialize_item_from_row(row: StockPalletState) -> dict:
+def _serialize_item_from_row(row) -> dict:
     item = {
         "sku": str(row.sku or "").strip(),
         "sku_code": str(row.sku or "").strip(),
@@ -135,7 +133,7 @@ def _serialize_item_from_row(row: StockPalletState) -> dict:
     return item
 
 
-def _serialize_unit_from_row(row: StockPalletState) -> dict:
+def _serialize_unit_from_row(row) -> dict:
     return {
         "sku": str(row.sku or "").strip(),
         "sku_code": str(row.sku or "").strip(),
@@ -152,31 +150,61 @@ def _serialize_unit_from_row(row: StockPalletState) -> dict:
     }
 
 
-def _template_key_from_row(row: StockPalletState) -> tuple[str, str, str, str, str]:
-    return (
-        str(row.sku or "").strip().lower(),
-        str(row.size or "").strip().lower(),
-        str(row.barcode or "").strip(),
-        str(row.marking_code or "").strip(),
-        StockAvailabilityService.normalize_goods_type(row.goods_type),
-    )
-
-
-def _template_key_from_item(item: dict) -> tuple[str, str, str, str, str]:
-    return (
-        str(item.get("sku") or item.get("sku_code") or "").strip().lower(),
-        str(item.get("size") or "").strip().lower(),
-        str(item.get("barcode") or "").strip(),
-        str(item.get("marking_code") or "").strip(),
-        StockAvailabilityService.normalize_goods_type(item.get("goods_type")),
-    )
-
-
-def _reserve_refresh_key(sku: str | None, size: str | None, goods_type: str | None) -> tuple[str, str, str]:
-    return (
-        str(sku or "").strip().lower(),
-        str(size or "").strip().lower(),
-        StockAvailabilityService.normalize_goods_type(goods_type),
+def _row_from_snapshot(snapshot: WarehouseStockSnapshot):
+    container = snapshot.container
+    parent = snapshot.parent_container
+    box_code = ""
+    pallet_code = ""
+    if container is not None and container.container_type == WarehouseContainer.TYPE_BOX:
+        box_code = str(container.container_code or "").strip()
+        if parent is not None:
+            pallet_code = str(parent.container_code or "").strip()
+    elif parent is not None:
+        pallet_code = str(parent.container_code or "").strip()
+        if container is not None:
+            box_code = str(container.container_code or "").strip()
+    elif container is not None:
+        pallet_code = str(container.container_code or "").strip()
+    elif str(snapshot.container_code or "").strip():
+        pallet_code = str(snapshot.container_code or "").strip()
+    location = snapshot.location
+    return SimpleNamespace(
+        id=int(snapshot.id or 0),
+        agency=snapshot.agency,
+        agency_id=int(snapshot.agency_id or 0),
+        sku_ref=snapshot.sku_ref,
+        sku_ref_id=int(snapshot.sku_ref_id or 0),
+        order_type=str(snapshot.source_context_type or "").strip(),
+        order_id=str(snapshot.source_context_id or "").strip(),
+        sku=str(snapshot.sku_code or "").strip(),
+        name=str(snapshot.name or "").strip(),
+        size=str(snapshot.size or "").strip(),
+        barcode=str(snapshot.barcode or "").strip(),
+        marking_code=str(snapshot.marking_code or "").strip(),
+        goods_type=str(snapshot.goods_type or "").strip(),
+        qty=int(snapshot.qty or 0),
+        available_qty=int(snapshot.available_qty or 0),
+        processing_reserved_qty=int(snapshot.processing_reserved_qty or 0),
+        shipping_reserved_qty=int(snapshot.shipping_reserved_qty or 0),
+        box_code=box_code,
+        pallet_code=pallet_code,
+        zone=str((location.zone_code if location else snapshot.zone_code) or "").strip(),
+        row=int(getattr(location, "row_no", 0) or 0),
+        section=int(getattr(location, "section_no", 0) or 0),
+        tier=int(getattr(location, "tier_no", 0) or 0),
+        cell=int(getattr(location, "cell_no", 0) or 0),
+        location=str(getattr(location, "display_name", "") or "").strip()
+        or _location_label(
+            _location_dict(
+                zone=str((location.zone_code if location else snapshot.zone_code) or "").strip(),
+                row=int(getattr(location, "row_no", 0) or 0),
+                section=int(getattr(location, "section_no", 0) or 0),
+                tier=int(getattr(location, "tier_no", 0) or 0),
+                cell=int(getattr(location, "cell_no", 0) or 0),
+            )
+        ),
+        created_at=snapshot.created_at,
+        updated_at=snapshot.updated_at,
     )
 
 
@@ -185,7 +213,7 @@ class StockPalletTree:
     agency: Agency
     pallet_code: str
     payload: dict
-    source_rows: list[StockPalletState]
+    source_rows: list
     context_order_type: str
     context_order_id: str
 
@@ -214,18 +242,32 @@ class OperationalStockService:
         box_code: str | None = None,
         include_boxless: bool = True,
     ):
-        rows_qs = StockPalletState.objects.filter(
-            state=StockPalletState.STATE_WAREHOUSE,
-        ).select_related("agency", "sku_ref")
+        qs = (
+            WarehouseStockSnapshot.objects.filter(is_archived=False, qty__gt=0)
+            .select_related("agency", "sku_ref", "container", "parent_container", "location")
+            .order_by("container_code", "marking_code", "created_at", "id")
+        )
         if agency_id:
-            rows_qs = rows_qs.filter(agency_id=int(agency_id))
-        if pallet_code is not None:
-            rows_qs = rows_qs.filter(pallet_code=str(pallet_code or "").strip())
-        if box_code is not None:
-            rows_qs = rows_qs.filter(box_code=str(box_code or "").strip())
+            qs = qs.filter(agency_id=int(agency_id))
+        target_pallet = str(pallet_code or "").strip()
+        target_box = str(box_code or "").strip()
+        rows = [_row_from_snapshot(snapshot) for snapshot in qs]
+        if target_pallet:
+            rows = [row for row in rows if str(row.pallet_code or "").strip() == target_pallet]
+        if target_box:
+            rows = [row for row in rows if str(row.box_code or "").strip() == target_box]
         if not include_boxless:
-            rows_qs = rows_qs.exclude(box_code="")
-        return rows_qs.order_by("pallet_code", "box_code", "marking_code", "created_at", "id")
+            rows = [row for row in rows if str(row.box_code or "").strip()]
+        return sorted(
+            rows,
+            key=lambda row: (
+                str(row.pallet_code or ""),
+                str(row.box_code or ""),
+                str(row.marking_code or ""),
+                row.created_at,
+                int(row.id or 0),
+            ),
+        )
 
     @staticmethod
     def clear_order_placement(
@@ -237,30 +279,32 @@ class OperationalStockService:
     ) -> int:
         if not agency or not order_id:
             return 0
-        existing_rows = list(
-            StockPalletState.objects.filter(
+        context_type = str(order_type or "").strip() or "receiving"
+        context_id = str(order_id)
+        snapshot_ids = list(
+            WarehouseStockSnapshot.objects.filter(
                 agency=agency,
-                order_type=str(order_type or "").strip() or "receiving",
-                order_id=str(order_id),
-                state=StockPalletState.STATE_WAREHOUSE,
-            ).only("sku", "size", "goods_type")
+                source_context_type=context_type,
+                source_context_id=context_id,
+            ).values_list("id", flat=True)
         )
-        deleted, _ = StockPalletState.objects.filter(
+        container_ids = list(
+            WarehouseContainer.objects.filter(
+                agency=agency,
+                source_context_type=context_type,
+                source_context_id=context_id,
+            ).values_list("id", flat=True)
+        )
+        if snapshot_ids:
+            WarehouseStockSnapshot.objects.filter(id__in=snapshot_ids).delete()
+        WarehouseEvent.objects.filter(
             agency=agency,
-            order_type=str(order_type or "").strip() or "receiving",
-            order_id=str(order_id),
-            state=StockPalletState.STATE_WAREHOUSE,
+            stock_context_type=context_type,
+            stock_context_id=context_id,
         ).delete()
-        if refresh_keys and existing_rows:
-            refresh_materialized_stock_state_for_keys(
-                agency,
-                {
-                    _reserve_refresh_key(row.sku, row.size, row.goods_type)
-                    for row in existing_rows
-                    if str(row.sku or "").strip()
-                },
-            )
-        return int(deleted or 0)
+        if container_ids:
+            WarehouseContainer.objects.filter(id__in=container_ids).delete()
+        return len(snapshot_ids)
 
     @staticmethod
     @transaction.atomic
@@ -278,14 +322,6 @@ class OperationalStockService:
         payload = payload or {}
         default_zone = OperationalStockService.DEFAULT_ZONE_BY_ORDER.get(order_type, "PR")
         goods_type = _goods_type_label(order_type, payload)
-        existing_rows = list(
-            StockPalletState.objects.filter(
-                agency=agency,
-                order_type=order_type,
-                order_id=order_id,
-                state=StockPalletState.STATE_WAREHOUSE,
-            ).only("sku", "size", "goods_type")
-        )
         boxes = payload.get("act_boxes") or []
         pallets = payload.get("act_pallets") or []
         act_units = payload.get("act_units") or []
@@ -430,7 +466,7 @@ class OperationalStockService:
                 if size_key and (sku_code, size_key) not in barcode_by_sku_size:
                     barcode_by_sku_size[(sku_code, size_key)] = value
 
-        new_rows: list[StockPalletState] = []
+        warehouse_items: list[dict] = []
         for row in prepared_rows:
             sku = str(row.get("sku") or "").strip()
             sku_key = sku.lower()
@@ -438,54 +474,34 @@ class OperationalStockService:
             barcode = str(row.get("barcode") or "").strip()
             if not barcode and sku_key:
                 barcode = barcode_by_sku_size.get((sku_key, size.lower())) or barcode_by_sku_default.get(sku_key, "")
-            location = _location_from_payload(row.get("location"))
-            new_rows.append(
-                StockPalletState(
-                    agency=agency,
-                    sku_ref_id=sku_ref_by_code.get(sku_key),
-                    order_type=order_type,
-                    order_id=order_id,
-                    sku=sku,
-                    name=str(row.get("name") or "").strip(),
-                    size=size,
-                    barcode=barcode,
-                    marking_code=str(row.get("marking_code") or "").strip(),
-                    goods_type=str(row.get("goods_type") or goods_type or "").strip(),
-                    qty=int(row.get("qty") or 0),
-                    processing_reserved_qty=0,
-                    shipping_reserved_qty=0,
-                    available_qty=int(row.get("qty") or 0),
-                    box_code=str(row.get("box_code") or "").strip(),
-                    pallet_code=str(row.get("pallet_code") or "").strip(),
-                    zone=str(location.get("zone") or ""),
-                    row=_as_int(location.get("row")),
-                    section=_as_int(location.get("section")),
-                    tier=_as_int(location.get("tier")),
-                    cell=_as_int(location.get("cell")),
-                    location=_location_label(location),
-                    state=StockPalletState.STATE_WAREHOUSE,
-                )
+            warehouse_items.append(
+                {
+                    "sku": sku,
+                    "sku_code": sku,
+                    "name": str(row.get("name") or "").strip(),
+                    "size": size,
+                    "barcode": barcode,
+                    "marking_code": str(row.get("marking_code") or "").strip(),
+                    "goods_type": str(row.get("goods_type") or goods_type or "").strip(),
+                    "qty": int(row.get("qty") or 0),
+                    "box_code": str(row.get("box_code") or "").strip(),
+                    "pallet_code": str(row.get("pallet_code") or "").strip(),
+                    "location": row.get("location") or {},
+                }
             )
 
-        affected_keys = {
-            _reserve_refresh_key(row.sku, row.size, row.goods_type)
-            for row in existing_rows
-            if str(row.sku or "").strip()
-        }
-        affected_keys.update(
-            {
-                _reserve_refresh_key(row.get("sku"), row.get("size"), row.get("goods_type"))
-                for row in prepared_rows
-                if str(row.get("sku") or "").strip()
-            }
-        )
-
         OperationalStockService.clear_order_placement(agency, order_type, order_id, refresh_keys=False)
-        if new_rows:
-            StockPalletState.objects.bulk_create(new_rows, batch_size=1000)
-        if affected_keys:
-            refresh_materialized_stock_state_for_keys(agency, affected_keys)
-        return len(new_rows)
+        if warehouse_items:
+            WarehouseWritePathService.create_receiving_placement(
+                agency=agency,
+                order_id=order_id,
+                items=warehouse_items,
+                source_document_type=f"{order_type}_placement",
+                source_document_id=order_id,
+                stock_context_type=order_type,
+                respect_item_location=True,
+            )
+        return len(warehouse_items)
 
     @staticmethod
     def get_pallet_tree(
@@ -628,223 +644,29 @@ class OperationalStockService:
         sku: str | None = None,
         barcode: str | None = None,
     ) -> list[dict]:
-        rows_qs = OperationalStockService._warehouse_rows_queryset(
+        rows = OperationalStockService._warehouse_rows_queryset(
             agency_id=agency_id,
             pallet_code=pallet_code,
             box_code=box_code,
-        ).exclude(marking_code="")
+        )
+        rows = [row for row in rows if str(row.marking_code or "").strip()]
         if sku:
-            rows_qs = rows_qs.filter(sku=str(sku or "").strip())
+            rows = [row for row in rows if str(row.sku or "").strip() == str(sku or "").strip()]
         if barcode:
-            rows_qs = rows_qs.filter(barcode=str(barcode or "").strip())
-        return [_serialize_unit_from_row(row) for row in rows_qs]
+            rows = [row for row in rows if str(row.barcode or "").strip() == str(barcode or "").strip()]
+        return [_serialize_unit_from_row(row) for row in rows]
 
     @staticmethod
     @transaction.atomic
     def replace_pallet_tree(tree: StockPalletTree, payload: dict) -> int:
         if not tree.source_rows:
             return 0
-
-        agency = tree.agency
-        affected_keys = {
-            _reserve_refresh_key(row.sku, row.size, row.goods_type)
-            for row in tree.source_rows
-            if str(row.sku or "").strip()
-        }
-        source_ids = [int(row.id) for row in tree.source_rows if int(row.id or 0) > 0]
-        template_pools: dict[tuple[str, str, str, str, str], list[dict]] = {}
-        sku_ref_by_code: dict[str, int] = {}
-        for row in tree.source_rows:
-            key = _template_key_from_row(row)
-            template_pools.setdefault(key, []).append(
-                {
-                    "remaining_qty": int(row.qty or 0),
-                    "sku_ref_id": int(row.sku_ref_id or 0),
-                    "order_type": str(row.order_type or "").strip() or tree.context_order_type,
-                    "order_id": str(row.order_id or "").strip() or tree.context_order_id,
-                    "name": str(row.name or "").strip(),
-                    "goods_type": str(row.goods_type or "").strip(),
-                }
-            )
-            sku_code = str(row.sku or "").strip().lower()
-            if sku_code and row.sku_ref_id and sku_code not in sku_ref_by_code:
-                sku_ref_by_code[sku_code] = int(row.sku_ref_id)
-
-        payload = payload or {}
-        act_pallets = payload.get("act_pallets") or []
-        act_boxes = payload.get("act_boxes") or []
-        linked_box_codes: set[str] = set()
-        pallet_by_code: dict[str, dict] = {}
-        for pallet in act_pallets:
-            if not isinstance(pallet, dict):
-                continue
-            code = str(pallet.get("code") or "").strip()
-            if not code:
-                continue
-            pallet_by_code[code] = pallet
-            for box_code in pallet.get("boxes") or []:
-                text = str(box_code or "").strip()
-                if text:
-                    linked_box_codes.add(text)
-
-        def allocate_templates(item: dict, qty: int) -> list[dict]:
-            remaining = int(qty or 0)
-            key = _template_key_from_item(item)
-            templates = template_pools.get(key, [])
-            allocations: list[dict] = []
-            for template in templates:
-                if remaining <= 0:
-                    break
-                available = int(template.get("remaining_qty") or 0)
-                if available <= 0:
-                    continue
-                take_qty = min(available, remaining)
-                template["remaining_qty"] = available - take_qty
-                remaining -= take_qty
-                allocations.append(
-                    {
-                        "qty": take_qty,
-                        "sku_ref_id": int(template.get("sku_ref_id") or 0),
-                        "order_type": str(template.get("order_type") or "").strip() or tree.context_order_type,
-                        "order_id": str(template.get("order_id") or "").strip() or tree.context_order_id,
-                        "name": str(template.get("name") or "").strip(),
-                        "goods_type": str(template.get("goods_type") or "").strip(),
-                    }
-                )
-            if remaining > 0:
-                sku_code = str(item.get("sku") or item.get("sku_code") or "").strip().lower()
-                allocations.append(
-                    {
-                        "qty": remaining,
-                        "sku_ref_id": int(sku_ref_by_code.get(sku_code, 0) or 0),
-                        "order_type": tree.context_order_type,
-                        "order_id": tree.context_order_id,
-                        "name": str(item.get("name") or "").strip(),
-                        "goods_type": str(item.get("goods_type") or "").strip(),
-                    }
-                )
-            return allocations
-
-        new_rows: list[StockPalletState] = []
-
-        def append_items(
-            items: list,
-            *,
-            pallet_code: str,
-            box_code: str,
-            location: dict,
-        ) -> None:
-            location_parts = _location_from_payload(location)
-            location_label = _location_label(location_parts)
-            for item in items or []:
-                if not isinstance(item, dict):
-                    continue
-                qty = _as_int(item.get("qty"))
-                sku = str(item.get("sku") or item.get("sku_code") or "").strip()
-                if not sku or qty <= 0:
-                    continue
-                size = str(item.get("size") or "").strip()
-                barcode = str(item.get("barcode") or "").strip()
-                marking_code = str(item.get("marking_code") or "").strip()
-                goods_type = str(item.get("goods_type") or "").strip()
-                allocations = allocate_templates(item, qty)
-                for allocation in allocations:
-                    row_qty = int(allocation.get("qty") or 0)
-                    if row_qty <= 0:
-                        continue
-                    new_rows.append(
-                        StockPalletState(
-                            agency=agency,
-                            sku_ref_id=int(allocation.get("sku_ref_id") or 0) or None,
-                            order_type=str(allocation.get("order_type") or "").strip() or tree.context_order_type,
-                            order_id=str(allocation.get("order_id") or "").strip() or tree.context_order_id,
-                            sku=sku,
-                            name=str(allocation.get("name") or item.get("name") or "").strip(),
-                            size=size,
-                            barcode=barcode,
-                            marking_code=marking_code,
-                            goods_type=str(allocation.get("goods_type") or goods_type or "").strip(),
-                            qty=row_qty,
-                            processing_reserved_qty=0,
-                            shipping_reserved_qty=0,
-                            available_qty=0,
-                            box_code=box_code,
-                            pallet_code=pallet_code,
-                            zone=str(location_parts.get("zone") or ""),
-                            row=_as_int(location_parts.get("row")),
-                            section=_as_int(location_parts.get("section")),
-                            tier=_as_int(location_parts.get("tier")),
-                            cell=_as_int(location_parts.get("cell")),
-                            location=location_label,
-                            state=StockPalletState.STATE_WAREHOUSE,
-                        )
-                    )
-                    affected_keys.add(_reserve_refresh_key(sku, size, str(allocation.get("goods_type") or goods_type or "").strip()))
-
-        for pallet in act_pallets:
-            if not isinstance(pallet, dict):
-                continue
-            current_pallet_code = str(pallet.get("code") or "").strip()
-            if not current_pallet_code:
-                continue
-            pallet_location = pallet.get("location") or {}
-            append_items(
-                pallet.get("items") or [],
-                pallet_code=current_pallet_code,
-                box_code="",
-                location=pallet_location,
-            )
-
-        for box in act_boxes:
-            if not isinstance(box, dict):
-                continue
-            current_box_code = str(box.get("code") or "").strip()
-            if not current_box_code:
-                continue
-            if current_box_code in linked_box_codes:
-                owning_pallet_code = next(
-                    (
-                        pallet_code
-                        for pallet_code, pallet in pallet_by_code.items()
-                        if current_box_code in {str(code or "").strip() for code in pallet.get("boxes") or []}
-                    ),
-                    tree.pallet_code,
-                )
-                location = (pallet_by_code.get(owning_pallet_code) or {}).get("location") or {}
-                append_items(
-                    box.get("items") or [],
-                    pallet_code=owning_pallet_code,
-                    box_code=current_box_code,
-                    location=location,
-                )
-            else:
-                append_items(
-                    box.get("items") or [],
-                    pallet_code="",
-                    box_code=current_box_code,
-                    location=box.get("location") or {},
-                )
-
-        if source_ids:
-            StockPalletState.objects.filter(id__in=source_ids).delete()
-
-        if new_rows:
-            missing_sku_codes = {
-                str(row.sku or "").strip()
-                for row in new_rows
-                if str(row.sku or "").strip() and not row.sku_ref_id
-            }
-            if missing_sku_codes:
-                for sku in SKU.objects.filter(agency=agency, deleted=False, sku_code__in=missing_sku_codes).only("id", "sku_code"):
-                    sku_ref_by_code.setdefault(str(sku.sku_code or "").strip().lower(), int(sku.id))
-                for row in new_rows:
-                    if row.sku_ref_id:
-                        continue
-                    row.sku_ref_id = sku_ref_by_code.get(str(row.sku or "").strip().lower())
-            StockPalletState.objects.bulk_create(new_rows, batch_size=1000)
-        if affected_keys:
-            refresh_materialized_stock_state_for_keys(agency, affected_keys)
-        return len(new_rows)
+        return OperationalStockService.replace_order_placement(
+            tree.agency,
+            tree.context_order_type,
+            tree.context_order_id,
+            payload or {},
+        )
 
 
 __all__ = ["OperationalStockService", "StockPalletTree"]

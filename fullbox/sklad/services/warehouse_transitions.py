@@ -127,6 +127,8 @@ class WarehouseTransitionService:
             raise cls._invalid(current_code, event_type, operation_type, zone_to)
 
         if current_code == WarehouseStateCode.RESERVED_FOR_PROCESSING:
+            if event_type == WarehouseEventType.PROCESSING_RESERVED:
+                return current_code
             if event_type == WarehouseEventType.PROCESSING_RESERVE_RELEASED:
                 return WarehouseStateCode.STORED
             if event_type == WarehouseEventType.MOVEMENT_REQUESTED and cls._is_move_to_processing(operation_type):
@@ -174,6 +176,8 @@ class WarehouseTransitionService:
             raise cls._invalid(current_code, event_type, operation_type, zone_to)
 
         if current_code == WarehouseStateCode.RESERVED_FOR_SHIPPING:
+            if event_type == WarehouseEventType.SHIPPING_RESERVED:
+                return current_code
             if event_type == WarehouseEventType.SHIPPING_RESERVE_RELEASED:
                 return WarehouseStateCode.STORED
             if event_type in {

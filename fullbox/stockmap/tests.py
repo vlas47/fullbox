@@ -7,14 +7,147 @@ from django.test import RequestFactory, SimpleTestCase, TestCase
 from employees.models import Employee
 from reachtruck.models import MoveTask
 from sku.models import Agency
-from sklad.models import StockPalletState, WarehouseContainer, WarehouseLocation, WarehouseStockSnapshot
+from sklad.models import WarehouseContainer, WarehouseLocation, WarehouseStockSnapshot
+from sklad.services.warehouse_transitions import WarehouseStateCode
 from stockmap.services import (
     build_stock_map_context,
     build_stock_map_visual_context,
     parse_pr_destinations_json,
     submit_stock_map_pr_moves,
 )
-from stockmap.views import _os_row_badge_style
+from stockmap.views import _os_row_badge_style, _os_row_cell_details
+
+
+def _zone_kind(zone: str) -> str:
+    return {
+        "PR": WarehouseLocation.ZONE_KIND_RECEIVING,
+        "OS": WarehouseLocation.ZONE_KIND_STORAGE,
+        "OBR": WarehouseLocation.ZONE_KIND_PROCESSING,
+        "OTG": WarehouseLocation.ZONE_KIND_SHIPPING,
+    }.get(str(zone or "").strip().upper(), WarehouseLocation.ZONE_KIND_STORAGE)
+
+
+def _warehouse_state(zone: str) -> str:
+    return {
+        "PR": WarehouseStateCode.PLACED_IN_RECEIVING.value,
+        "OS": WarehouseStateCode.STORED.value,
+        "OBR": WarehouseStateCode.IN_PROCESSING_ZONE.value,
+        "OTG": WarehouseStateCode.IN_OTG.value,
+    }.get(str(zone or "").strip().upper(), WarehouseStateCode.STORED.value)
+
+
+def _location_label(zone: str, row: int = 0, section: int = 0, tier: int = 0, cell: int = 0, location: str = "") -> str:
+    if location:
+        return location
+    zone = str(zone or "").strip().upper()
+    if zone == "PR":
+        return "PR · Зона приемки"
+    if zone == "OTG":
+        return "OTG · Зона отгрузки"
+    if zone == "OBR":
+        return "OBR · Зона обработки"
+    if zone == "OS" and row and section and tier and cell:
+        return f"OS · Ряд {row} · Секция {section} · Ярус {tier} · Ячейка {cell}"
+    return zone or "OS"
+
+
+def create_warehouse_snapshot_row(
+    *,
+    agency: Agency,
+    order_type: str = "receiving",
+    order_id: str = "1",
+    sku: str = "SKU-1",
+    name: str = "Товар",
+    size: str = "",
+    barcode: str = "",
+    goods_type: str = "Оптовый",
+    qty: int = 1,
+    available_qty: int | None = None,
+    processing_reserved_qty: int = 0,
+    shipping_reserved_qty: int = 0,
+    box_code: str = "",
+    pallet_code: str,
+    zone: str = "OS",
+    row: int = 0,
+    section: int = 0,
+    tier: int = 0,
+    cell: int = 0,
+    location: str = "",
+) -> WarehouseStockSnapshot:
+    zone_code = str(zone or "").strip().upper()
+    location_obj, _ = WarehouseLocation.objects.get_or_create(
+        warehouse_code="MSK",
+        zone_code=zone_code,
+        row_no=int(row or 0),
+        section_no=int(section or 0),
+        tier_no=int(tier or 0),
+        cell_no=int(cell or 0),
+        defaults={
+            "zone_kind": _zone_kind(zone_code),
+            "location_code": "",
+            "display_name": _location_label(zone_code, row, section, tier, cell, location),
+        },
+    )
+    pallet, _ = WarehouseContainer.objects.get_or_create(
+        agency=agency,
+        container_code=pallet_code,
+        defaults={
+            "container_type": WarehouseContainer.TYPE_PALLET,
+            "current_location": location_obj,
+            "source_context_type": order_type,
+            "source_context_id": str(order_id),
+        },
+    )
+    if pallet.current_location_id != location_obj.id:
+        pallet.current_location = location_obj
+        pallet.save(update_fields=["current_location", "updated_at"])
+    container = pallet
+    parent_container = None
+    container_code = pallet_code
+    if box_code:
+        container, _ = WarehouseContainer.objects.get_or_create(
+            agency=agency,
+            container_code=box_code,
+            defaults={
+                "container_type": WarehouseContainer.TYPE_BOX,
+                "parent_container": pallet,
+                "current_location": location_obj,
+                "source_context_type": order_type,
+                "source_context_id": str(order_id),
+            },
+        )
+        changed_fields = []
+        if container.parent_container_id != pallet.id:
+            container.parent_container = pallet
+            changed_fields.append("parent_container")
+        if container.current_location_id != location_obj.id:
+            container.current_location = location_obj
+            changed_fields.append("current_location")
+        if changed_fields:
+            container.save(update_fields=[*changed_fields, "updated_at"])
+        parent_container = pallet
+        container_code = box_code
+    return WarehouseStockSnapshot.objects.create(
+        agency=agency,
+        source_context_type=order_type,
+        source_context_id=str(order_id),
+        sku_code=sku,
+        name=name,
+        size=size,
+        barcode=barcode,
+        goods_type=goods_type,
+        qty=int(qty or 0),
+        available_qty=int(available_qty if available_qty is not None else qty or 0),
+        processing_reserved_qty=int(processing_reserved_qty or 0),
+        shipping_reserved_qty=int(shipping_reserved_qty or 0),
+        container=container,
+        container_code=container_code,
+        parent_container=parent_container,
+        location=location_obj,
+        zone_code=zone_code,
+        zone_kind=location_obj.zone_kind,
+        warehouse_state_code=_warehouse_state(zone_code),
+    )
 
 
 class StockMapRowBadgeStyleTests(SimpleTestCase):
@@ -46,7 +179,7 @@ class StockMapRowCellDetailsTests(TestCase):
         )
         self.client.force_login(self.user)
         self.agency = Agency.objects.create(agn_name="Клиент карты склада")
-        StockPalletState.objects.create(
+        create_warehouse_snapshot_row(
             agency=self.agency,
             order_type="receiving",
             order_id="501",
@@ -60,7 +193,7 @@ class StockMapRowCellDetailsTests(TestCase):
             shipping_reserved_qty=5,
             available_qty=45,
             box_code="BOX-1",
-            pallet_code="PAL-1",
+            pallet_code="ТДТ-1",
             zone="OS",
             row=1,
             section=2,
@@ -68,7 +201,7 @@ class StockMapRowCellDetailsTests(TestCase):
             cell=3,
             location="OS · A-1/1-3",
         )
-        StockPalletState.objects.create(
+        create_warehouse_snapshot_row(
             agency=self.agency,
             order_type="receiving",
             order_id="501",
@@ -82,7 +215,7 @@ class StockMapRowCellDetailsTests(TestCase):
             shipping_reserved_qty=0,
             available_qty=40,
             box_code="BOX-2",
-            pallet_code="PAL-1",
+            pallet_code="ТДТ-1",
             zone="OS",
             row=1,
             section=2,
@@ -101,17 +234,20 @@ class StockMapRowCellDetailsTests(TestCase):
         self.assertEqual(cell["cell_label"], "OS · A-1/1-3")
         self.assertEqual(cell["pallet_count"], 1)
         self.assertEqual(cell["summary"], "Клиент карты склада")
+        self.assertEqual(cell["display_marker"], "ТДТ")
         pallet = cell["pallets"][0]
-        self.assertEqual(pallet["pallet_code"], "PAL-1")
+        self.assertEqual(pallet["pallet_code"], "ТДТ-1")
+        self.assertEqual(pallet["display_marker"], "ТДТ")
         self.assertEqual(pallet["client_name"], "Клиент карты склада")
         self.assertEqual(pallet["box_count"], 2)
         self.assertEqual(pallet["total_qty"], 100)
         self.assertContains(response, 'data-detail-key="2:1:3"')
-        self.assertContains(response, "PAL-1")
+        page_text = response.content.decode("utf-8")
+        self.assertIn("ТДТ", page_text)
         self.assertContains(response, "Клиент карты склада")
 
     def test_visual_stockmap_page_renders_os_and_support_zones(self):
-        StockPalletState.objects.create(
+        create_warehouse_snapshot_row(
             agency=self.agency,
             order_type="receiving",
             order_id="502",
@@ -138,13 +274,14 @@ class StockMapRowCellDetailsTests(TestCase):
         self.assertIn("Клиент карты склада", page_text)
         self.assertIn("502_PR", page_text)
         self.assertContains(response, "Стеллаж 1")
-        self.assertContains(response, ">0<", html=False)
+        self.assertContains(response, ">ТДТ<", html=False)
 
     def test_visual_stockmap_picker_mode_exposes_pick_buttons(self):
         response = self.client.get("/stockmap/visual/?picker=1")
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, 'data-pick-zone="PR"', html=False)
+        self.assertContains(response, 'id="picker-support-zone"', html=False)
+        self.assertContains(response, '<option value="PR">PR</option>', html=False)
         self.assertContains(response, 'data-pick-zone="OS"', html=False)
 
 
@@ -159,7 +296,7 @@ class StockMapPrZoneTests(TestCase):
         )
         self.client.force_login(self.user)
         self.agency = Agency.objects.create(agn_name="Клиент PR")
-        StockPalletState.objects.create(
+        create_warehouse_snapshot_row(
             agency=self.agency,
             order_type="receiving",
             order_id="700",
@@ -228,7 +365,7 @@ class StockMapServiceTests(TestCase):
         self.agency = Agency.objects.create(agn_name="Клиент service stockmap")
 
     def test_build_stock_map_context_counts_pr_occupancy(self):
-        StockPalletState.objects.create(
+        create_warehouse_snapshot_row(
             agency=self.agency,
             order_type="receiving",
             order_id="900",
@@ -289,6 +426,50 @@ class StockMapServiceTests(TestCase):
         pr_cell = next(cell for cell in context["cells"] if cell["zone"] == "PR")
         self.assertEqual(pr_cell["occupied"], 1)
         self.assertEqual(pr_cell["free"], 149)
+
+    def test_os_row_cell_details_restore_box_counts_when_snapshot_has_no_box_codes(self):
+        location = WarehouseLocation.objects.create(
+            warehouse_code="MSK",
+            zone_code="OS",
+            zone_kind=WarehouseLocation.ZONE_KIND_STORAGE,
+            row_no=1,
+            section_no=2,
+            tier_no=1,
+            cell_no=3,
+            location_code="A-1/1-3",
+            display_name="OS · A-1/1-3",
+        )
+        container = WarehouseContainer.objects.create(
+            agency=self.agency,
+            container_type=WarehouseContainer.TYPE_PALLET,
+            container_code="PAL-SNAP-BOXES",
+            current_location=location,
+        )
+        for _ in range(2):
+            WarehouseStockSnapshot.objects.create(
+                agency=self.agency,
+                source_context_type="receiving",
+                source_context_id="905",
+                sku_code="SKU-SNAP-BOX",
+                name="Пальто snapshot box",
+                size="50",
+                barcode="2000000001905",
+                goods_type="Оптовый",
+                qty=50,
+                available_qty=50,
+                container=container,
+                container_code=container.container_code,
+                location=location,
+                zone_code="OS",
+                zone_kind=location.zone_kind,
+                warehouse_state_code="placed_in_storage",
+            )
+
+        details = _os_row_cell_details(1)
+
+        pallet = details["2:1:3"]["pallets"][0]
+        self.assertEqual(pallet["box_count"], 2)
+        self.assertEqual(pallet["items"][0]["box_count"], 2)
 
     def test_visual_context_supports_custom_i_line_geometry(self):
         request = self.factory.get("/stockmap/visual/")

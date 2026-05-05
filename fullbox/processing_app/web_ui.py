@@ -65,9 +65,8 @@ from sklad.services.stock_operations import OperationalStockService
 from sklad.services.warehouse_state import WarehouseGoodsStateResolver
 from sklad.services.warehouse_transitions import WarehouseStateCode
 from sklad.services.warehouse_write_path import WarehouseWritePathService
-from sklad.models import InventoryState, StockPalletState, WarehouseReserve, WarehouseStockSnapshot
+from sklad.models import WarehouseReserve, WarehouseStockSnapshot
 from sklad.services.stock_availability import StockAvailabilityService
-from sklad.stock_state import refresh_materialized_stock_state_for_keys
 from todo.models import Task
 from reachtruck.services import (
     create_batch_move_tasks,
@@ -2719,20 +2718,6 @@ def _inventory_items_for_agency(
 def _replace_processing_reserves(order_id: str, agency: Agency, stock_rows: list[dict]):
     if not order_id or not agency:
         return
-    previous_rows = list(
-        InventoryState.objects.filter(
-            agency=agency,
-            order_type="processing",
-            order_id=str(order_id),
-            state="processing",
-        ).only("sku", "size", "goods_type")
-    )
-    InventoryState.objects.filter(
-        agency=agency,
-        order_type="processing",
-        order_id=str(order_id),
-        state="processing",
-    ).delete()
     reserves: dict[tuple[str, str, str, str], int] = {}
     for row in stock_rows or []:
         if not isinstance(row, dict):
@@ -2749,98 +2734,28 @@ def _replace_processing_reserves(order_id: str, agency: Agency, stock_rows: list
         key = (sku, size, barcode, goods_type)
         reserves[key] = reserves.get(key, 0) + qty_value
     if not reserves:
-        try:
-            WarehouseWritePathService.replace_processing_reserves(
-                agency=agency,
-                order_id=str(order_id),
-                items=[],
-            )
-        except ValueError:
-            pass
-        affected_keys = {
-            (
-                str(row.sku or "").strip().lower(),
-                str(row.size or "").strip().lower(),
-                StockAvailabilityService.normalize_goods_type(row.goods_type),
-            )
-            for row in previous_rows
-            if str(row.sku or "").strip()
-        }
-        if affected_keys:
-            refresh_materialized_stock_state_for_keys(agency, affected_keys)
-        return
-    legacy_pallet_codes = set(
-        StockPalletState.objects.filter(
-            agency=agency,
-            state=StockPalletState.STATE_WAREHOUSE,
-            sku__in=[sku for (sku, _size, _barcode, _goods_type) in reserves.keys() if str(sku or "").strip()],
-        )
-        .exclude(pallet_code="")
-        .values_list("pallet_code", flat=True)
-    )
-    for pallet_code in legacy_pallet_codes:
-        WarehouseWritePathService.sync_legacy_storage_pallet(
-            agency=agency,
-            pallet_code=str(pallet_code or "").strip(),
-            source_document_type="legacy_stock",
-            source_document_id=str(order_id),
-        )
-    InventoryState.objects.bulk_create(
-        [
-            InventoryState(
-                agency=agency,
-                order_type="processing",
-                order_id=str(order_id),
-                sku=sku,
-                size=size,
-                barcode=barcode,
-                goods_type=goods_type,
-                qty=qty,
-                state="processing",
-            )
-            for (sku, size, barcode, goods_type), qty in reserves.items()
-        ]
-    )
-    try:
         WarehouseWritePathService.replace_processing_reserves(
             agency=agency,
             order_id=str(order_id),
-            items=[
-                {
-                    "sku": sku,
-                    "sku_code": sku,
-                    "size": size,
-                    "barcode": barcode,
-                    "goods_type": goods_type,
-                    "qty": qty,
-                }
-                for (sku, size, barcode, goods_type), qty in reserves.items()
-            ],
+            items=[],
         )
-    except ValueError:
-        pass
-    affected_keys = {
-        (
-            str(row.sku or "").strip().lower(),
-            str(row.size or "").strip().lower(),
-            StockAvailabilityService.normalize_goods_type(row.goods_type),
-        )
-        for row in previous_rows
-        if str(row.sku or "").strip()
-    }
-    affected_keys.update(
-        {
-            (
-                str(sku or "").strip().lower(),
-                str(size or "").strip().lower(),
-                StockAvailabilityService.normalize_goods_type(goods_type),
-            )
-            for (sku, size, _barcode, goods_type) in reserves.keys()
+        return
+    WarehouseWritePathService.replace_processing_reserves(
+        agency=agency,
+        order_id=str(order_id),
+        items=[
+            {
+                "sku": sku,
+                "sku_code": sku,
+                "size": size,
+                "barcode": barcode,
+                "goods_type": goods_type,
+                "qty": qty,
+            }
+            for (sku, size, barcode, goods_type), qty in reserves.items()
             if str(sku or "").strip()
-        }
+        ],
     )
-    if affected_keys:
-        refresh_materialized_stock_state_for_keys(agency, affected_keys)
 
 
 def _remaining_processing_stock_rows_for_reserve(

@@ -11,6 +11,7 @@ from .warehouse_state import (
     WarehouseStateCode,
     WarehouseStateResult,
 )
+from .temporary_nomenclature import WarehouseTemporaryNomenclatureService
 from .warehouse_transitions import WarehouseTransitionError, WarehouseTransitionResult, WarehouseTransitionService
 from .warehouse_write_path import WarehousePlacementResult, WarehouseWritePathService
 
@@ -28,6 +29,7 @@ __all__ = [
     "WarehouseMovementResolver",
     "WarehouseStateCode",
     "WarehouseStateResult",
+    "WarehouseTemporaryNomenclatureService",
     "WarehouseTransitionError",
     "WarehouseTransitionResult",
     "WarehouseTransitionService",

@@ -13,7 +13,12 @@ from marking.models import MarkingCode
 from reachtruck.models import MoveRequest, MoveTask
 from todo.models import Task
 from orders.services import ReceivingWorkflowService
-from sklad.models import StockPalletState, WarehouseOperation, WarehouseReserve, WarehouseStockSnapshot
+from sklad.models import (
+    WarehouseOperation,
+    WarehouseReserve,
+    WarehouseStockSnapshot,
+    WarehouseTemporaryNomenclature,
+)
 from sklad.services.warehouse_state import WarehouseGoodsStateResolver
 from sklad.services.warehouse_write_path import WarehouseWritePathService
 from sku.models import Agency, SKU
@@ -556,23 +561,15 @@ class OrdersPlacementOperationalStockTests(TestCase):
 
         self.assertEqual(close_response.status_code, 302)
         self.assertIn("?ok=1", close_response.url)
-        stock_row = StockPalletState.objects.get(
-            agency=self.agency,
-            order_type="receiving",
-            order_id=order_id,
-        )
-        self.assertEqual(stock_row.sku, "SKU-OPS-1")
-        self.assertEqual(stock_row.box_code, "BOX-OPS-1")
-        self.assertEqual(stock_row.pallet_code, "PAL-OPS-1")
-        self.assertEqual(stock_row.zone, "OS")
-        self.assertEqual(stock_row.location, "OS · Ряд 2 · Секция 1 · Ярус 1 · Ячейка 3")
-        self.assertEqual(stock_row.available_qty, 5)
         snapshot = WarehouseStockSnapshot.objects.get(
             agency=self.agency,
             source_context_type="receiving",
             source_context_id=order_id,
         )
-        self.assertEqual(snapshot.container_code, "PAL-OPS-1")
+        self.assertEqual(snapshot.sku_code, "SKU-OPS-1")
+        self.assertEqual(snapshot.container_code, "BOX-OPS-1")
+        self.assertEqual(snapshot.container.container_code, "BOX-OPS-1")
+        self.assertEqual(snapshot.parent_container.container_code, "PAL-OPS-1")
         self.assertEqual(snapshot.zone_code, "PR")
         self.assertEqual(snapshot.warehouse_state_code, "placed_in_receiving")
         self.assertEqual(snapshot.available_qty, 5)
@@ -583,13 +580,6 @@ class OrdersPlacementOperationalStockTests(TestCase):
         )
 
         self.assertEqual(open_response.status_code, 302)
-        self.assertFalse(
-            StockPalletState.objects.filter(
-                agency=self.agency,
-                order_type="receiving",
-                order_id=order_id,
-            ).exists()
-        )
         self.assertFalse(
             WarehouseStockSnapshot.objects.filter(
                 agency=self.agency,
@@ -1093,6 +1083,51 @@ class OrdersReceivingWorkflowServiceTests(TestCase):
         self.assertEqual(entry.description, "Тип товара: Оптовый")
         self.assertEqual(entry.payload.get("receiving_mode"), "cz")
 
+    def test_configure_receiving_act_creates_temporary_nomenclature_for_opt_items(self):
+        order_id = "R-WF-ACTCFG-TEMP"
+        OrderAuditEntry.objects.create(
+            order_id=order_id,
+            order_type="receiving",
+            action="status",
+            agency=self.agency,
+            user=self.user,
+            description="Статус приемки",
+            payload={
+                "status": "warehouse",
+                "status_label": "В ожидании поставки товара",
+                "items": [
+                    {
+                        "sku_code": "028",
+                        "name": "Джинсы синие",
+                        "brand": "Levis",
+                        "color": "Синий",
+                        "size": "27-35",
+                        "qty": 250,
+                    }
+                ],
+            },
+        )
+
+        result = ReceivingWorkflowService.configure_receiving_act(
+            order_id=order_id,
+            entries=list(OrderAuditEntry.objects.filter(order_id=order_id, order_type="receiving").order_by("created_at")),
+            role="storekeeper",
+            goods_type="op",
+            receiving_mode="standard",
+            user=self.user,
+        )
+
+        self.assertTrue(result.applied)
+        temp_item = WarehouseTemporaryNomenclature.objects.get(agency=self.agency, item_code="028")
+        self.assertEqual(temp_item.name, "Джинсы синие")
+        self.assertEqual(temp_item.brand, "Levis")
+        self.assertEqual(temp_item.color, "Синий")
+        self.assertEqual(temp_item.size, "27-35")
+        payload_item = (result.payload.get("items") or [])[0]
+        self.assertEqual(payload_item.get("nomenclature_kind"), "temporary")
+        self.assertEqual(payload_item.get("temporary_nomenclature_id"), temp_item.id)
+        self.assertEqual(payload_item.get("temporary_nomenclature_code"), "028")
+
     def test_start_receiving_work_logs_status_with_storekeeper_data(self):
         order_id = "R-WF-START"
         OrderAuditEntry.objects.create(
@@ -1250,6 +1285,51 @@ class OrdersReceivingWorkflowServiceTests(TestCase):
             OrderAuditEntry.objects.filter(order_id=order_id, order_type="receiving").count(),
             2,
         )
+
+    def test_save_receiving_flow_draft_creates_temp_nomenclature_for_manual_opt_item(self):
+        order_id = "R-WF-DRAFT-OPT"
+        OrderAuditEntry.objects.create(
+            order_id=order_id,
+            order_type="receiving",
+            action="status",
+            agency=self.agency,
+            user=self.user,
+            description="Статус приемки",
+            payload={
+                "status": "warehouse",
+                "status_label": "В ожидании поставки товара",
+                "goods_type": "op",
+                "goods_type_label": "Оптовый",
+                "items": [{"sku_code": "028", "name": "Базовая позиция", "qty": 1}],
+            },
+        )
+
+        result = ReceivingWorkflowService.save_receiving_flow_draft(
+            order_id=order_id,
+            entries=list(OrderAuditEntry.objects.filter(order_id=order_id, order_type="receiving").order_by("created_at")),
+            role="storekeeper",
+            boxes_raw=(
+                '[{"code":"BOX-WF-DRAFT-OPT-1","items":[{"sku_code":"","name":"Брюки","brand":"Mavi",'
+                '"color":"Серый","size":"31-33","qty":4}],"sealed":false}]'
+            ),
+            pallets_raw=(
+                '[{"code":"PAL-WF-DRAFT-OPT-1","boxes":["BOX-WF-DRAFT-OPT-1"],'
+                '"items":[],"sealed":false,"location":{"zone":"PR"}}]'
+            ),
+            active_box="BOX-WF-DRAFT-OPT-1",
+            active_pallet="PAL-WF-DRAFT-OPT-1",
+            user=self.user,
+        )
+
+        self.assertEqual(result.status, "saved")
+        temp_item = WarehouseTemporaryNomenclature.objects.get(
+            agency=self.agency,
+            name="Брюки",
+            brand="Mavi",
+            color="Серый",
+            size="31-33",
+        )
+        self.assertTrue(temp_item.item_code.startswith("OPT-"))
 
     def test_prepare_receiving_placement_close_builds_normalized_payload(self):
         order_id = "R-WF-PLACEMENT-PREP"
@@ -1989,6 +2069,176 @@ class OrdersReceivingWorkflowServiceTests(TestCase):
         self.assertEqual(entries[0].payload.get("act"), "receiving")
         self.assertEqual(entries[1].description, "Создан акт размещения")
         self.assertEqual(entries[1].payload.get("act"), "placement")
+
+    def test_receiving_act_post_saves_extra_opt_item_into_temporary_nomenclature(self):
+        order_id = "R-WF-ACT-TEMP"
+        self.client.force_login(self.user)
+        OrderAuditEntry.objects.create(
+            order_id=order_id,
+            order_type="receiving",
+            action="status",
+            agency=self.agency,
+            user=self.user,
+            description="Статус приемки",
+            payload={
+                "status": "warehouse",
+                "status_label": "В ожидании поставки товара",
+                "goods_type": "op",
+                "goods_type_label": "Оптовый",
+                "items": [],
+            },
+        )
+
+        response = self.client.post(
+            f"/orders/receiving/{order_id}/act/",
+            {
+                "eta_at": "2026-04-22T10:00",
+                "vehicle_number": "A123AA790",
+                "extra_sku_code[]": ["028"],
+                "extra_barcode[]": [""],
+                "extra_name[]": ["Джинсы синие"],
+                "extra_size[]": ["27-35"],
+                "extra_planned_qty[]": ["250"],
+                "extra_actual_qty[]": ["250"],
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        temp_item = WarehouseTemporaryNomenclature.objects.get(agency=self.agency, item_code="028")
+        latest = OrderAuditEntry.objects.filter(order_id=order_id, order_type="receiving").latest("id")
+        self.assertEqual((latest.payload or {}).get("act"), "receiving")
+        act_item = ((latest.payload or {}).get("act_items") or [])[0]
+        self.assertEqual(act_item.get("temporary_nomenclature_id"), temp_item.id)
+        self.assertEqual(act_item.get("temporary_nomenclature_code"), "028")
+        self.assertEqual(act_item.get("nomenclature_kind"), "temporary")
+
+    def test_complete_receiving_flow_keeps_generated_temp_code_in_warehouse_snapshot(self):
+        order_id = "R-WF-FLOW-TEMP"
+
+        result = ReceivingWorkflowService.complete_receiving_flow(
+            order_id=order_id,
+            agency=self.agency,
+            status_payload={
+                "status": "warehouse",
+                "status_label": "Взята в работу",
+                "goods_type": "op",
+            },
+            has_mismatch=False,
+            receiving_mode="standard",
+            act_items=[
+                {
+                    "sku_code": "",
+                    "name": "Оптовая позиция без SKU",
+                    "brand": "NoBrand",
+                    "color": "Черный",
+                    "size": "27-35",
+                    "planned_qty": 250,
+                    "actual_qty": 250,
+                    "comment": "",
+                }
+            ],
+            placement_items=[
+                {
+                    "sku_code": "",
+                    "name": "Оптовая позиция без SKU",
+                    "brand": "NoBrand",
+                    "color": "Черный",
+                    "size": "27-35",
+                    "actual_qty": 250,
+                    "box_qty": 250,
+                    "pallet_qty": 250,
+                    "comment": "",
+                }
+            ],
+            boxes=[
+                {
+                    "code": "BOX-WF-TEMP-1",
+                    "sealed": True,
+                    "items": [
+                        {
+                            "sku": "",
+                            "name": "Оптовая позиция без SKU",
+                            "brand": "NoBrand",
+                            "color": "Черный",
+                            "size": "27-35",
+                            "qty": 250,
+                        }
+                    ],
+                }
+            ],
+            pallets=[
+                {
+                    "code": "PAL-WF-TEMP-1",
+                    "sealed": True,
+                    "boxes": ["BOX-WF-TEMP-1"],
+                    "items": [],
+                    "location": {"zone": "PR"},
+                }
+            ],
+            flow_state={"boxes": [], "pallets": []},
+            eta_at="2026-04-22T10:00:00+03:00",
+            vehicle_number="A123AA790",
+            has_closed_placement_act=False,
+            user=self.user,
+            submitted_at=timezone.make_aware(datetime(2026, 4, 22, 11, 0)),
+        )
+
+        temp_item = WarehouseTemporaryNomenclature.objects.get(
+            agency=self.agency,
+            name="Оптовая позиция без SKU",
+            size="27-35",
+        )
+        snapshot = WarehouseStockSnapshot.objects.get(
+            agency=self.agency,
+            source_context_type="receiving",
+            source_context_id=order_id,
+        )
+        self.assertTrue(temp_item.item_code.startswith("OPT-"))
+        self.assertEqual(temp_item.brand, "NoBrand")
+        self.assertEqual(temp_item.color, "Черный")
+        self.assertEqual(snapshot.sku_code, temp_item.item_code)
+        placement_item = ((result.placement_payload.get("act_boxes") or [])[0].get("items") or [])[0]
+        self.assertEqual(placement_item.get("sku"), temp_item.item_code)
+
+    def test_receiving_flow_page_shows_new_opt_fields_inline(self):
+        order_id = "R-FLOW-OPT-FIELDS"
+        OrderAuditEntry.objects.create(
+            order_id=order_id,
+            order_type="receiving",
+            action="status",
+            agency=self.agency,
+            user=self.user,
+            description="Статус приемки",
+            payload={
+                "status": "warehouse",
+                "status_label": "В ожидании поставки товара",
+                "goods_type": "op",
+                "goods_type_label": "Оптовый",
+                "receiving_mode": "standard",
+                "items": [
+                    {
+                        "sku_code": "028",
+                        "name": "Брюки",
+                        "brand": "Mavi",
+                        "color": "Серый",
+                        "size": "31-33",
+                        "qty": 4,
+                    }
+                ],
+            },
+        )
+        self.client.force_login(self.user)
+
+        response = self.client.get(f"/orders/receiving/{order_id}/flow/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'id="opt-add-item-btn"', html=False)
+        self.assertContains(response, 'id="item-size-context-input"', html=False)
+        self.assertContains(response, 'data-action="add-size"', html=False)
+        self.assertContains(response, 'id="box-view-print"', html=False)
+        self.assertContains(response, "Бренд")
+        self.assertContains(response, "Цвет")
+        self.assertContains(response, "Для новой оптовой позиции")
 
     def test_close_receiving_placement_reuses_existing_manager_followup(self):
         order_id = "R-WF-2"

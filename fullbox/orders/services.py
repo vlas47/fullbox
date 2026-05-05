@@ -17,6 +17,7 @@ from reachtruck.services.putaway_planner import (
     parse_putaway_destinations,
     suggest_putaway_destinations,
 )
+from sklad.services.temporary_nomenclature import WarehouseTemporaryNomenclatureService
 from sklad.services.stock_availability import StockAvailabilityService
 from sklad.services.warehouse_policy import WarehouseActionPolicy
 from sklad.services.warehouse_state import WarehouseGoodsStateResolver, WarehouseStateCode
@@ -256,11 +257,19 @@ class ReceivingWorkflowService:
             return None
 
     @staticmethod
-    def _item_key(sku: str | None, name: str | None, size: str | None) -> str:
+    def _item_key(
+        sku: str | None,
+        name: str | None,
+        size: str | None,
+        brand: str | None = None,
+        color: str | None = None,
+    ) -> str:
         sku_part = (sku or "").strip().lower()
         name_part = (name or "").strip().lower()
+        brand_part = (brand or "").strip().lower()
+        color_part = (color or "").strip().lower()
         size_part = (size or "").strip().lower()
-        return f"{sku_part}|{name_part}|{size_part}"
+        return f"{sku_part}|{name_part}|{brand_part}|{color_part}|{size_part}"
 
     @classmethod
     def _latest_payload(cls, entries) -> dict:
@@ -314,12 +323,134 @@ class ReceivingWorkflowService:
         return result
 
     @classmethod
+    def _attach_receiving_nomenclature_metadata(
+        cls,
+        *,
+        agency: Agency | None,
+        items: list[dict] | None,
+        goods_type: str,
+        order_id: str = "",
+        order_type: str = "receiving",
+    ) -> list[dict]:
+        if not items:
+            return items or []
+
+        normalized_goods_type = str(goods_type or "").strip().lower()
+        agency_id = getattr(agency, "id", None)
+        sku_map = cls._receiving_sku_map(agency_id, items)
+        temp_candidates: list[dict] = []
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            sku_code = str(item.get("sku_code") or item.get("sku") or "").strip()
+            sku = sku_map.get(sku_code.lower()) if sku_code else None
+            if sku:
+                item["sku_id"] = int(sku.id or 0)
+                item["nomenclature_kind"] = "sku"
+                item.pop("temporary_nomenclature_id", None)
+                item.pop("temporary_nomenclature_code", None)
+                if not str(item.get("barcode") or "").strip():
+                    barcode = cls._barcode_value_for_sku(sku, item.get("size"))
+                    if barcode:
+                        item["barcode"] = barcode
+                continue
+            if normalized_goods_type == "op":
+                temp_candidates.append(item)
+
+        if temp_candidates and normalized_goods_type == "op":
+            WarehouseTemporaryNomenclatureService.ensure_items(
+                agency=agency,
+                items=temp_candidates,
+                order_type=order_type,
+                order_id=order_id,
+                goods_type=normalized_goods_type,
+            )
+        return items
+
+    @staticmethod
+    def _merge_temp_catalog_item(
+        *,
+        sku_options: list[dict] | None = None,
+        sku_name_options: list[str] | None = None,
+        barcode_options: list[str] | None = None,
+        barcode_map: dict | None = None,
+        catalog_items: list[dict] | None = None,
+        temp_item: dict | None = None,
+        seen_codes: set[str] | None = None,
+        seen_names: set[str] | None = None,
+        seen_barcodes: set[str] | None = None,
+    ) -> None:
+        if not isinstance(temp_item, dict):
+            return
+        code = str(temp_item.get("code") or "").strip()
+        name = str(temp_item.get("name") or "").strip()
+        brand = str(temp_item.get("brand") or "").strip()
+        color = str(temp_item.get("color") or "").strip()
+        size = str(temp_item.get("size") or "").strip()
+        barcode = str(temp_item.get("barcode") or "").strip()
+
+        if sku_options is not None and code and (seen_codes is None or code not in seen_codes):
+            sku_options.append(
+                {
+                    "code": code,
+                    "name": name,
+                    "barcodes_joined": barcode,
+                }
+            )
+            if seen_codes is not None:
+                seen_codes.add(code)
+
+        if sku_name_options is not None and name and (seen_names is None or name not in seen_names):
+            sku_name_options.append(name)
+            if seen_names is not None:
+                seen_names.add(name)
+
+        if barcode_options is not None and barcode and (seen_barcodes is None or barcode not in seen_barcodes):
+            barcode_options.append(barcode)
+            if seen_barcodes is not None:
+                seen_barcodes.add(barcode)
+
+        if barcode_map is not None and barcode:
+            barcode_map.setdefault(
+                barcode,
+                {
+                    "sku": code,
+                    "sku_code": code,
+                    "name": name,
+                    "brand": brand,
+                    "color": color,
+                    "size": size,
+                    "weight_kg": "",
+                },
+            )
+
+        if catalog_items is not None and code and (seen_codes is None or code not in seen_codes):
+            catalog_items.append(
+                {
+                    "sku_code": code,
+                    "name": name,
+                    "brand": brand,
+                    "color": color,
+                    "size": size,
+                    "weight_kg": "",
+                }
+            )
+            if seen_codes is not None:
+                seen_codes.add(code)
+
+    @classmethod
     def _receiving_marked_items_map(cls, agency_id: int | None, items: list[dict]) -> dict[str, dict]:
         sku_map = cls._receiving_sku_map(agency_id, items)
         result = {}
         fallback_result = {}
         for item in items or []:
-            key = cls._item_key(item.get("sku_code"), item.get("name"), item.get("size"))
+            key = cls._item_key(
+                item.get("sku_code"),
+                item.get("name"),
+                item.get("size"),
+                item.get("brand"),
+                item.get("color"),
+            )
             sku_code_key = str(item.get("sku_code") or item.get("sku") or "").strip().lower()
             sku = sku_map.get(sku_code_key)
             candidate = {
@@ -389,8 +520,9 @@ class ReceivingWorkflowService:
         return units, totals, has_orphan_units
 
     @classmethod
-    def _normalize_flow_items(cls, raw_items) -> list[dict]:
+    def _normalize_flow_items(cls, raw_items, default_goods_type: str = "") -> list[dict]:
         items = []
+        fallback_goods_type = str(default_goods_type or "").strip()
         for raw in raw_items or []:
             if not isinstance(raw, dict):
                 continue
@@ -399,7 +531,10 @@ class ReceivingWorkflowService:
                 continue
             sku_code = (raw.get("sku_code") or raw.get("sku") or "").strip()
             name = (raw.get("name") or "").strip()
+            brand = (raw.get("brand") or "").strip()
+            color = (raw.get("color") or "").strip()
             size = (raw.get("size") or "").strip()
+            goods_type = str(raw.get("goods_type") or fallback_goods_type).strip()
             if not (sku_code or name or size):
                 continue
             items.append(
@@ -407,7 +542,10 @@ class ReceivingWorkflowService:
                     "sku_code": sku_code,
                     "sku": sku_code,
                     "name": name,
+                    "brand": brand,
+                    "color": color,
                     "size": size,
+                    "goods_type": goods_type,
                     "qty": qty,
                 }
             )
@@ -755,16 +893,25 @@ class ReceivingWorkflowService:
         receiving_mode = (payload.get("receiving_mode") or "standard").strip().lower()
         if receiving_mode not in cls.RECEIVING_MODES:
             receiving_mode = "standard"
+        default_goods_type = str(payload.get("goods_type") or "").strip()
         marked_items_map = cls._receiving_marked_items_map(entries[-1].agency_id if entries else None, planned_items)
         plan_map = {}
         for item in planned_items:
-            key = cls._item_key(item.get("sku_code"), item.get("name"), item.get("size"))
+            key = cls._item_key(
+                item.get("sku_code"),
+                item.get("name"),
+                item.get("size"),
+                item.get("brand"),
+                item.get("color"),
+            )
             planned_qty = cls._parse_qty_value(item.get("qty")) or 0
             entry = plan_map.setdefault(
                 key,
                 {
                     "sku_code": item.get("sku_code"),
                     "name": item.get("name"),
+                    "brand": item.get("brand"),
+                    "color": item.get("color"),
                     "size": item.get("size"),
                     "planned_qty": 0,
                     "comment": item.get("comment"),
@@ -787,7 +934,7 @@ class ReceivingWorkflowService:
         for idx, box in enumerate(boxes_data):
             if not isinstance(box, dict):
                 continue
-            items = cls._normalize_flow_items(box.get("items") or [])
+            items = cls._normalize_flow_items(box.get("items") or [], default_goods_type=default_goods_type)
             if not items:
                 continue
             code = str(box.get("code") or "").strip() or f"BOX-{idx + 1}"
@@ -817,7 +964,7 @@ class ReceivingWorkflowService:
                 if str(box_code or "").strip()
             ]
             boxes = [box_code for box_code in boxes if box_code in seen_box_codes]
-            items = cls._normalize_flow_items(pallet.get("items") or [])
+            items = cls._normalize_flow_items(pallet.get("items") or [], default_goods_type=default_goods_type)
             if not boxes and not items:
                 continue
             location = pallet.get("location")
@@ -853,7 +1000,13 @@ class ReceivingWorkflowService:
         totals = {}
 
         def add_total(item, qty, field):
-            key = cls._item_key(item.get("sku_code"), item.get("name"), item.get("size"))
+            key = cls._item_key(
+                item.get("sku_code"),
+                item.get("name"),
+                item.get("size"),
+                item.get("brand"),
+                item.get("color"),
+            )
             entry = totals.setdefault(key, {"box": 0, "pallet": 0, "total": 0})
             entry[field] += qty
             entry["total"] += qty
@@ -884,6 +1037,8 @@ class ReceivingWorkflowService:
                 {
                     "sku_code": plan.get("sku_code"),
                     "name": plan.get("name"),
+                    "brand": plan.get("brand"),
+                    "color": plan.get("color"),
                     "size": plan.get("size"),
                     "planned_qty": plan.get("planned_qty"),
                     "actual_qty": actual_qty,
@@ -899,12 +1054,16 @@ class ReceivingWorkflowService:
             parts = key.split("|")
             sku_code = parts[0] if len(parts) > 0 else ""
             name = parts[1] if len(parts) > 1 else ""
-            size = parts[2] if len(parts) > 2 else ""
+            brand = parts[2] if len(parts) > 2 else ""
+            color = parts[3] if len(parts) > 3 else ""
+            size = parts[4] if len(parts) > 4 else ""
             has_mismatch = True
             act_items.append(
                 {
                     "sku_code": sku_code,
                     "name": name,
+                    "brand": brand,
+                    "color": color,
                     "size": size,
                     "planned_qty": 0,
                     "actual_qty": entry["total"],
@@ -945,12 +1104,20 @@ class ReceivingWorkflowService:
         )
         placement_items = []
         for item in act_items:
-            key = cls._item_key(item.get("sku_code"), item.get("name"), item.get("size"))
+            key = cls._item_key(
+                item.get("sku_code"),
+                item.get("name"),
+                item.get("size"),
+                item.get("brand"),
+                item.get("color"),
+            )
             entry = totals.get(key, {"box": 0, "pallet": 0, "total": 0})
             placement_items.append(
                 {
                     "sku_code": item.get("sku_code"),
                     "name": item.get("name"),
+                    "brand": item.get("brand"),
+                    "color": item.get("color"),
                     "size": item.get("size"),
                     "actual_qty": item.get("actual_qty") or 0,
                     "box_qty": entry["box"],
@@ -1024,8 +1191,25 @@ class ReceivingWorkflowService:
             active_box=active_box,
             active_pallet=active_pallet,
         )
-        payload = {"flow_state": flow_state}
         latest = entries[-1] if entries else None
+        normalized_goods_type = str(status_payload.get("goods_type") or "").strip().lower()
+        if normalized_goods_type == "op" and latest and latest.agency:
+            draft_items = []
+            for box in flow_state.get("boxes") or []:
+                if isinstance(box, dict):
+                    draft_items.extend([item for item in (box.get("items") or []) if isinstance(item, dict)])
+            for pallet in flow_state.get("pallets") or []:
+                if isinstance(pallet, dict):
+                    draft_items.extend([item for item in (pallet.get("items") or []) if isinstance(item, dict)])
+            if draft_items:
+                cls._attach_receiving_nomenclature_metadata(
+                    agency=latest.agency,
+                    items=draft_items,
+                    goods_type=normalized_goods_type,
+                    order_id=order_id,
+                    order_type="receiving",
+                )
+        payload = {"flow_state": flow_state}
         draft_entry = None
         for entry in reversed(entries or []):
             if entry.action == "update" and (entry.payload or {}).get("flow_state"):
@@ -1089,7 +1273,13 @@ class ReceivingWorkflowService:
         totals: dict[str, dict[str, int]] = {}
 
         def add_total(item, qty, field):
-            key = cls._item_key(item.get("sku"), item.get("name"), item.get("size"))
+            key = cls._item_key(
+                item.get("sku"),
+                item.get("name"),
+                item.get("size"),
+                item.get("brand"),
+                item.get("color"),
+            )
             entry = totals.setdefault(key, {"box": 0, "pallet": 0, "total": 0})
             entry[field] += qty
             entry["total"] += qty
@@ -1105,7 +1295,13 @@ class ReceivingWorkflowService:
 
         placement_items = []
         for item in act_items:
-            key = cls._item_key(item.get("sku_code"), item.get("name"), item.get("size"))
+            key = cls._item_key(
+                item.get("sku_code"),
+                item.get("name"),
+                item.get("size"),
+                item.get("brand"),
+                item.get("color"),
+            )
             entry = totals.get(key, {"box": 0, "pallet": 0, "total": 0})
             actual_qty = cls._parse_qty_value(item.get("actual_qty")) or 0
             if entry["total"] != actual_qty:
@@ -1114,6 +1310,8 @@ class ReceivingWorkflowService:
                 {
                     "sku_code": item.get("sku_code"),
                     "name": item.get("name"),
+                    "brand": item.get("brand"),
+                    "color": item.get("color"),
                     "size": item.get("size"),
                     "actual_qty": actual_qty,
                     "box_qty": entry["box"],
@@ -1224,6 +1422,8 @@ class ReceivingWorkflowService:
                 {
                     "sku_code": sku_code,
                     "name": item.get("name") or "",
+                    "brand": item.get("brand") or (sku.brand if sku else ""),
+                    "color": item.get("color") or (sku.color if sku else ""),
                     "size": item.get("size") or "",
                     "qty": item.get("qty") or 0,
                     "comment": item.get("comment") or "",
@@ -1246,15 +1446,25 @@ class ReceivingWorkflowService:
         }
         barcode_map = {}
         catalog_items = []
+        temp_catalog_items = []
         marked_items_map = cls._receiving_marked_items_map(latest.agency_id if latest else None, items)
         if receiving_mode == "cz" and not marked_items_map:
             receiving_mode = "standard"
         if latest and latest.agency_id:
-            for sku in SKU.objects.filter(agency_id=latest.agency_id, deleted=False).only("sku_code", "name", "size", "weight_kg"):
+            for sku in SKU.objects.filter(agency_id=latest.agency_id, deleted=False).only(
+                "sku_code",
+                "name",
+                "brand",
+                "color",
+                "size",
+                "weight_kg",
+            ):
                 catalog_items.append(
                     {
                         "sku_code": sku.sku_code,
                         "name": sku.name,
+                        "brand": sku.brand or "",
+                        "color": sku.color or "",
                         "size": sku.size,
                         "weight_kg": str(sku.weight_kg).strip() if sku.weight_kg is not None else "",
                     }
@@ -1270,9 +1480,28 @@ class ReceivingWorkflowService:
                 barcode_map[value] = {
                     "sku_code": sku.sku_code,
                     "name": sku.name,
+                    "brand": sku.brand or "",
+                    "color": sku.color or "",
                     "size": (barcode.size or sku.size or "").strip(),
                     "weight_kg": str(sku.weight_kg).strip() if sku.weight_kg is not None else "",
                 }
+            if goods_type == "op":
+                temp_catalog_items = WarehouseTemporaryNomenclatureService.list_catalog_items(
+                    agency_id=latest.agency_id,
+                    goods_type=goods_type,
+                )
+        seen_catalog_codes = {
+            str(item.get("sku_code") or "").strip()
+            for item in catalog_items
+            if str(item.get("sku_code") or "").strip()
+        }
+        for temp_item in temp_catalog_items:
+            cls._merge_temp_catalog_item(
+                catalog_items=catalog_items,
+                barcode_map=barcode_map,
+                temp_item=temp_item,
+                seen_codes=seen_catalog_codes,
+            )
         placement_entry = cls._find_act_entry(entries, "placement", "акт размещения")
         placement_payload = placement_entry.payload if placement_entry else {}
         if not isinstance(placement_payload, dict):
@@ -1447,6 +1676,7 @@ class ReceivingWorkflowService:
     ) -> dict:
         latest = entries[-1] if entries else None
         status_entry = cls._current_status_entry(entries)
+        status_payload = status_entry.payload or {} if status_entry else {}
         payload = cls._latest_payload(entries)
         order_title = "Заявка на приемку без указания товара" if not (payload.get("items") or []) else "Заявка на приемку"
         items = payload.get("items") or []
@@ -1521,9 +1751,11 @@ class ReceivingWorkflowService:
         sku_name_options = []
         barcode_options = []
         barcode_map = {}
+        temp_catalog_items = []
         if latest and latest.agency_id:
             name_seen = set()
             barcode_seen = set()
+            sku_seen = set()
             for sku in SKU.objects.filter(agency_id=latest.agency_id, deleted=False).prefetch_related("barcodes").order_by("sku_code"):
                 barcode_values = []
                 for barcode in sku.barcodes.all():
@@ -1545,9 +1777,26 @@ class ReceivingWorkflowService:
                         "barcodes_joined": "|".join(barcode_values),
                     }
                 )
+                sku_seen.add(sku.sku_code)
                 if sku.name and sku.name not in name_seen:
                     name_seen.add(sku.name)
                     sku_name_options.append(sku.name)
+            if (status_payload.get("goods_type") or "").strip().lower() == "op":
+                temp_catalog_items = WarehouseTemporaryNomenclatureService.list_catalog_items(
+                    agency_id=latest.agency_id,
+                    goods_type="op",
+                )
+            for temp_item in temp_catalog_items:
+                cls._merge_temp_catalog_item(
+                    sku_options=sku_options,
+                    sku_name_options=sku_name_options,
+                    barcode_options=barcode_options,
+                    barcode_map=barcode_map,
+                    temp_item=temp_item,
+                    seen_codes=sku_seen,
+                    seen_names=name_seen,
+                    seen_barcodes=barcode_seen,
+                )
         arrival_value = payload.get("eta_at")
         vehicle_value = payload.get("vehicle_number")
         driver_phone_value = payload.get("driver_phone")
@@ -2342,6 +2591,20 @@ class ReceivingWorkflowService:
             payload_changed = True
             if existing_type:
                 description = "Обновлен режим приемки"
+        payload_items = [dict(item) for item in (payload.get("items") or []) if isinstance(item, dict)]
+        if normalized_goods_type == "op" and payload_items:
+            cls._attach_receiving_nomenclature_metadata(
+                agency=entries[-1].agency if entries else None,
+                items=payload_items,
+                goods_type=normalized_goods_type,
+                order_id=order_id,
+                order_type="receiving",
+            )
+            if payload_items != (payload.get("items") or []):
+                payload["items"] = payload_items
+                payload_changed = True
+                if not description:
+                    description = "Обновлена временная номенклатура опта"
         if not payload_changed:
             return ReceivingStatusUpdateResult(applied=False, payload=payload)
         latest = entries[-1] if entries else None
@@ -2668,6 +2931,42 @@ class ReceivingWorkflowService:
     ) -> ReceivingWorkflowResult:
         actor = cls._authenticated_user(user)
         observer = cls._resolve_observer(user)
+        normalized_goods_type = str((status_payload or {}).get("goods_type") or "").strip().lower()
+        if normalized_goods_type == "op":
+            cls._attach_receiving_nomenclature_metadata(
+                agency=agency,
+                items=act_items,
+                goods_type=normalized_goods_type,
+                order_id=order_id,
+                order_type="receiving",
+            )
+            cls._attach_receiving_nomenclature_metadata(
+                agency=agency,
+                items=placement_items,
+                goods_type=normalized_goods_type,
+                order_id=order_id,
+                order_type="receiving",
+            )
+            for box in boxes or []:
+                if not isinstance(box, dict):
+                    continue
+                cls._attach_receiving_nomenclature_metadata(
+                    agency=agency,
+                    items=box.get("items") or [],
+                    goods_type=normalized_goods_type,
+                    order_id=order_id,
+                    order_type="receiving",
+                )
+            for pallet in pallets or []:
+                if not isinstance(pallet, dict):
+                    continue
+                cls._attach_receiving_nomenclature_metadata(
+                    agency=agency,
+                    items=pallet.get("items") or [],
+                    goods_type=normalized_goods_type,
+                    order_id=order_id,
+                    order_type="receiving",
+                )
         command_result = WarehouseCommandService.complete_receiving_flow(
             order_id=order_id,
             agency=agency,

@@ -21,6 +21,23 @@ def normalize_zone_code(raw: str | None) -> str:
     return text
 
 
+_OS_LINE_DISPLAY_LABELS = {
+    1: "0",
+    2: "A",
+    3: "B",
+    4: "C",
+    5: "D",
+    6: "E",
+    7: "F",
+    8: "G",
+    9: "I",
+}
+
+
+def _os_line_display_label(section: int) -> str:
+    return _OS_LINE_DISPLAY_LABELS.get(parse_int_value(section), str(parse_int_value(section) or ""))
+
+
 def normalize_putaway_location(raw_location, fallback_payload=None) -> dict:
     source = raw_location if isinstance(raw_location, dict) else {}
     fallback = fallback_payload if isinstance(fallback_payload, dict) else {}
@@ -60,10 +77,11 @@ def putaway_location_label(location: dict | None) -> str:
     if zone == "MR":
         return f"MR · Между рядами · Ряд {row}" if row else "MR · Между рядами"
     if zone == "OS":
-        if row and section and tier and cell:
-            return f"OS · Ряд {row} · Секция {section} · Ярус {tier} · Ячейка {cell}"
-        if row:
-            return f"OS · Ряд {row}"
+        line_label = _os_line_display_label(section)
+        if line_label and row and tier and cell:
+            return f"OS · Линия {line_label} · Стеллаж {row} · Этаж {tier} · Ячейка {cell}"
+        if line_label and row:
+            return f"OS · Линия {line_label} · Стеллаж {row}"
         return "OS · Основной склад"
     return zone
 

@@ -8,11 +8,13 @@ from django.urls import reverse
 from audit.models import log_sku_change
 from employees.access import get_request_role, resolve_cabinet_url
 from labels.utils import load_available_printers_data, load_label_settings
+from sklad.models import WarehouseTemporaryNomenclature
 
 from .models import Agency, SKU
 
 
 VIEW_MODES = ("table", "cards")
+CATALOG_MODES = ("sku", "temporary")
 SORT_FIELDS = {
     "sku_code": "sku_code",
     "name": "name",
@@ -71,6 +73,24 @@ FILTER_FIELDS = {
     "source_reference": "source_reference",
 }
 DEFAULT_SORT = "sku_code"
+TEMP_SORT_FIELDS = {
+    "item_code": "item_code",
+    "name": "name",
+    "agency": "agency__agn_name",
+    "size": "size",
+    "barcode": "barcode",
+    "normalized_sku_ref": "normalized_sku_ref__sku_code",
+    "created_at": "created_at",
+    "updated_at": "updated_at",
+}
+DEFAULT_TEMP_SORT = "updated_at"
+
+
+def get_catalog_mode(request) -> str:
+    catalog_mode = (request.GET.get("catalog") or "").strip().lower()
+    if catalog_mode not in CATALOG_MODES:
+        return "sku"
+    return catalog_mode
 
 
 def normalize_size(value):
@@ -159,10 +179,33 @@ def build_sku_list_queryset(request, *, base_qs):
     ).prefetch_related("barcodes", "photos", "marketplace_bindings")
 
 
+def build_temporary_nomenclature_queryset(request, *, base_qs):
+    qs = base_qs.filter(normalized_at__isnull=True)
+    search = (request.GET.get("q") or "").strip()
+    if search:
+        qs = qs.filter(
+            models.Q(item_code__icontains=search)
+            | models.Q(name__icontains=search)
+            | models.Q(size__icontains=search)
+            | models.Q(barcode__icontains=search)
+            | models.Q(normalized_sku_ref__sku_code__icontains=search)
+        ).distinct()
+    agency_filter = request.GET.get("agency")
+    if agency_filter:
+        qs = qs.filter(agency_id=agency_filter)
+    sort_key = request.GET.get("sort", DEFAULT_TEMP_SORT)
+    direction = request.GET.get("dir", "desc")
+    sort_field = TEMP_SORT_FIELDS.get(sort_key, TEMP_SORT_FIELDS[DEFAULT_TEMP_SORT])
+    order_by = f"-{sort_field}" if direction == "desc" else sort_field
+    return qs.order_by(order_by).select_related("agency", "normalized_sku_ref")
+
+
 def build_sku_sort_url(request, field: str, direction: str) -> str:
     params = request.GET.copy()
     if "view" not in params:
         params["view"] = "table"
+    if get_catalog_mode(request) == "temporary":
+        params["catalog"] = "temporary"
     params["sort"] = field
     params["dir"] = direction
     if request.GET.get("filter_field"):
@@ -173,13 +216,17 @@ def build_sku_sort_url(request, field: str, direction: str) -> str:
 
 
 def build_sku_list_context(request, *, items) -> dict:
+    catalog_mode = get_catalog_mode(request)
+    is_temporary_catalog = catalog_mode == "temporary"
     view = request.GET.get("view", "table")
     if view not in VIEW_MODES:
         view = "table"
-    current_sort = request.GET.get("sort", DEFAULT_SORT)
+    sort_fields = TEMP_SORT_FIELDS if is_temporary_catalog else SORT_FIELDS
+    default_sort = DEFAULT_TEMP_SORT if is_temporary_catalog else DEFAULT_SORT
+    current_sort = request.GET.get("sort", default_sort)
     current_dir = "desc" if request.GET.get("dir") == "desc" else "asc"
     sort_info = {}
-    for field in SORT_FIELDS:
+    for field in sort_fields:
         is_current = current_sort == field
         next_dir = "desc" if is_current and current_dir == "asc" else "asc"
         sort_info[field] = {
@@ -189,21 +236,55 @@ def build_sku_list_context(request, *, items) -> dict:
             "next_dir": next_dir,
         }
     agency_filter = request.GET.get("agency") or ""
-    available_printers, available_printers_meta = load_available_printers_data()
+    available_printers, available_printers_meta = (
+        load_available_printers_data() if not is_temporary_catalog else ([], {})
+    )
     request_user = getattr(request, "user", None)
     role = get_request_role(request) if request_user is not None else None
-    for item in items:
-        build_size_ui(item)
+    if not is_temporary_catalog:
+        for item in items:
+            build_size_ui(item)
     return {
+        "catalog_mode": catalog_mode,
+        "is_temporary_catalog": is_temporary_catalog,
         "view_mode": view,
         "current_sort": current_sort,
         "current_dir": current_dir,
         "sort_info": sort_info,
         "filter_field": request.GET.get("filter_field") or "",
         "filter_value": request.GET.get("filter_value") or "",
-        "show_deleted": request.GET.get("deleted") == "1",
+        "show_deleted": (request.GET.get("deleted") == "1") and not is_temporary_catalog,
+        "show_deleted_toggle": not is_temporary_catalog,
         "agency_filter": agency_filter,
         "hide_client_column": bool(agency_filter),
+        "search_placeholder": (
+            "Поиск по временному коду, названию, размеру или штрихкоду"
+            if is_temporary_catalog
+            else "Поиск по артикулу, названию или штрихкоду"
+        ),
+        "hero_title": "Номенклатура",
+        "hero_subtitle": (
+            "Временная складская номенклатура для оптового товара до нормализации в полноценный SKU."
+            if is_temporary_catalog
+            else "Полный каталог SKU по всем клиентам. Таблица оставлена для быстрых операций и поиска, карточки для просмотра расширенных данных."
+        ),
+        "panel_title": (
+            "Временные позиции склада"
+            if is_temporary_catalog and view == "table"
+            else "Карточки временной номенклатуры"
+            if is_temporary_catalog
+            else "Табличный вид с быстрыми действиями"
+            if view == "table"
+            else "Карточный вид с расширенной информацией"
+        ),
+        "panel_count_label": "Всего временных позиций" if is_temporary_catalog else "Всего SKU",
+        "empty_eyebrow": "Временная номенклатура пока пуста" if is_temporary_catalog else "Номенклатура пока пуста",
+        "empty_title": "Временные позиции не найдены" if is_temporary_catalog else "Активные SKU не найдены",
+        "empty_text": (
+            "Сейчас во временной складской номенклатуре нет ненормализованных оптовых позиций под этот фильтр."
+            if is_temporary_catalog
+            else "Сейчас страница пустая не из-за сломанной верстки, а потому что в базе нет активных записей номенклатуры под этот экран. Можно создать SKU вручную или загрузить/синхронизировать каталог, после чего записи сразу появятся здесь."
+        ),
         "agency_options": Agency.objects.filter(archived=False)
         .only("id", "agn_name", "fio_agn")
         .order_by("agn_name", "fio_agn", "id"),
@@ -214,10 +295,43 @@ def build_sku_list_context(request, *, items) -> dict:
     }
 
 
-def suggest_sku_payload(query: str) -> dict:
+def suggest_sku_payload(query: str, *, catalog_mode: str = "sku") -> dict:
     query = (query or "").strip()
     if len(query) < 2:
         return {"items": []}
+    if catalog_mode == "temporary":
+        qs = (
+            WarehouseTemporaryNomenclature.objects.filter(
+                normalized_at__isnull=True,
+            )
+            .filter(
+                models.Q(item_code__icontains=query)
+                | models.Q(name__icontains=query)
+                | models.Q(size__icontains=query)
+                | models.Q(barcode__icontains=query)
+            )
+            .select_related("agency")
+            .order_by("item_code", "name")[:10]
+        )
+        return {
+            "items": [
+                {
+                    "value": item.item_code or item.name,
+                    "label": " · ".join(
+                        [
+                            part
+                            for part in [
+                                item.item_code or "",
+                                item.name or "",
+                                item.size or "",
+                            ]
+                            if part
+                        ]
+                    ),
+                }
+                for item in qs
+            ]
+        }
     qs = (
         SKU.objects.filter(
             models.Q(sku_code__icontains=query)

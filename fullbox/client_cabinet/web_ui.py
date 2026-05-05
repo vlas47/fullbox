@@ -19,7 +19,8 @@ from employees.access import get_request_role, is_staff_role, resolve_cabinet_ur
 from fullbox.order_numbers import format_order_number
 from marking.models import MarkingCode
 from processing_app.views import _import_marking_codes
-from sklad.models import InventoryState, StockPalletState
+from sklad.models import WarehouseStockSnapshot
+from sklad.services.warehouse_transitions import WarehouseStateCode
 from sku.models import Agency, SKU, SKUBarcode
 from sku.views import SKUCreateView, SKUUpdateView, SKUDuplicateView
 from todo.models import Task
@@ -444,161 +445,43 @@ def _shipped_total_for_agency(agency: Agency) -> tuple[int, int]:
 
 
 def _stock_total_for_agency(agency: Agency) -> int:
-    stock_qs = StockPalletState.objects.filter(
-        agency=agency,
-        state=StockPalletState.STATE_WAREHOUSE,
+    stock_total = (
+        WarehouseStockSnapshot.objects.filter(
+            agency=agency,
+            is_archived=False,
+        )
+        .exclude(warehouse_state_code=WarehouseStateCode.PROCESSING_IN_PROGRESS.value)
+        .aggregate(total=Sum("qty"))
+        .get("total")
+        or 0
     )
-    stock_total = stock_qs.aggregate(total=Sum("qty")).get("total") or 0
     return int(stock_total)
 
 
-def _inventory_check_key(sku: str | None, size: str | None, goods_type: str | None) -> tuple[str, str, str]:
-    return (
-        str(sku or "").strip().lower(),
-        str(size or "").strip().lower(),
-        str(goods_type or "").strip().lower(),
-    )
-
-
-def _processing_location_zone(raw_location, fallback_payload=None) -> str:
-    location = raw_location if isinstance(raw_location, dict) else {}
-    fallback = fallback_payload if isinstance(fallback_payload, dict) else {}
-    zone = str(location.get("zone") or fallback.get("zone") or "").strip().upper()
-    return zone if zone in {"PR", "OTG", "MR", "OS", "OBR"} else ""
-
-
-def _processing_current_obr_qty_from_placement_payload(payload: dict | None) -> int:
-    if not isinstance(payload, dict):
-        return 0
-    placement_boxes = payload.get("act_boxes") or []
-    placement_pallets = payload.get("act_pallets") or []
-    if not isinstance(placement_boxes, list):
-        placement_boxes = []
-    if not isinstance(placement_pallets, list):
-        placement_pallets = []
-
-    box_items_by_code: dict[str, list[dict]] = {}
-    counted_box_codes: set[str] = set()
-    total_qty = 0
-
-    for box in placement_boxes:
-        if not isinstance(box, dict):
-            continue
-        code = str(box.get("code") or "").strip()
-        if not code:
-            continue
-        items = box.get("items") or []
-        box_items_by_code[code] = items if isinstance(items, list) else []
-
-    for pallet in placement_pallets:
-        if not isinstance(pallet, dict):
-            continue
-        if _processing_location_zone(pallet.get("location"), pallet) != "OBR":
-            continue
-        direct_items = pallet.get("items") or []
-        if isinstance(direct_items, list) and direct_items:
-            source_items = direct_items
-        else:
-            source_items = []
-            for raw_box_code in pallet.get("boxes") or []:
-                box_code = str(raw_box_code or "").strip()
-                if not box_code:
-                    continue
-                counted_box_codes.add(box_code)
-                source_items.extend(box_items_by_code.get(box_code, []))
-        for item in source_items:
-            if not isinstance(item, dict):
-                continue
-            total_qty += int(item.get("qty") or item.get("actual_qty") or 0)
-
-    for box in placement_boxes:
-        if not isinstance(box, dict):
-            continue
-        box_code = str(box.get("code") or "").strip()
-        if not box_code or box_code in counted_box_codes:
-            continue
-        if _processing_location_zone(box.get("location"), box) != "OBR":
-            continue
-        for item in box_items_by_code.get(box_code, []):
-            if not isinstance(item, dict):
-                continue
-            total_qty += int(item.get("qty") or item.get("actual_qty") or 0)
-
-    return int(total_qty)
-
-
-def _processing_order_is_active(payload: dict | None) -> bool:
-    if not isinstance(payload, dict):
-        return False
-    status_value = str(payload.get("status") or payload.get("submit_action") or "").strip().lower()
-    status_label = str(payload.get("status_label") or "").strip().lower()
-    if status_value in {"done", "completed", "canceled", "cancelled"}:
-        return False
-    if any(token in status_label for token in ("выполн", "заверш", "закрыт", "отмен")):
-        return False
-    return True
-
-
 def _processing_in_progress_total_for_agency(agency: Agency) -> int:
-    entries = (
-        OrderAuditEntry.objects.filter(order_type="processing", agency=agency)
-        .order_by("order_id", "created_at")
-    )
-    latest_by_order: dict[str, OrderAuditEntry] = {}
-    latest_placement_by_order: dict[str, OrderAuditEntry] = {}
-    for entry in entries:
-        order_id = str(entry.order_id or "").strip()
-        if order_id:
-            latest_by_order[order_id] = entry
-            payload = dict(entry.payload or {}) if isinstance(entry.payload, dict) else {}
-            if payload.get("act") == "placement":
-                latest_placement_by_order[order_id] = entry
-
-    remaining_rows = (
-        InventoryState.objects.filter(
+    total = (
+        WarehouseStockSnapshot.objects.filter(
             agency=agency,
-            order_type="processing",
-            state=InventoryState.STATE_PROCESSING,
+            warehouse_state_code=WarehouseStateCode.PROCESSING_IN_PROGRESS.value,
+            is_archived=False,
         )
-        .values("order_id", "sku", "size", "goods_type")
-        .annotate(total=Sum("qty"))
+        .aggregate(total=Sum("processing_reserved_qty"))
+        .get("total")
+        or 0
     )
-    remaining_by_order_key: dict[tuple[str, tuple[str, str, str]], int] = {}
-    for row in remaining_rows:
-        order_id = str(row.get("order_id") or "").strip()
-        if not order_id:
-            continue
-        key = _inventory_check_key(row.get("sku"), row.get("size"), row.get("goods_type"))
-        remaining_by_order_key[(order_id, key)] = int(row.get("total") or 0)
-
-    total_in_progress = 0
-    for order_id, entry in latest_by_order.items():
-        payload = dict(entry.payload or {}) if isinstance(entry.payload, dict) else {}
-        if not _processing_order_is_active(payload):
-            continue
-        placement_entry = latest_placement_by_order.get(order_id)
-        placement_payload = dict(placement_entry.payload or {}) if placement_entry and isinstance(placement_entry.payload, dict) else {}
-        placement_state = str(placement_payload.get("act_state") or "").strip().lower()
-        if placement_state == "closed" and (
-            isinstance(placement_payload.get("act_boxes"), list)
-            or isinstance(placement_payload.get("act_pallets"), list)
-        ):
-            total_in_progress += _processing_current_obr_qty_from_placement_payload(placement_payload)
-            continue
-        planned_by_key: dict[tuple[str, str, str], int] = {}
-        for row in payload.get("stock_rows") or []:
-            if not isinstance(row, dict):
-                continue
-            sku = (row.get("article") or row.get("sku") or "").strip()
-            qty_value = int(row.get("qty") or 0)
-            if not sku or qty_value <= 0:
-                continue
-            key = _inventory_check_key(sku, row.get("size"), row.get("goods_type"))
-            planned_by_key[key] = planned_by_key.get(key, 0) + qty_value
-        for key, planned_qty in planned_by_key.items():
-            remaining_qty = int(remaining_by_order_key.get((order_id, key), 0))
-            total_in_progress += max(int(planned_qty) - remaining_qty, 0)
-    return int(total_in_progress)
+    if total:
+        return int(total)
+    fallback_total = (
+        WarehouseStockSnapshot.objects.filter(
+            agency=agency,
+            warehouse_state_code=WarehouseStateCode.PROCESSING_IN_PROGRESS.value,
+            is_archived=False,
+        )
+        .aggregate(total=Sum("qty"))
+        .get("total")
+        or 0
+    )
+    return int(fallback_total)
 
 
 def _inventory_check_for_agency(agency: Agency | None) -> dict | None:

@@ -6,6 +6,7 @@ from .models import Agency, SKU
 from .forms import SKUForm
 from audit.models import log_sku_change
 from .services import (
+    get_catalog_mode,
     DEFAULT_SORT,
     FILTER_FIELDS,
     SORT_FIELDS,
@@ -14,6 +15,7 @@ from .services import (
     build_sku_form_context,
     build_sku_list_context,
     build_sku_list_queryset,
+    build_temporary_nomenclature_queryset,
     build_sku_sort_url,
     clone_sku_to_admin,
     mark_sku_deleted,
@@ -32,6 +34,13 @@ class SKUListView(ListView):
     default_sort = DEFAULT_SORT
 
     def get_queryset(self):
+        if get_catalog_mode(self.request) == "temporary":
+            from sklad.models import WarehouseTemporaryNomenclature
+
+            return build_temporary_nomenclature_queryset(
+                self.request,
+                base_qs=WarehouseTemporaryNomenclature.objects.all(),
+            )
         return build_sku_list_queryset(self.request, base_qs=super().get_queryset())
 
     def build_sort_url(self, field: str, direction: str) -> str:
@@ -45,7 +54,12 @@ class SKUListView(ListView):
 
 def suggest_sku(request):
     """Возвращает подсказки для поля поиска SKU."""
-    return JsonResponse(suggest_sku_payload(request.GET.get("q")))
+    return JsonResponse(
+        suggest_sku_payload(
+            request.GET.get("q"),
+            catalog_mode=get_catalog_mode(request),
+        )
+    )
 
 
 def clone_sku(request, pk: int):

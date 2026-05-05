@@ -7,14 +7,13 @@ from django.db.models import Max, Q, Sum
 from django.http import HttpResponseForbidden
 from django.utils import timezone
 
-from audit.models import OrderAuditEntry
 from employees.access import get_request_role, is_staff_role
-from shipping.models import ShippingOrder, ShippingReserve
+from fullbox.order_numbers import format_order_number
 from sku.models import Agency, SKU
-from sklad.models import InventoryState, StockPalletState, WarehouseReserve, WarehouseStockSnapshot
+from sklad.models import WarehouseReserve, WarehouseStockSnapshot
 from sklad.services.stock_availability import StockAvailabilityService
 from sklad.services.warehouse_transitions import WarehouseStateCode
-from sklad.services.warehouse_stock_rows import legacy_stock_rows, snapshot_stock_rows
+from sklad.services.warehouse_stock_rows import snapshot_stock_rows
 
 _IP_PREFIX_RE = re.compile(r"\bиндивидуальный предприниматель\b", re.IGNORECASE)
 _JOURNAL_HIDDEN_WAREHOUSE_STATES = {
@@ -28,6 +27,48 @@ def _shorten_ip_name(name: str) -> str:
         return "-"
     normalized = _IP_PREFIX_RE.sub("ИП", name)
     return " ".join(normalized.split())
+
+
+def _location_zone_token(location: object | None) -> str:
+    text = str(location or "").strip()
+    if not text:
+        return ""
+    token = text.split("·", 1)[0].split("•", 1)[0].strip()
+    return token or text
+
+
+def _short_location_label(
+    *,
+    zone: object | None,
+    row: object | None = None,
+    section: object | None = None,
+    tier: object | None = None,
+    cell: object | None = None,
+    location: object | None = None,
+) -> str:
+    zone_code = str(zone or "").strip().upper() or _location_zone_token(location).upper() or "-"
+    row_no = _parse_qty_value(row) or 0
+    section_no = _parse_qty_value(section) or 0
+    tier_no = _parse_qty_value(tier) or 0
+    cell_no = _parse_qty_value(cell) or 0
+    location_text = str(location or "").strip()
+    if zone_code == "PR":
+        return "PR"
+    if zone_code == "OBR":
+        return "OBR"
+    if zone_code == "OTG":
+        return "OTG"
+    if zone_code == "MR":
+        return f"MR-{row_no}" if row_no else "MR"
+    if zone_code == "OS":
+        if "·" in location_text:
+            tail = location_text.split("·", 1)[1].strip()
+            if tail and "Ряд" not in tail:
+                return f"OS · {tail}"
+        if row_no and section_no and tier_no and cell_no:
+            return f"OS-{row_no}/{section_no}-{tier_no}-{cell_no}"
+        return "OS"
+    return zone_code or location_text or "-"
 
 
 def _client_agency_for_request(request):
@@ -111,11 +152,6 @@ def _processing_reserve_groups(agency: Agency | None) -> tuple[list[dict], dict[
             updated_at_max=Max("updated_at"),
         )
     )
-    warehouse_order_keys = {
-        (int(item.get("agency_id") or 0), str(item.get("context_id") or "").strip())
-        for item in warehouse_groups
-        if str(item.get("context_id") or "").strip()
-    }
     in_progress_by_order_key: dict[tuple[int, str, tuple[int, str, str, str]], int] = {}
     in_progress_snapshots = (
         WarehouseStockSnapshot.objects.filter(
@@ -174,85 +210,50 @@ def _processing_reserve_groups(agency: Agency | None) -> tuple[list[dict], dict[
         normalized_groups.append(normalized_item)
         totals[reserve_key] = totals.get(reserve_key, 0) + waiting_qty
 
-    qs = InventoryState.objects.filter(state=InventoryState.STATE_PROCESSING)
+    return normalized_groups, totals
+
+
+def _shipping_reserve_groups(agency: Agency | None) -> tuple[list[dict], dict[tuple[int, str, str, str], int]]:
+    qs = WarehouseReserve.objects.filter(reserve_type=WarehouseReserve.TYPE_SHIPPING).exclude(
+        status__in=[
+            WarehouseReserve.STATUS_RELEASED,
+            WarehouseReserve.STATUS_CANCELED,
+        ]
+    )
     if agency:
         qs = qs.filter(agency=agency)
     groups = list(
         qs
-        .values("agency_id", "order_id", "sku", "size", "goods_type")
-        .annotate(reserved_qty=Sum("qty"), updated_at_max=Max("updated_at"))
-    )
-    for item in groups:
-        order_key = (
-            int(item.get("agency_id") or 0),
-            str(item.get("order_id") or "").strip(),
+        .values("agency_id", "sku_code", "size", "goods_type")
+        .annotate(
+            reserved_qty=Sum("qty_reserved"),
+            satisfied_qty=Sum("qty_satisfied"),
+            updated_at_max=Max("updated_at"),
         )
-        if order_key in warehouse_order_keys:
-            continue
-        qty = int(item.get("reserved_qty") or 0)
+    )
+    totals: dict[tuple[int, str, str, str], int] = {}
+    normalized_groups: list[dict] = []
+    for item in groups:
+        qty = max(int(item.get("reserved_qty") or 0) - int(item.get("satisfied_qty") or 0), 0)
         if qty <= 0:
             continue
         normalized_item = {
             "agency_id": item.get("agency_id"),
-            "sku": item.get("sku"),
+            "sku_code": item.get("sku_code"),
             "size": item.get("size"),
             "goods_type": item.get("goods_type"),
             "reserved_qty": qty,
             "updated_at_max": item.get("updated_at_max"),
         }
         normalized_groups.append(normalized_item)
-        key = _reserve_key(
-            normalized_item.get("agency_id"),
-            normalized_item.get("sku"),
-            normalized_item.get("size"),
-            normalized_item.get("goods_type"),
-        )
-        totals[key] = totals.get(key, 0) + qty
-    return normalized_groups, totals
-
-
-def _shipping_reserve_groups(agency: Agency | None) -> tuple[list[dict], dict[tuple[int, str, str, str], int]]:
-    qs = ShippingReserve.objects.all()
-    if agency:
-        qs = qs.filter(agency=agency)
-    groups = list(
-        qs
-        .exclude(
-            order__status__in=[
-                ShippingOrder.STATUS_SHIPPED,
-                ShippingOrder.STATUS_PARTIAL,
-                ShippingOrder.STATUS_CANCELED,
-            ]
-        )
-        .values("agency_id", "sku_code", "size", "goods_type")
-        .annotate(reserved_qty=Sum("qty"), updated_at_max=Max("created_at"))
-    )
-    totals: dict[tuple[int, str, str, str], int] = {}
-    for item in groups:
-        qty = int(item.get("reserved_qty") or 0)
-        if qty <= 0:
-            continue
         key = _reserve_key(item.get("agency_id"), item.get("sku_code"), item.get("size"), item.get("goods_type"))
         totals[key] = totals.get(key, 0) + qty
-    return groups, totals
-
-
-def _processing_order_is_active(payload: dict | None) -> bool:
-    if not isinstance(payload, dict):
-        return False
-    status_value = str(payload.get("status") or payload.get("submit_action") or "").strip().lower()
-    status_label = str(payload.get("status_label") or "").strip().lower()
-    if status_value in {"done", "completed", "canceled", "cancelled"}:
-        return False
-    if any(token in status_label for token in ("выполн", "заверш", "закрыт", "отмен")):
-        return False
-    return True
+    return normalized_groups, totals
 
 
 def _processing_in_progress_groups(agency: Agency | None) -> tuple[list[dict], dict[tuple[int, str, str, str], int]]:
     grouped: dict[tuple[int, str, str, str], dict] = {}
     totals: dict[tuple[int, str, str, str], int] = {}
-    warehouse_covered_orders: set[tuple[int, str]] = set()
     warehouse_snapshots = (
         WarehouseStockSnapshot.objects.filter(
             warehouse_state_code=WarehouseStateCode.PROCESSING_IN_PROGRESS.value,
@@ -267,7 +268,6 @@ def _processing_in_progress_groups(agency: Agency | None) -> tuple[list[dict], d
         order_id = _processing_snapshot_order_id(snapshot)
         if not order_id:
             continue
-        warehouse_covered_orders.add((int(snapshot.agency_id or 0), order_id))
         qty_value = int(snapshot.processing_reserved_qty or snapshot.qty or 0)
         if qty_value <= 0:
             continue
@@ -292,82 +292,6 @@ def _processing_in_progress_groups(agency: Agency | None) -> tuple[list[dict], d
         row["in_progress_qty"] += qty_value
         if snapshot.updated_at and snapshot.updated_at > row["updated_at_max"]:
             row["updated_at_max"] = snapshot.updated_at
-
-    entries = OrderAuditEntry.objects.filter(order_type="processing").select_related("agency").order_by("order_id", "created_at")
-    if agency:
-        entries = entries.filter(agency=agency)
-
-    latest_by_order: dict[tuple[int, str], OrderAuditEntry] = {}
-    for entry in entries:
-        agency_id = int(entry.agency_id or 0)
-        order_id = str(entry.order_id or "").strip()
-        if not order_id:
-            continue
-        latest_by_order[(agency_id, order_id)] = entry
-
-    remaining_by_order_key: dict[tuple[int, str, tuple[int, str, str, str]], int] = {}
-    remaining_groups = (
-        InventoryState.objects.filter(state=InventoryState.STATE_PROCESSING)
-        .values("agency_id", "order_id", "sku", "size", "goods_type")
-        .annotate(remaining_qty=Sum("qty"))
-    )
-    if agency:
-        remaining_groups = remaining_groups.filter(agency=agency)
-    for item in remaining_groups:
-        reserve_key = _reserve_key(
-            item.get("agency_id"),
-            item.get("sku"),
-            item.get("size"),
-            item.get("goods_type"),
-        )
-        order_key = (
-            int(item.get("agency_id") or 0),
-            str(item.get("order_id") or "").strip(),
-            reserve_key,
-        )
-        remaining_by_order_key[order_key] = int(item.get("remaining_qty") or 0)
-
-    for (agency_id, order_id), latest in latest_by_order.items():
-        if (agency_id, order_id) in warehouse_covered_orders:
-            continue
-        payload = dict(latest.payload or {}) if isinstance(latest.payload, dict) else {}
-        if not _processing_order_is_active(payload):
-            continue
-        base_totals: dict[tuple[int, str, str, str], int] = {}
-        for row in payload.get("stock_rows") or []:
-            if not isinstance(row, dict):
-                continue
-            sku_value = (row.get("article") or row.get("sku") or "").strip()
-            qty_value = _parse_qty_value(row.get("qty")) or 0
-            if not sku_value or qty_value <= 0:
-                continue
-            key = _reserve_key(
-                agency_id,
-                sku_value,
-                (row.get("size") or "").strip(),
-                row.get("goods_type") or "",
-            )
-            base_totals[key] = base_totals.get(key, 0) + qty_value
-        for key, base_qty in base_totals.items():
-            remaining_qty = int(remaining_by_order_key.get((agency_id, order_id, key), 0))
-            in_progress_qty = max(int(base_qty or 0) - remaining_qty, 0)
-            if in_progress_qty <= 0:
-                continue
-            totals[key] = totals.get(key, 0) + in_progress_qty
-            row = grouped.get(key)
-            if row is None:
-                row = {
-                    "agency_id": agency_id,
-                    "sku": key[1],
-                    "size": key[2] or "-",
-                    "goods_type": key[3] or "-",
-                    "in_progress_qty": 0,
-                    "updated_at_max": latest.created_at,
-                }
-                grouped[key] = row
-            row["in_progress_qty"] += in_progress_qty
-            if latest.created_at and latest.created_at > row["updated_at_max"]:
-                row["updated_at_max"] = latest.created_at
     return list(grouped.values()), totals
 
 
@@ -411,6 +335,148 @@ def _apply_available_qty(
             remaining_shipping[key] = max(shipping_left - shipping_used, 0)
 
 
+def _journal_unique_values(rows: list[dict], key: str) -> list[str]:
+    values: list[str] = []
+    seen: set[str] = set()
+    for row in rows:
+        value = str(row.get(key) or "").strip()
+        if not value or value == "-":
+            continue
+        if value in seen:
+            continue
+        seen.add(value)
+        values.append(value)
+    return values
+
+
+def _build_inventory_journal_summary(rows: list[dict]) -> dict:
+    latest_activity = None
+    distinct_skus: set[tuple[str, str, str]] = set()
+    distinct_orders: set[str] = set()
+    distinct_pallets: set[str] = set()
+    distinct_boxes: set[str] = set()
+    distinct_locations: set[str] = set()
+    distinct_clients: set[str] = set()
+    distinct_zones: set[str] = set()
+    total_qty = 0
+    total_available_qty = 0
+    total_processing_reserved_qty = 0
+    total_processing_in_progress_qty = 0
+    total_shipping_reserved_qty = 0
+    for row in rows:
+        latest_value = row.get("created_at")
+        if latest_value and (latest_activity is None or latest_value > latest_activity):
+            latest_activity = latest_value
+        distinct_skus.add(
+            (
+                str(row.get("sku") or "").strip(),
+                str(row.get("size") or "").strip(),
+                str(row.get("goods_type") or "").strip(),
+            )
+        )
+        order_label = str(row.get("order_display") or "").strip() or format_order_number(
+            row.get("order_type"),
+            row.get("order_id"),
+        )
+        if order_label and order_label != "-":
+            distinct_orders.add(order_label)
+        pallet_code = str(row.get("pallet_code") or "").strip()
+        if pallet_code and pallet_code != "-":
+            distinct_pallets.add(pallet_code)
+        box_code = str(row.get("box_code") or "").strip()
+        if box_code and box_code != "-":
+            distinct_boxes.add(box_code)
+        location_value = str(row.get("location") or "").strip()
+        if location_value and location_value != "-":
+            distinct_locations.add(location_value)
+        client_value = str(row.get("client_label") or "").strip()
+        if client_value and client_value != "-":
+            distinct_clients.add(client_value)
+        zone_value = str(row.get("zone") or "").strip()
+        if zone_value and zone_value != "-":
+            distinct_zones.add(zone_value)
+        total_qty += int(row.get("qty") or 0)
+        total_available_qty += int(row.get("available_qty") or 0)
+        total_processing_reserved_qty += int(row.get("processing_reserved_qty") or 0)
+        total_processing_in_progress_qty += int(row.get("processing_in_progress_qty") or 0)
+        total_shipping_reserved_qty += int(row.get("shipping_reserved_qty") or 0)
+    return {
+        "row_count": len(rows),
+        "sku_count": len([item for item in distinct_skus if any(item)]),
+        "order_count": len(distinct_orders),
+        "pallet_count": len(distinct_pallets),
+        "box_count": len(distinct_boxes),
+        "location_count": len(distinct_locations),
+        "client_count": len(distinct_clients),
+        "zone_count": len(distinct_zones),
+        "total_qty": total_qty,
+        "total_available_qty": total_available_qty,
+        "total_processing_reserved_qty": total_processing_reserved_qty,
+        "total_processing_in_progress_qty": total_processing_in_progress_qty,
+        "total_shipping_reserved_qty": total_shipping_reserved_qty,
+        "latest_activity": latest_activity,
+    }
+
+
+def _build_inventory_journal_focus(rows: list[dict], q: str) -> dict | None:
+    q_value = str(q or "").strip()
+    if not q_value or not rows:
+        return None
+    q_lower = q_value.lower()
+    pallets = _journal_unique_values(rows, "pallet_code")
+    boxes = _journal_unique_values(rows, "box_code")
+    locations = _journal_unique_values(rows, "location")
+    clients = _journal_unique_values(rows, "client_label")
+    zones = _journal_unique_values(rows, "zone")
+    orders = [
+        str(row.get("order_display") or "").strip()
+        or format_order_number(row.get("order_type"), row.get("order_id"))
+        for row in rows
+        if str(row.get("order_id") or "").strip() not in {"", "-"}
+    ]
+    distinct_orders = list(dict.fromkeys(orders))
+    sku_labels = list(
+        dict.fromkeys(
+            " · ".join(
+                part
+                for part in [
+                    str(row.get("sku") or "").strip(),
+                    str(row.get("name") or "").strip(),
+                    str(row.get("size") or "").strip(),
+                ]
+                if part and part != "-"
+            )
+            for row in rows
+        )
+    )
+    label = "Результат поиска"
+    value = q_value
+    if len(pallets) == 1 and q_lower in pallets[0].lower():
+        label = "Паллета"
+        value = pallets[0]
+    elif len(boxes) == 1 and q_lower in boxes[0].lower():
+        label = "Короб"
+        value = boxes[0]
+    elif len(locations) == 1 and q_lower in locations[0].lower():
+        label = "Место"
+        value = locations[0]
+    elif len(sku_labels) == 1 and q_lower in sku_labels[0].lower():
+        label = "SKU"
+        value = sku_labels[0]
+    summary = _build_inventory_journal_summary(rows)
+    return {
+        "label": label,
+        "value": value,
+        "query": q_value,
+        "client_label": clients[0] if len(clients) == 1 else "",
+        "zone_label": zones[0] if len(zones) == 1 else "",
+        "location_label": locations[0] if len(locations) == 1 else "",
+        "order_label": distinct_orders[0] if len(distinct_orders) == 1 else "",
+        "sku_labels": sku_labels[:6],
+        "summary": summary,
+    }
+
+
 def build_inventory_journal_page(*, request):
     if not request.user.is_authenticated:
         return HttpResponseForbidden("Доступ запрещен")
@@ -435,30 +501,11 @@ def build_inventory_journal_page(*, request):
         "processing": "Обработка",
     }
     warehouse_rows = snapshot_stock_rows(agency=client_agency) if client_agency else snapshot_stock_rows()
-    use_warehouse_rows = bool(warehouse_rows)
-    if use_warehouse_rows:
-        storage_rows = [
-            item
-            for item in warehouse_rows
-            if str(item.get("warehouse_state_code") or "").strip() not in _JOURNAL_HIDDEN_WAREHOUSE_STATES
-        ]
-        use_materialized_availability = any(
-            int(item.get("processing_reserved_qty") or 0) > 0
-            or int(item.get("shipping_reserved_qty") or 0) > 0
-            or int(item.get("available_qty") or 0) > 0
-            for item in storage_rows
-        )
-    else:
-        qs = StockPalletState.objects.filter(state=StockPalletState.STATE_WAREHOUSE).select_related("agency")
-        if client_agency:
-            qs = qs.filter(agency=client_agency)
-        storage_rows = legacy_stock_rows(qs)
-        use_materialized_availability = any(
-            int(item.get("processing_reserved_qty") or 0) > 0
-            or int(item.get("shipping_reserved_qty") or 0) > 0
-            or int(item.get("available_qty") or 0) > 0
-            for item in storage_rows
-        )
+    storage_rows = [
+        item
+        for item in warehouse_rows
+        if str(item.get("warehouse_state_code") or "").strip() not in _JOURNAL_HIDDEN_WAREHOUSE_STATES
+    ]
     processing_reserve_groups, processing_reserve_totals = _processing_reserve_groups(client_agency)
     processing_in_progress_groups, processing_in_progress_totals = _processing_in_progress_groups(client_agency)
     shipping_reserve_groups, shipping_reserve_totals = _shipping_reserve_groups(client_agency)
@@ -483,12 +530,22 @@ def build_inventory_journal_page(*, request):
                 "size": (item.get("size") or "-").strip() or "-",
                 "goods_type": (item.get("goods_type") or "-").strip() or "-",
                 "qty": int(item.get("qty") or 0),
-                "processing_reserved_qty": int(item.get("processing_reserved_qty") or 0) if use_materialized_availability else 0,
+                "processing_reserved_qty": 0,
                 "processing_in_progress_qty": 0,
-                "shipping_reserved_qty": int(item.get("shipping_reserved_qty") or 0) if use_materialized_availability else 0,
-                "available_qty": int(item.get("available_qty") or 0) if use_materialized_availability else int(item.get("qty") or 0),
+                "shipping_reserved_qty": 0,
+                "available_qty": int(item.get("qty") or 0),
                 "box_code": (item.get("box_code") or "-").strip() or "-",
                 "pallet_code": (item.get("pallet_code") or "-").strip() or "-",
+                "row_no": int(item.get("row") or 0),
+                "section_no": int(item.get("section") or 0),
+                "tier_no": int(item.get("tier") or 0),
+                "cell_no": int(item.get("cell") or 0),
+                "zone": (
+                    item.get("zone")
+                    or item.get("zone_code")
+                    or _location_zone_token(item.get("location"))
+                    or "-"
+                ).strip() or "-",
                 "location": (item.get("location") or item.get("zone") or "-").strip() or "-",
             }
         )
@@ -515,17 +572,14 @@ def build_inventory_journal_page(*, request):
         for row in rows:
             key = _reserve_key(row.get("agency_id"), row.get("sku"), row.get("size"), row.get("goods_type"))
             row["processing_in_progress_qty"] = processing_in_progress_totals.get(key, 0)
-        if not use_materialized_availability:
-            for row in rows:
-                key = _reserve_key(row.get("agency_id"), row.get("sku"), row.get("size"), row.get("goods_type"))
-                row["processing_reserved_qty"] = processing_reserve_totals.get(key, 0)
-                row["shipping_reserved_qty"] = shipping_reserve_totals.get(key, 0)
-                row["available_qty"] = max(
-                    int(row.get("qty") or 0)
-                    - int(row.get("processing_reserved_qty") or 0)
-                    - int(row.get("shipping_reserved_qty") or 0),
-                    0,
-                )
+            row["processing_reserved_qty"] = processing_reserve_totals.get(key, 0)
+            row["shipping_reserved_qty"] = shipping_reserve_totals.get(key, 0)
+            row["available_qty"] = max(
+                int(row.get("qty") or 0)
+                - int(row.get("processing_reserved_qty") or 0)
+                - int(row.get("shipping_reserved_qty") or 0),
+                0,
+            )
         present_keys = {
             _reserve_key(row.get("agency_id"), row.get("sku"), row.get("size"), row.get("goods_type"))
             for row in rows
@@ -595,6 +649,11 @@ def build_inventory_journal_page(*, request):
                     "available_qty": 0,
                     "box_code": "-",
                     "pallet_code": "-",
+                    "row_no": 0,
+                    "section_no": 0,
+                    "tier_no": 0,
+                    "cell_no": 0,
+                    "zone": "-",
                     "location": "-",
                 }
                 reserve_only_rows[key] = row
@@ -631,8 +690,19 @@ def build_inventory_journal_page(*, request):
                 continue
             present_keys.add(key)
             rows.append(row)
-    elif not use_materialized_availability:
+    else:
         _apply_available_qty(rows, processing_reserve_totals, shipping_reserve_totals)
+    for row in rows:
+        row["order_display"] = format_order_number(row.get("order_type"), row.get("order_id"))
+        row["source_label"] = row["order_display"] if row["order_display"] != "-" else (row.get("order_type_code") or "-")
+        row["location_short"] = _short_location_label(
+            zone=row.get("zone"),
+            row=row.get("row_no"),
+            section=row.get("section_no"),
+            tier=row.get("tier_no"),
+            cell=row.get("cell_no"),
+            location=row.get("location"),
+        )
     q = (request.GET.get("q") or "").strip()
     date_from_raw = (request.GET.get("date_from") or "").strip()
     date_to_raw = (request.GET.get("date_to") or "").strip()
@@ -662,14 +732,14 @@ def build_inventory_journal_page(*, request):
                 if date_to and created_date > date_to:
                     continue
             if q_lower:
-                order_display = f"{row.get('order_type_code', '')}-{row.get('order_id', '')}"
                 search_blob = " ".join(
                     str(value)
                     for value in (
                         row.get("client_label"),
                         row.get("order_id"),
+                        row.get("order_display"),
+                        row.get("source_label"),
                         row.get("order_type_label"),
-                        order_display,
                         row.get("sku"),
                         row.get("name"),
                         row.get("size"),
@@ -681,6 +751,8 @@ def build_inventory_journal_page(*, request):
                         row.get("available_qty"),
                         row.get("box_code"),
                         row.get("pallet_code"),
+                        row.get("zone"),
+                        row.get("location_short"),
                         row.get("location"),
                     )
                     if value not in (None, "")
@@ -690,6 +762,8 @@ def build_inventory_journal_page(*, request):
             filtered_rows.append(row)
         rows = filtered_rows
     rows.sort(key=lambda item: item["created_at"], reverse=True)
+    journal_summary = _build_inventory_journal_summary(rows)
+    journal_focus = _build_inventory_journal_focus(rows, q)
     role = get_request_role(request)
     if not staff_view:
         template_name = "client_cabinet/inventory_journal.html"
@@ -706,5 +780,7 @@ def build_inventory_journal_page(*, request):
             "q": q,
             "date_from": date_from_raw,
             "date_to": date_to_raw,
+            "journal_summary": journal_summary,
+            "journal_focus": journal_focus,
         },
     }

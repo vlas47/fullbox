@@ -1,6 +1,7 @@
 from django import template
 import re
 from datetime import datetime
+from urllib.parse import quote
 
 from django.db.models import Q
 from django.urls import reverse
@@ -8,8 +9,12 @@ from django.utils import timezone
 
 from employees.models import Employee
 from employees.access import get_employee_for_user
+from logistics.models import LogisticsTrip
+from shipping.models import ShippingOrder
+from shipping.selectors import shipping_ui_status_label
 
 from audit.models import OrderAuditEntry
+from sklad.services.warehouse_state import WarehouseGoodsStateResolver
 
 from ..models import Task
 
@@ -21,7 +26,43 @@ STATUS_ORDER = ["backlog", "in_progress", "blocked", "done"]
 STATUS_LABELS = dict(Task.STATUS_CHOICES)
 _RECEIVING_ROUTE_RE = re.compile(r"/orders/receiving/([^/]+)/")
 _PROCESSING_ROUTE_RE = re.compile(r"/orders/processing/([^/]+)/")
+_SHIPPING_ROUTE_RE = re.compile(r"/shipping/(\d+)/")
+_LOGISTICS_TRIP_ROUTE_RE = re.compile(r"/logistics/trips/(\d+)/")
 _IP_PREFIX_RE = re.compile(r"\bиндивидуальный предприниматель\b", re.IGNORECASE)
+FILTER_DEFS_BY_ROLE = {
+    "manager": [
+        ("all", "Все"),
+        ("receiving", "Приемка"),
+        ("shipping", "Отгрузки"),
+    ],
+    "storekeeper": [
+        ("all", "Все"),
+        ("receiving", "Приемка"),
+        ("shipping", "Отгрузки"),
+        ("logistics", "Рейсы"),
+    ],
+    "processing_head": [
+        ("all", "Все"),
+        ("processing", "Обработка"),
+    ],
+    "processing_worker": [
+        ("all", "Все"),
+        ("processing", "Обработка"),
+    ],
+    "head_manager": [
+        ("all", "Все"),
+        ("processing", "Обработка"),
+        ("shipping", "Отгрузки"),
+        ("logistics", "Рейсы"),
+    ],
+}
+DEFAULT_FILTER_DEFS = [
+    ("all", "Все"),
+    ("receiving", "Приемка"),
+    ("processing", "Обработка"),
+    ("shipping", "Отгрузки"),
+    ("logistics", "Рейсы"),
+]
 
 
 def _shorten_ip_name(name: str) -> str:
@@ -51,16 +92,24 @@ def _resolve_role(context, role):
     if context.get("role"):
         return context["role"]
     request = context.get("request")
-    if request and request.user.is_authenticated:
+    request_user = getattr(request, "user", None) if request else None
+    if request_user and request_user.is_authenticated:
         return request.user.username
     return None
+
+
+def _views():
+    from todo import views as todo_views
+
+    return todo_views
 
 
 def _resolve_attention_employee(context):
     request = context.get("request")
     if not request:
         return None
-    employee = get_employee_for_user(request.user)
+    request_user = getattr(request, "user", None)
+    employee = get_employee_for_user(request_user) if request_user else None
     if employee:
         return employee
     name = request.session.get("employee_name") if hasattr(request, "session") else None
@@ -94,6 +143,30 @@ def _extract_processing_order_id(route: str | None) -> str | None:
     return match.group(1)
 
 
+def _extract_shipping_order_pk(route: str | None) -> int | None:
+    if not route:
+        return None
+    match = _SHIPPING_ROUTE_RE.search(route)
+    if not match:
+        return None
+    try:
+        return int(match.group(1))
+    except (TypeError, ValueError):
+        return None
+
+
+def _extract_logistics_trip_pk(route: str | None) -> int | None:
+    if not route:
+        return None
+    match = _LOGISTICS_TRIP_ROUTE_RE.search(route)
+    if not match:
+        return None
+    try:
+        return int(match.group(1))
+    except (TypeError, ValueError):
+        return None
+
+
 def _is_receiving_sign_task(route: str | None) -> bool:
     return bool(route and "/orders/receiving/" in route and "/act/print" in route)
 
@@ -107,6 +180,18 @@ def _is_status_entry(entry) -> bool:
 
 def _status_label_from_entry(entry) -> str:
     payload = entry.payload or {}
+    act = (payload.get("act") or "").lower()
+    act_state = (payload.get("act_state") or "").lower()
+    if act == "placement":
+        if getattr(entry, "order_type", "") == "receiving":
+            return WarehouseGoodsStateResolver.resolve_for_receiving_order(
+                order_id=str(getattr(entry, "order_id", "") or ""),
+                agency=getattr(entry, "agency", None),
+                payload=payload,
+            ).label_for("default")
+        if act_state == "closed":
+            return "Товар принят и размещен на складе"
+        return "Размещение на складе"
     client_response = (payload.get("act_client_response") or "").lower()
     if client_response == "confirmed":
         return "Акт приемки подтвержден клиентом"
@@ -116,9 +201,18 @@ def _status_label_from_entry(entry) -> str:
         return "Акт отправлен клиенту" if not payload.get("act_viewed") else "Выполнена"
     if payload.get("act_storekeeper_signed") and not payload.get("act_manager_signed"):
         return "Принято складом, акт приемки отправлен менеджеру"
-    if payload.get("act") == "placement":
-        state = (payload.get("act_state") or "closed").lower()
-        return "Размещение на складе" if state == "open" else "Товар принят и размещен на складе"
+    if getattr(entry, "order_type", "") == "receiving":
+        return WarehouseGoodsStateResolver.resolve_for_receiving_order(
+            order_id=str(getattr(entry, "order_id", "") or ""),
+            agency=getattr(entry, "agency", None),
+            payload=payload,
+        ).label_for("default")
+    if getattr(entry, "order_type", "") == "processing":
+        return WarehouseGoodsStateResolver.resolve_for_processing_order(
+            order_id=str(getattr(entry, "order_id", "") or ""),
+            agency=getattr(entry, "agency", None),
+            payload=payload,
+        ).label_for("default")
     status_value = (payload.get("status") or payload.get("submit_action") or "").lower()
     status_label = (payload.get("status_label") or "").lower()
     if "взята в работу" in status_label:
@@ -131,12 +225,11 @@ def _status_label_from_entry(entry) -> str:
 
 
 def _processing_status_label_from_entry(entry) -> str:
-    payload = entry.payload or {}
-    status_label = (payload.get("status_label") or "").strip()
-    if status_label:
-        return status_label
-    status_value = (payload.get("status") or payload.get("submit_action") or "").strip()
-    return status_value or "-"
+    return WarehouseGoodsStateResolver.resolve_for_processing_order(
+        order_id=str(getattr(entry, "order_id", "") or ""),
+        agency=getattr(entry, "agency", None),
+        payload=entry.payload or {},
+    ).label_for("default")
 
 
 def _existing_receiving_order_ids(order_ids) -> set[str]:
@@ -155,13 +248,67 @@ def _existing_receiving_order_ids(order_ids) -> set[str]:
     )
 
 
+def _is_shipping_act_task(route: str | None) -> bool:
+    return bool(route and "/shipping/" in route and "/act/" in route)
+
+
+def _task_filter_type(task: Task) -> str:
+    route = getattr(task, "route", None)
+    if _extract_logistics_trip_pk(route) is not None:
+        return "logistics"
+    if _extract_shipping_order_pk(route) is not None:
+        return "shipping"
+    if _extract_processing_order_id(route):
+        return "processing"
+    if _extract_receiving_order_id(route):
+        return "receiving"
+    return "other"
+
+
+def _filter_defs_for_role(role_key: str | None) -> list[tuple[str, str]]:
+    return list(FILTER_DEFS_BY_ROLE.get(role_key, DEFAULT_FILTER_DEFS))
+
+
+def _panel_filter_state(request, role_key: str | None) -> tuple[str, str]:
+    selected_type = "all"
+    selected_client = ""
+    if not request:
+        return selected_type, selected_client
+    session = getattr(request, "session", None)
+    session_key = f"todo_panel_filters:{request.path}"
+    if request.GET.get("todo_filters_reset"):
+        if session is not None:
+            session.pop(session_key, None)
+        return selected_type, selected_client
+    if request.GET.get("todo_filters_applied"):
+        selected_type = str(request.GET.get("todo_filter_type") or "all").strip() or "all"
+        selected_client = str(request.GET.get("todo_filter_client") or "").strip()
+        if session is not None:
+            session[session_key] = {
+                "selected_type": selected_type,
+                "selected_client": selected_client,
+            }
+        return selected_type, selected_client
+    if session is not None:
+        saved = session.get(session_key) or {}
+        selected_type = str(saved.get("selected_type") or "all").strip() or "all"
+        selected_client = str(saved.get("selected_client") or "").strip()
+    return selected_type, selected_client
+
+
 @register.inclusion_tag("todo/_task_panel.html", takes_context=True)
 def task_panel(context, role=None, limit=6, show_meta=True, include_created_by=True):
     role_key = _resolve_role(context, role)
     request = context.get("request")
+    filter_defs = _filter_defs_for_role(role_key)
+    allowed_filter_values = {value for value, _label in filter_defs if value != "all"}
+    selected_type, selected_client = _panel_filter_state(request, role_key)
+    if selected_type != "all" and selected_type not in allowed_filter_values:
+        selected_type = "all"
     current_employee = None
-    if request and request.user and request.user.is_authenticated:
-        current_employee = get_employee_for_user(request.user)
+    request_user = getattr(request, "user", None) if request else None
+    if request_user and request_user.is_authenticated:
+        current_employee = get_employee_for_user(request_user)
     tasks_qs = Task.objects.select_related(
         "assigned_to",
         "created_by",
@@ -185,6 +332,8 @@ def task_panel(context, role=None, limit=6, show_meta=True, include_created_by=T
     tasks = list(tasks_qs)
     receiving_by_order = {}
     processing_by_order = {}
+    shipping_by_order = {}
+    logistics_by_trip = {}
     other_tasks = []
 
     def _is_processing_flow_task(task):
@@ -210,13 +359,36 @@ def task_panel(context, role=None, limit=6, show_meta=True, include_created_by=T
             return existing_task if not existing_flow else candidate_task
         return _prefer_open(existing_task, candidate_task)
 
+    def _prefer_receiving_task(existing_task, candidate_task):
+        if not existing_task:
+            return candidate_task
+        existing_sign = _is_receiving_sign_task(existing_task.route)
+        candidate_sign = _is_receiving_sign_task(candidate_task.route)
+        if existing_sign != candidate_sign:
+            if role_key == "manager":
+                return candidate_task if candidate_sign else existing_task
+            return existing_task if not existing_sign else candidate_task
+        return _prefer_open(existing_task, candidate_task)
+
+    def _prefer_shipping_task(existing_task, candidate_task):
+        if not existing_task:
+            return candidate_task
+        existing_act = _is_shipping_act_task(existing_task.route)
+        candidate_act = _is_shipping_act_task(candidate_task.route)
+        if existing_act != candidate_act and role_key in {"manager", "head_manager"}:
+            if candidate_act and candidate_task.status != "done":
+                return candidate_task
+            if existing_act and existing_task.status != "done":
+                return existing_task
+        return _prefer_open(existing_task, candidate_task)
+
     if role_key == "processing_worker":
         combined_tasks = list(tasks)
     else:
         for task in tasks:
             order_id = _extract_receiving_order_id(task.route)
-            if order_id and not _is_receiving_sign_task(task.route):
-                receiving_by_order[order_id] = _prefer_open(
+            if order_id:
+                receiving_by_order[order_id] = _prefer_receiving_task(
                     receiving_by_order.get(order_id),
                     task,
                 )
@@ -228,9 +400,27 @@ def task_panel(context, role=None, limit=6, show_meta=True, include_created_by=T
                     task,
                 )
                 continue
+            shipping_pk = _extract_shipping_order_pk(task.route)
+            if shipping_pk is not None:
+                shipping_by_order[shipping_pk] = _prefer_shipping_task(
+                    shipping_by_order.get(shipping_pk),
+                    task,
+                )
+                continue
+            trip_pk = _extract_logistics_trip_pk(task.route)
+            if trip_pk is not None:
+                logistics_by_trip[trip_pk] = _prefer_open(
+                    logistics_by_trip.get(trip_pk),
+                    task,
+                )
+                continue
             other_tasks.append(task)
         combined_tasks = (
-            other_tasks + list(receiving_by_order.values()) + list(processing_by_order.values())
+            other_tasks
+            + list(receiving_by_order.values())
+            + list(processing_by_order.values())
+            + list(shipping_by_order.values())
+            + list(logistics_by_trip.values())
         )
 
     receiving_order_ids = {
@@ -279,7 +469,7 @@ def task_panel(context, role=None, limit=6, show_meta=True, include_created_by=T
             status_label = (status_by_order.get(order_id) or "").lower()
             if "взята в работу" in status_label and task.status == "done":
                 task.status = "in_progress"
-            if "взята в работу" in status_label:
+            if "взята в работу" in status_label or "размещение завершено" in status_label:
                 if role_key == "processing_worker":
                     task.route = f"/orders/processing/{order_id}/flow/"
                 else:
@@ -289,33 +479,9 @@ def task_panel(context, role=None, limit=6, show_meta=True, include_created_by=T
     open_tasks = [task for task in combined_tasks if task.status != "done"]
     open_routes = {task.route for task in open_tasks if task.route}
     done_tasks = [task for task in done_tasks if not task.route or task.route not in open_routes]
+    combined_tasks = open_tasks + done_tasks
 
-    def due_date_only(task):
-        return task.due_date.date() if task.due_date else None
-
-    status_map = {
-        "backlog": [task for task in open_tasks if due_date_only(task) and due_date_only(task) < today],
-        "in_progress": [task for task in open_tasks if due_date_only(task) == today],
-        "blocked": [task for task in open_tasks if due_date_only(task) and due_date_only(task) > today],
-        "done": done_tasks,
-    }
-    totals = {status: len(status_map[status]) for status in status_map}
-    columns = []
-    for status in STATUS_ORDER:
-        status_tasks = sorted(
-            status_map[status],
-            key=lambda task: (task.updated_at, task.created_at),
-            reverse=True,
-        )[:limit_value]
-        columns.append(
-            {
-                "status": status,
-                "label": STATUS_LABELS.get(status, status),
-                "count": totals.get(status, 0),
-                "tasks": status_tasks,
-            }
-        )
-    tasks = [task for column in columns for task in column["tasks"]]
+    tasks = list(combined_tasks)
     receiving_order_ids = {}
     processing_order_ids = {}
     for task in tasks:
@@ -402,17 +568,60 @@ def task_panel(context, role=None, limit=6, show_meta=True, include_created_by=T
             labels = processing_packers_by_order.setdefault(pack_order_id, [])
             if label not in labels:
                 labels.append(label)
+    shipping_order_pks = {
+        shipping_pk
+        for shipping_pk in (
+            _extract_shipping_order_pk(task.route)
+            for task in tasks
+        )
+        if shipping_pk is not None
+    }
+    shipping_orders_by_pk = {
+        order.pk: order
+        for order in ShippingOrder.objects.select_related("agency").filter(pk__in=shipping_order_pks)
+    } if shipping_order_pks else {}
+    shipping_status_by_pk = {
+        order_pk: shipping_ui_status_label(order)
+        for order_pk, order in shipping_orders_by_pk.items()
+    }
+    shipping_client_by_pk = {}
+    for order_pk, order in shipping_orders_by_pk.items():
+        if order.agency:
+            name = order.agency.agn_name or order.agency.fio_agn or str(order.agency)
+            shipping_client_by_pk[order_pk] = _shorten_ip_name(name)
+        else:
+            shipping_client_by_pk[order_pk] = "-"
+    logistics_trip_pks = {
+        trip_pk
+        for trip_pk in (
+            _extract_logistics_trip_pk(task.route)
+            for task in tasks
+        )
+        if trip_pk is not None
+    }
+    logistics_status_by_pk = {}
+    if logistics_trip_pks:
+        trips = LogisticsTrip.objects.filter(pk__in=logistics_trip_pks)
+        for trip in trips:
+            logistics_status_by_pk[trip.pk] = _views()._trip_status_label(trip)
     for task in tasks:
+        task.status_meta_label = "Статус заявки"
+        task.filter_type = _task_filter_type(task)
+        task.order_client_id = None
         order_id = _extract_receiving_order_id(task.route)
         if order_id:
             task.order_status_label = receiving_status_by_order.get(order_id)
             task.order_client_label = receiving_client_by_order.get(order_id)
+            entry = (
+                OrderAuditEntry.objects.filter(order_type="receiving", order_id=order_id)
+                .select_related("agency")
+                .order_by("-created_at")
+                .first()
+            )
+            task.order_client_id = int(entry.agency_id or 0) if entry and entry.agency_id else None
             task.executor_label = task.assigned_to.full_name if task.assigned_to else None
             task.panel_url = task.route
-            if task.route and "/act/print/" in task.route:
-                task.panel_title = task.title
-            else:
-                task.panel_title = task.display_title
+            task.panel_title = task.display_title()
             if role_key == "processing_worker":
                 task.worker_title = task.title
             continue
@@ -420,6 +629,13 @@ def task_panel(context, role=None, limit=6, show_meta=True, include_created_by=T
         if order_id:
             task.order_status_label = processing_status_by_order.get(order_id)
             task.order_client_label = processing_client_by_order.get(order_id)
+            entry = (
+                OrderAuditEntry.objects.filter(order_type="processing", order_id=order_id)
+                .select_related("agency")
+                .order_by("-created_at")
+                .first()
+            )
+            task.order_client_id = int(entry.agency_id or 0) if entry and entry.agency_id else None
             packers = processing_packers_by_order.get(order_id) or []
             task.processing_packers_label = ", ".join(packers) if packers else None
             if role_key == "processing_head" and processing_head_employee:
@@ -435,21 +651,119 @@ def task_panel(context, role=None, limit=6, show_meta=True, include_created_by=T
             if role_key == "processing_worker" and task.worker_title:
                 task.panel_title = task.worker_title
             else:
-                task.panel_title = task.display_title
+                task.panel_title = task.display_title()
+            continue
+        shipping_pk = _extract_shipping_order_pk(task.route)
+        if shipping_pk is not None:
+            task.order_status_label = shipping_status_by_pk.get(shipping_pk)
+            task.order_client_label = shipping_client_by_pk.get(shipping_pk)
+            shipping_order = shipping_orders_by_pk.get(shipping_pk)
+            task.order_client_id = int(shipping_order.agency_id or 0) if shipping_order and shipping_order.agency_id else None
+            task.executor_label = task.assigned_to.full_name if task.assigned_to else None
+            task.panel_url = task.route
+            task.panel_title = task.display_title()
+            continue
+        trip_pk = _extract_logistics_trip_pk(task.route)
+        if trip_pk is not None:
+            task.order_status_label = logistics_status_by_pk.get(trip_pk)
+            task.order_client_label = None
+            task.executor_label = task.assigned_to.full_name if task.assigned_to else None
+            task.panel_url = task.route
+            task.panel_title = task.display_title()
+            task.status_meta_label = "Статус рейса"
             continue
         task.order_status_label = None
         task.order_client_label = None
         task.executor_label = task.assigned_to.full_name if task.assigned_to else None
         task.panel_url = reverse("todo:detail", args=[task.id])
-        task.panel_title = task.display_title
+        task.panel_title = task.display_title()
         if role_key == "processing_worker":
             task.worker_title = task.title
+
+    visible_tasks = [
+        task
+        for task in tasks
+        if task.filter_type == "other" or task.filter_type in allowed_filter_values
+    ]
+
+    client_options_map: dict[int, str] = {}
+    for task in visible_tasks:
+        client_id = getattr(task, "order_client_id", None)
+        client_label = getattr(task, "order_client_label", None)
+        if client_id and client_label:
+            client_options_map[int(client_id)] = client_label
+    client_options = [
+        {
+            "id": client_id,
+            "label": label,
+            "selected": str(client_id) == selected_client,
+        }
+        for client_id, label in sorted(client_options_map.items(), key=lambda item: item[1].lower())
+    ]
+
+    filter_pool = list(visible_tasks)
+    if selected_client:
+        filter_pool = [
+            task
+            for task in filter_pool
+            if str(getattr(task, "order_client_id", "") or "") == selected_client
+        ]
+
+    open_filter_pool = [task for task in filter_pool if task.status != "done"]
+    filter_counts = {value: 0 for value, _label in filter_defs if value != "all"}
+    for task in open_filter_pool:
+        if task.filter_type in filter_counts:
+            filter_counts[task.filter_type] += 1
+
+    filtered_tasks = list(filter_pool)
+    if selected_type != "all":
+        filtered_tasks = [
+            task
+            for task in filtered_tasks
+            if task.filter_type == selected_type
+        ]
+
+    open_tasks = [task for task in filtered_tasks if task.status != "done"]
+    done_tasks = [task for task in filtered_tasks if task.status == "done"]
+    open_routes = {task.route for task in open_tasks if task.route}
+    done_tasks = [task for task in done_tasks if not task.route or task.route not in open_routes]
+
+    def due_date_only(task):
+        return task.due_date.date() if task.due_date else None
+
+    status_map = {
+        "backlog": [task for task in open_tasks if due_date_only(task) and due_date_only(task) < today],
+        "in_progress": [task for task in open_tasks if due_date_only(task) == today],
+        "blocked": [task for task in open_tasks if due_date_only(task) and due_date_only(task) > today],
+        "done": done_tasks,
+    }
+    totals = {status: len(status_map[status]) for status in status_map}
+    columns = []
+    for status in STATUS_ORDER:
+        status_tasks = sorted(
+            status_map[status],
+            key=lambda task: (task.updated_at, task.created_at),
+            reverse=True,
+        )[:limit_value]
+        columns.append(
+            {
+                "status": status,
+                "label": STATUS_LABELS.get(status, status),
+                "count": totals.get(status, 0),
+                "tasks": status_tasks,
+            }
+        )
     role_label = None
     if role_key == ALL_ROLES_KEY:
         role_label = "Все роли"
     elif role_key:
         role_label = ROLE_LABELS.get(role_key)
     attention_employee = _resolve_attention_employee(context)
+    create_url = reverse("todo:create")
+    if request:
+        current_path = request.get_full_path()
+        if current_path:
+            create_url = f"{create_url}?next={quote(current_path, safe='/')}"
     return {
         "task_panel_columns": columns,
         "task_panel_stats": [
@@ -465,4 +779,18 @@ def task_panel(context, role=None, limit=6, show_meta=True, include_created_by=T
         "task_panel_role_label": role_label,
         "task_panel_show_meta": show_meta,
         "task_panel_attention_employee_id": attention_employee.id if attention_employee else None,
+        "task_panel_create_url": create_url,
+        "task_panel_list_url": reverse("todo:list"),
+        "task_panel_filter_tabs": [
+            {
+                "value": value,
+                "label": label,
+                "count": len(open_filter_pool) if value == "all" else int(filter_counts.get(value, 0)),
+                "active": selected_type == value,
+            }
+            for value, label in filter_defs
+        ],
+        "task_panel_active_filter_type": selected_type,
+        "task_panel_client_options": client_options,
+        "task_panel_selected_client": selected_client,
     }
