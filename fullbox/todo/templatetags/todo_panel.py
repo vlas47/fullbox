@@ -33,11 +33,13 @@ FILTER_DEFS_BY_ROLE = {
     "manager": [
         ("all", "Все"),
         ("receiving", "Приемка"),
+        ("processing", "Обработка"),
         ("shipping", "Отгрузки"),
     ],
     "storekeeper": [
         ("all", "Все"),
         ("receiving", "Приемка"),
+        ("processing", "Обработка"),
         ("shipping", "Отгрузки"),
         ("logistics", "Рейсы"),
     ],

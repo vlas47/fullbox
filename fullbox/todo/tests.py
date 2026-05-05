@@ -462,7 +462,63 @@ class TodoDisplayTitleTests(TestCase):
         self.assertIn("Заявка на отгрузку", html)
         self.assertNotIn("Заявка на приемку №11_PR", html)
         self.assertNotIn("Заявка на обработку №22_OBR", html)
-        self.assertNotIn('value="processing"', html)
+        self.assertRegex(html, r'(?s)value="processing".*?task-filter-tab-count">\((1)\)</span>')
+
+    def test_manager_task_panel_includes_processing_tasks_and_filter(self):
+        agency = Agency.objects.create(agn_name="Клиент обработки менеджера")
+        manager = Employee.objects.create(full_name="Менеджеров Сергей", role="manager")
+        shipping_order = ShippingOrder.objects.create(number="SO-000078", agency=agency)
+        OrderAuditEntry.objects.create(
+            order_id="12",
+            order_type="receiving",
+            action="status",
+            agency=agency,
+            payload={"status": "warehouse", "items": [{"sku_code": "SKU-12", "qty": "10"}]},
+        )
+        Task.objects.create(
+            title="Приемка",
+            route="/orders/receiving/12/",
+            status="in_progress",
+            assigned_to=manager,
+        )
+        OrderAuditEntry.objects.create(
+            order_id="23",
+            order_type="processing",
+            action="status",
+            agency=agency,
+            payload={"status": "sent_unconfirmed", "status_label": "Ждет подтверждения"},
+        )
+        Task.objects.create(
+            title="Обработка",
+            route="/orders/processing/23/",
+            status="in_progress",
+            assigned_to=manager,
+        )
+        Task.objects.create(
+            title="Отгрузка",
+            route=f"/shipping/{shipping_order.pk}/",
+            status="in_progress",
+            assigned_to=manager,
+        )
+
+        html = Template(
+            "{% load todo_panel %}{% task_panel role='manager' %}"
+        ).render(Context({}))
+
+        self.assertIn("Заявка на обработку №23_OBR", html)
+        self.assertRegex(html, r'(?s)value="processing".*?task-filter-tab-count">\((1)\)</span>')
+
+        request = self.factory.get(
+            "/team-manager/",
+            {"todo_filters_applied": "1", "todo_filter_type": "processing"},
+        )
+        filtered_html = Template(
+            "{% load todo_panel %}{% task_panel role='manager' %}"
+        ).render(RequestContext(request, {}))
+
+        self.assertIn("Заявка на обработку №23_OBR", filtered_html)
+        self.assertNotIn("Заявка на приемку №12_PR", filtered_html)
+        self.assertNotIn("Заявка на отгрузку №78_OTG", filtered_html)
 
     def test_task_panel_filters_by_client(self):
         client_a = Agency.objects.create(agn_name="Клиент А")
