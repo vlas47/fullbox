@@ -3872,6 +3872,24 @@ class ProcessingDetailView(OrdersDetailView):
                 return HttpResponseForbidden("Доступ запрещен")
         return super().dispatch(request, *args, **kwargs)
 
+    def get(self, request, *args, **kwargs):
+        order_id = kwargs.get("order_id")
+        if order_id and not _client_agency_from_request(request):
+            entries_list = list(
+                OrderAuditEntry.objects.filter(order_id=order_id, order_type=self.order_type)
+                .select_related("agency")
+                .order_by("created_at")
+            )
+            redirect_to = ProcessingWorkflowService.processing_detail_work_redirect_url(
+                order_id=str(order_id or ""),
+                entries_list=entries_list,
+                request=request,
+                payload_from_entries=self._payload_from_entries,
+            )
+            if redirect_to:
+                return redirect(redirect_to)
+        return super().get(request, *args, **kwargs)
+
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
         order_id = kwargs.get("order_id")

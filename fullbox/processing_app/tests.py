@@ -22,6 +22,7 @@ from sklad.test_utils import create_warehouse_snapshot_row
 from sku.models import Agency
 from todo.models import Task
 from labels.utils import set_print_agent_pause
+from orders.web_ui import _latest_payload_from_entries
 
 from .models import ProcessingFlowSession, ProcessingPrintJob
 from .services import ProcessingWorkflowService
@@ -1822,6 +1823,54 @@ class ProcessingWorkflowServiceTests(TestCase):
         self.assertEqual(result.status, "ok")
         self.assertEqual(result.redirect_to, f"/orders/processing/{order_id}/work/")
 
+    def test_handle_processing_detail_action_take_processing_uses_merged_payload_and_skips_duplicate_status(self):
+        order_id = "629-MERGED"
+        OrderAuditEntry.objects.create(
+            order_id=order_id,
+            order_type="processing",
+            action="status",
+            agency=self.agency,
+            description="Заявка на обработку принята в работу",
+            payload={
+                "status": "processing_in_work",
+                "status_label": "Взята в работу",
+                "article": "SKU-PROC",
+                "work_started_at": "2026-05-05T13:20:00+03:00",
+            },
+        )
+        OrderAuditEntry.objects.create(
+            order_id=order_id,
+            order_type="processing",
+            action="comment",
+            agency=self.agency,
+            description="Промежуточный комментарий",
+            payload={"comment": "Промежуточный комментарий"},
+        )
+        request = self.request_factory.post(
+            f"/orders/processing/{order_id}/",
+            data={"action": "take_processing"},
+        )
+        request.user = self.user
+
+        result = ProcessingWorkflowService.handle_processing_detail_action(
+            order_id=order_id,
+            request=request,
+            order_type="processing",
+            payload_from_entries=_latest_payload_from_entries,
+        )
+
+        self.assertEqual(result.status, "already_in_progress")
+        self.assertEqual(result.redirect_to, f"/orders/processing/{order_id}/work/")
+        self.assertEqual(
+            OrderAuditEntry.objects.filter(
+                order_id=order_id,
+                order_type="processing",
+                action="status",
+                payload__status="processing_in_work",
+            ).count(),
+            1,
+        )
+
     def test_build_processing_detail_page_context_hides_manager_actions_when_warehouse_already_started(self):
         order_id = "629-WH"
         entry = OrderAuditEntry.objects.create(
@@ -3537,6 +3586,38 @@ class ProcessingWarehouseOperationBridgeTests(TestCase):
             order_id=order_id,
             state_code="processing_in_progress",
         )
+
+        response = self.client.get(f"/orders/processing/{order_id}/")
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.url, f"/orders/processing/{order_id}/work/")
+
+    def test_processing_detail_page_prefers_warehouse_status_label_for_manager_view(self):
+        order_id = "P-200B-MANAGER"
+        OrderAuditEntry.objects.create(
+            order_id=order_id,
+            order_type="processing",
+            action="status",
+            agency=self.agency,
+            payload={
+                "status": "processing_head",
+                "status_label": "Передано в обработку",
+                "article": "SKU-PROC",
+                "product_name": "Товар обработки",
+            },
+        )
+        self._create_processing_snapshot(
+            order_id=order_id,
+            state_code="processing_in_progress",
+        )
+        manager_user = get_user_model().objects.create_user(username="proc_detail_manager", password="x")
+        Employee.objects.create(
+            full_name="Processing Detail Manager",
+            user=manager_user,
+            role="manager",
+            is_active=True,
+        )
+        self.client.force_login(manager_user)
 
         response = self.client.get(f"/orders/processing/{order_id}/")
 

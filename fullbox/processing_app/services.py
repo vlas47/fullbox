@@ -4073,6 +4073,8 @@ class ProcessingWorkflowService:
         updates["processing_packers"] = packers
         updates["processing_packers_label"] = ", ".join(packers)
         updates["processing_work_url"] = f"/orders/processing/{order_id}/work/"
+        if ctx.get("history"):
+            updates["history"] = cls._compact_processing_history(ctx.get("history") or [])
         if updates["can_edit_processing"]:
             agency = ctx.get("agency")
             if agency and getattr(agency, "id", None):
@@ -4080,6 +4082,54 @@ class ProcessingWorkflowService:
             else:
                 updates["processing_edit_url"] = f"/orders/processing/?order={order_id}&edit=1"
         return updates
+
+    @staticmethod
+    def _compact_processing_history(rows: list[dict]) -> list[dict]:
+        compacted: list[dict] = []
+        for row in rows or []:
+            if not compacted:
+                compacted.append(row)
+                continue
+            previous = compacted[-1]
+            if (
+                str(row.get("action_label") or "").strip().lower() == "статус"
+                and str(previous.get("action_label") or "").strip().lower() == "статус"
+                and str(row.get("status_label") or "").strip() == str(previous.get("status_label") or "").strip()
+                and str(row.get("description") or "").strip() == str(previous.get("description") or "").strip()
+                and str(row.get("actor_label") or "").strip() == str(previous.get("actor_label") or "").strip()
+            ):
+                continue
+            compacted.append(row)
+        return compacted
+
+    @classmethod
+    def processing_detail_work_redirect_url(
+        cls,
+        *,
+        order_id: str,
+        entries_list,
+        request,
+        payload_from_entries,
+    ) -> str:
+        role = get_request_role(request)
+        if role not in {"storekeeper", "processing_head"}:
+            return ""
+        payload = payload_from_entries(entries_list)
+        processing_result = WarehouseGoodsStateResolver.resolve_for_processing_order(
+            order_id=str(order_id or ""),
+            agency=entries_list[-1].agency if entries_list else None,
+            payload=payload,
+        )
+        if processing_result.code in cls._PROCESSING_WAREHOUSE_STARTED_CODES:
+            return f"/orders/processing/{order_id}/work/"
+        can_take = WarehouseActionPolicy.can_take_processing(
+            processing_result,
+            role=role,
+            client_view=False,
+        ).allowed
+        if can_take:
+            return f"/orders/processing/{order_id}/work/"
+        return ""
 
     @classmethod
     def handle_processing_detail_action(
@@ -4100,12 +4150,13 @@ class ProcessingWorkflowService:
         if not entries:
             return ProcessingDetailActionResult(status="missing_order", redirect_to="/orders/")
         latest = entries[-1]
+        merged_payload = dict(payload_from_entries(entries))
 
         if action == "take_processing":
             role = get_request_role(request)
             if role not in {"storekeeper", "processing_head"}:
                 return ProcessingDetailActionResult(status="forbidden", redirect_to=f"/orders/processing/{order_id}/")
-            status_payload = latest.payload or {}
+            status_payload = merged_payload
             command_result = processing_views.WarehouseCommandService.take_processing(
                 order_id=str(order_id or ""),
                 agency=latest.agency if latest else None,
@@ -4117,7 +4168,7 @@ class ProcessingWorkflowService:
                 return ProcessingDetailActionResult(status="already_in_progress", redirect_to=f"/orders/processing/{order_id}/work/")
             if command_result.status == "denied":
                 return ProcessingDetailActionResult(status="denied", redirect_to=f"/orders/processing/{order_id}/")
-            payload = dict(payload_from_entries(entries))
+            payload = dict(merged_payload)
             payload["status"] = "processing_in_work"
             payload["status_label"] = "Взята в работу"
             payload["work_started_at"] = timezone.localtime().isoformat()
@@ -4139,7 +4190,7 @@ class ProcessingWorkflowService:
             role = get_request_role(request)
             if role not in {"manager", "head_manager", "director", "admin"}:
                 return ProcessingDetailActionResult(status="forbidden", redirect_to=f"/orders/processing/{order_id}/")
-            status_payload = latest.payload or {}
+            status_payload = merged_payload
             status_value = str(status_payload.get("status") or status_payload.get("submit_action") or "").lower()
             status_label = str(status_payload.get("status_label") or "").lower()
             processing_result = WarehouseGoodsStateResolver.resolve_for_processing_order(
@@ -4151,7 +4202,7 @@ class ProcessingWorkflowService:
                 return ProcessingDetailActionResult(status="done", redirect_to=f"/orders/processing/{order_id}/")
             if status_value in {"done", "completed", "closed", "finished"} or "выполн" in status_label:
                 return ProcessingDetailActionResult(status="done", redirect_to=f"/orders/processing/{order_id}/")
-            payload = dict(payload_from_entries(entries))
+            payload = dict(merged_payload)
             payload["status"] = "processing_head"
             payload["status_label"] = "Передано в обработку"
             payload["approved_at"] = timezone.localtime().isoformat()
