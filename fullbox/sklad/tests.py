@@ -1866,6 +1866,27 @@ class StaffInventoryJournalAvailableQtyTests(TestCase):
         self.assertContains(response, "sort=sku", html=False)
         self.assertContains(response, "↕", html=False)
 
+    def test_staff_inventory_journal_renders_pallet_qr_context_menu(self):
+        create_warehouse_snapshot_row(
+            agency=self.agency_a,
+            order_id="A-4",
+            sku="SKU-QR",
+            name="Товар с паллетой",
+            size="46",
+            goods_type="Оптовый",
+            qty=8,
+            pallet_code="PAL-QR-1",
+            box_code="BOX-QR-1",
+        )
+
+        response = self.client.get("/sklad/journal/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'data-pallet-code="PAL-QR-1"', html=False)
+        self.assertContains(response, 'id="palletContextMenu"', html=False)
+        self.assertContains(response, "Распечатать QR паллеты", html=False)
+        self.assertContains(response, "/static/vendor/qrcode.min.js", html=False)
+
 
 class InventoryJournalUiServiceTests(TestCase):
     def setUp(self):

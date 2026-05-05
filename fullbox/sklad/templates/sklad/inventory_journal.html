@@ -253,6 +253,51 @@
       overflow: auto;
       max-height: calc(100vh - 340px);
     }
+    .pallet-cell {
+      cursor: context-menu;
+    }
+    .pallet-cell .code {
+      position: relative;
+    }
+    .pallet-context-menu {
+      position: fixed;
+      display: none;
+      min-width: 230px;
+      padding: 8px;
+      border-radius: 14px;
+      border: 1px solid var(--stroke-strong);
+      background: rgba(255, 255, 255, 0.98);
+      box-shadow: 0 18px 40px rgba(15, 23, 42, 0.18);
+      z-index: 1200;
+    }
+    .pallet-context-menu.is-open {
+      display: grid;
+      gap: 6px;
+    }
+    .pallet-context-menu-title {
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      padding: 4px 6px 0;
+    }
+    .pallet-context-menu-button {
+      width: 100%;
+      min-height: 42px;
+      border: 0;
+      border-radius: 10px;
+      background: #fff8dd;
+      color: var(--text);
+      font: inherit;
+      font-weight: 700;
+      text-align: left;
+      padding: 0 12px;
+      cursor: pointer;
+    }
+    .pallet-context-menu-button:hover {
+      background: #f7edd0;
+    }
     table {
       width: 100%;
       border-collapse: separate;
@@ -622,7 +667,14 @@
                   <td>
                     <div class="primary">{{ row.created_at|date:"d.m.Y H:i" }}</div>
                   </td>
-                  <td title="{{ row.pallet_code }}"><div class="code">{{ row.pallet_code }}</div></td>
+                  <td
+                    class="pallet-cell"
+                    title="{{ row.pallet_code }}"
+                    data-pallet-code="{{ row.pallet_code }}"
+                    data-client-label="{{ row.client_label }}"
+                  >
+                    <div class="code">{{ row.pallet_code }}</div>
+                  </td>
                   <td title="{{ row.box_code }}"><div class="code">{{ row.box_code }}</div></td>
                   <td>
                     <div class="code">{{ row.order_display }}</div>
@@ -656,5 +708,226 @@
       </section>
     </div>
   </div>
+  <div class="pallet-context-menu" id="palletContextMenu" role="menu" aria-hidden="true">
+    <div class="pallet-context-menu-title">Паллета</div>
+    <button type="button" class="pallet-context-menu-button" data-action="print-pallet-qr">
+      Распечатать QR паллеты
+    </button>
+  </div>
+  <script src="/static/vendor/qrcode.min.js"></script>
+  <script>
+    (() => {
+      const menu = document.getElementById('palletContextMenu');
+      if (!menu) {
+        return;
+      }
+      const printButton = menu.querySelector('[data-action="print-pallet-qr"]');
+      let activeCell = null;
+
+      const hideMenu = () => {
+        menu.classList.remove('is-open');
+        menu.setAttribute('aria-hidden', 'true');
+        activeCell = null;
+      };
+
+      const escapeHtml = (value) => String(value || '')
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#39;');
+
+      const buildQrDataUrl = (payload) => new Promise((resolve, reject) => {
+        if (!window.QRCode) {
+          reject(new Error('QRCode library is not loaded.'));
+          return;
+        }
+        const text = String(payload || '').trim();
+        if (!text) {
+          reject(new Error('Pallet code is empty.'));
+          return;
+        }
+        const host = document.createElement('div');
+        host.style.position = 'fixed';
+        host.style.left = '-9999px';
+        host.style.top = '0';
+        host.style.width = '360px';
+        host.style.height = '360px';
+        document.body.appendChild(host);
+        try {
+          new QRCode(host, {
+            text,
+            width: 360,
+            height: 360,
+            correctLevel: QRCode.CorrectLevel.M,
+          });
+          window.setTimeout(() => {
+            const canvas = host.querySelector('canvas');
+            const image = host.querySelector('img');
+            const dataUrl = canvas ? canvas.toDataURL('image/png') : (image ? image.src : '');
+            host.remove();
+            if (dataUrl) {
+              resolve(dataUrl);
+              return;
+            }
+            reject(new Error('Failed to render QR code.'));
+          }, 80);
+        } catch (error) {
+          host.remove();
+          reject(error);
+        }
+      });
+
+      const printPalletQr = async (cell) => {
+        const palletCode = String(cell?.dataset?.palletCode || '').trim();
+        if (!palletCode) {
+          return;
+        }
+        const clientLabel = String(cell?.dataset?.clientLabel || '').trim();
+        const popup = window.open('', '_blank', 'width=560,height=660');
+        if (!popup) {
+          alert('Разрешите всплывающие окна для печати QR паллеты.');
+          return;
+        }
+        popup.document.open();
+        popup.document.write(`
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <title>QR паллеты ${escapeHtml(palletCode)}</title>
+  <style>
+    @page { size: 58mm 60mm; margin: 0; }
+    html, body { width: 58mm; height: 60mm; margin: 0; padding: 0; }
+    body {
+      font-family: Arial, sans-serif;
+      color: #111;
+      background: #fff;
+    }
+    .label {
+      width: 58mm;
+      height: 60mm;
+      box-sizing: border-box;
+      padding: 4mm 5mm 4mm 5mm;
+      display: grid;
+      grid-template-rows: auto auto 1fr auto;
+      gap: 1.5mm;
+    }
+    .label-kind {
+      font-size: 8pt;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: #4b5563;
+    }
+    .label-code {
+      font-size: 10pt;
+      font-weight: 700;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .qr-wrap {
+      display: grid;
+      place-items: center;
+    }
+    .qr-wrap img {
+      width: 38mm;
+      height: 38mm;
+      display: block;
+    }
+    .label-client {
+      font-size: 8pt;
+      font-weight: 600;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .loading {
+      height: 100%;
+      display: grid;
+      place-items: center;
+      color: #6b7280;
+      font-size: 10pt;
+    }
+  </style>
+</head>
+<body>
+  <div class="loading">Генерируем QR...</div>
+</body>
+</html>`);
+        popup.document.close();
+        try {
+          const qrDataUrl = await buildQrDataUrl(palletCode);
+          popup.document.body.innerHTML = `
+            <div class="label">
+              <div class="label-kind">Паллета</div>
+              <div class="label-code">${escapeHtml(palletCode)}</div>
+              <div class="qr-wrap">
+                <img id="palletQrImage" src="${qrDataUrl}" alt="QR ${escapeHtml(palletCode)}">
+              </div>
+              <div class="label-client">${escapeHtml(clientLabel)}</div>
+            </div>
+          `;
+          const triggerPrint = () => {
+            popup.focus();
+            popup.print();
+          };
+          const image = popup.document.getElementById('palletQrImage');
+          if (image && !image.complete) {
+            image.addEventListener('load', triggerPrint, { once: true });
+          } else {
+            triggerPrint();
+          }
+        } catch (error) {
+          popup.document.body.innerHTML = '<div class="loading">Не удалось сформировать QR паллеты.</div>';
+        }
+      };
+
+      document.addEventListener('contextmenu', (event) => {
+        const cell = event.target.closest('.pallet-cell[data-pallet-code]');
+        if (!cell) {
+          hideMenu();
+          return;
+        }
+        const palletCode = String(cell.dataset.palletCode || '').trim();
+        if (!palletCode) {
+          hideMenu();
+          return;
+        }
+        event.preventDefault();
+        activeCell = cell;
+        menu.classList.add('is-open');
+        menu.setAttribute('aria-hidden', 'false');
+        const menuWidth = menu.offsetWidth || 230;
+        const menuHeight = menu.offsetHeight || 64;
+        const maxLeft = Math.max(8, window.innerWidth - menuWidth - 8);
+        const maxTop = Math.max(8, window.innerHeight - menuHeight - 8);
+        menu.style.left = `${Math.min(event.clientX, maxLeft)}px`;
+        menu.style.top = `${Math.min(event.clientY, maxTop)}px`;
+      });
+
+      printButton?.addEventListener('click', () => {
+        const cell = activeCell;
+        hideMenu();
+        if (cell) {
+          void printPalletQr(cell);
+        }
+      });
+
+      document.addEventListener('click', (event) => {
+        if (!menu.contains(event.target)) {
+          hideMenu();
+        }
+      });
+      document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') {
+          hideMenu();
+        }
+      });
+      window.addEventListener('resize', hideMenu);
+      window.addEventListener('scroll', hideMenu, true);
+      window.addEventListener('blur', hideMenu);
+    })();
+  </script>
 </body>
 </html>
