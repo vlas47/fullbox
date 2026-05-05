@@ -2991,6 +2991,27 @@
         });
         statusEl.hidden = !lines.length;
       };
+      const applyMoveStateFromPayload = (card, payload = {}) => {
+        if (!card) {
+          return;
+        }
+        const moveBtn = card.querySelector('.card-move');
+        const statusEl = card.querySelector('[data-move-status]');
+        const deliveryReady = toBoolFlag(payload.delivery_ready);
+        const deliveryHasActive = toBoolFlag(payload.delivery_has_active);
+        const rawLines = Array.isArray(payload.delivery_status_lines) ? payload.delivery_status_lines : [];
+        const statusLines = rawLines
+          .map((value) => String(value || '').trim())
+          .filter(Boolean);
+        card.dataset.moveReady = deliveryReady ? '1' : '0';
+        card.dataset.moveHasActive = deliveryHasActive ? '1' : '0';
+        renderMoveStatus(statusEl, statusLines);
+        renderCardConditions(card);
+        if (moveBtn) {
+          moveBtn.hidden = deliveryHasActive || deliveryReady;
+        }
+        updateMoveHeroButton();
+      };
       const cardOpenBlockers = (card) => {
         const blockers = [];
         if (!card || String(card.dataset.moveReady || '0') !== '1') {
@@ -3480,7 +3501,7 @@
         }
         setPhotoPreview(photoBox, preview, card.dataset.photoUrl);
         renderRows(card, payload.rows || []);
-        updateMoveStatus(card);
+        applyMoveStateFromPayload(card, payload);
       };
 
       const createCard = (payload, options = {}) => {
@@ -3538,6 +3559,7 @@
         }
 
         card.dataset.moveReady = '0';
+        card.dataset.moveHasActive = '0';
         renderCardConditions(card);
         updateCardFromPayload(card, payload);
         if (options.prepend) {

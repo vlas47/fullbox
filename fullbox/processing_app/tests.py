@@ -13,7 +13,7 @@ from django.utils import timezone
 from audit.models import AuditEntry, OrderAuditEntry
 from employees.models import Employee
 from marking.models import MarkingCode
-from reachtruck.models import MoveTask
+from reachtruck.models import MoveRequest, MoveTask
 from sklad.models import WarehouseOperation, WarehouseReserve, WarehouseStockSnapshot
 from sklad.services import WarehouseStateCode
 from sklad.services.stock_availability import StockAvailabilityService
@@ -1184,6 +1184,100 @@ class ProcessingWorkflowServiceTests(TestCase):
         self.assertEqual(result.canceled_count, 1)
         task = MoveTask.objects.get()
         self.assertEqual(task.status, "canceled")
+
+    def test_build_processing_work_page_context_marks_obr_delivery_task_as_active(self):
+        order_id = "6191"
+        entries = self._create_ready_processing_entries(order_id)
+        move_request = MoveRequest.objects.create(
+            context_type=MoveRequest.CONTEXT_PROCESSING,
+            context_id=order_id,
+            agency=self.agency,
+            requested_by=self.user,
+            requested_by_role="processing_head",
+            requested_by_name="Processing Service User",
+            destination_zone="OBR",
+            status=MoveRequest.STATUS_CREATED,
+        )
+        MoveTask.objects.create(
+            request=move_request,
+            pallet_code="PAL-OBR-1",
+            from_zone="OS",
+            to_zone="OBR",
+            move_mode=MoveTask.MODE_BOX_FULL,
+            qty_planned=10,
+            status=MoveTask.STATUS_IN_PROGRESS,
+            payload={
+                "status": "in_progress",
+                "status_label": "Взята в работу",
+                "requested_sku": "SKU-A",
+                "requested_qty": 10,
+                "processing_order_id": order_id,
+            },
+        )
+        request = self.request_factory.get(f"/orders/processing/{order_id}/work/")
+        request.user = self.user
+
+        context = ProcessingWorkflowService.build_processing_work_page_context(
+            order_id=order_id,
+            entries=entries,
+            payload=_processing_work_payload_from_entries(entries),
+            agency=self.agency,
+            request=request,
+        )
+
+        cards = context["draft_payload"]["cards"]
+        self.assertEqual(len(cards), 1)
+        self.assertTrue(cards[0]["delivery_has_active"])
+        self.assertFalse(cards[0]["delivery_ready"])
+        self.assertEqual(cards[0]["delivery_state_code"], "active")
+        self.assertEqual(cards[0]["delivery_status_lines"], ["Взята в работу · 1 палл."])
+
+    def test_build_processing_work_page_context_reopens_card_move_after_obr_cancel(self):
+        order_id = "6192"
+        entries = self._create_ready_processing_entries(order_id)
+        move_request = MoveRequest.objects.create(
+            context_type=MoveRequest.CONTEXT_PROCESSING,
+            context_id=order_id,
+            agency=self.agency,
+            requested_by=self.user,
+            requested_by_role="processing_head",
+            requested_by_name="Processing Service User",
+            destination_zone="OBR",
+            status=MoveRequest.STATUS_CANCELED,
+        )
+        MoveTask.objects.create(
+            request=move_request,
+            pallet_code="PAL-OBR-2",
+            from_zone="OS",
+            to_zone="OBR",
+            move_mode=MoveTask.MODE_BOX_FULL,
+            qty_planned=10,
+            status=MoveTask.STATUS_CANCELED,
+            payload={
+                "status": "canceled",
+                "status_label": "Отменено руководителем обработки",
+                "requested_sku": "SKU-A",
+                "requested_qty": 10,
+                "processing_order_id": order_id,
+            },
+        )
+        request = self.request_factory.get(f"/orders/processing/{order_id}/work/")
+        request.user = self.user
+
+        context = ProcessingWorkflowService.build_processing_work_page_context(
+            order_id=order_id,
+            entries=entries,
+            payload=_processing_work_payload_from_entries(entries),
+            agency=self.agency,
+            request=request,
+        )
+
+        cards = context["draft_payload"]["cards"]
+        self.assertEqual(len(cards), 1)
+        self.assertFalse(cards[0]["delivery_has_active"])
+        self.assertFalse(cards[0]["delivery_ready"])
+        self.assertEqual(cards[0]["delivery_state_code"], "canceled")
+        self.assertEqual(cards[0]["delivery_status_lines"], [])
 
     def test_build_processing_work_page_context_prefers_existing_move_destination(self):
         order_id = "620"

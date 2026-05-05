@@ -24,6 +24,7 @@ from sklad.services.warehouse_transitions import WarehouseStateCode
 from sklad.services.warehouse_write_path import WarehouseWritePathService
 from todo.models import Task
 from labels.utils import shorten_client_label, split_printers_by_kind
+from reachtruck.models import MoveTask
 from .models import ProcessingFlowSession, ProcessingPrintJob
 
 
@@ -153,6 +154,238 @@ class ProcessingWorkflowService:
             if barcode_value:
                 values.append(barcode_value)
         return values
+
+    @staticmethod
+    def _parse_json_list(raw_value) -> list[str]:
+        if isinstance(raw_value, list):
+            return [str(item).strip() for item in raw_value if str(item or "").strip()]
+        text = str(raw_value or "").strip()
+        if not text:
+            return []
+        try:
+            parsed = json.loads(text)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            return []
+        if not isinstance(parsed, list):
+            return []
+        return [str(item).strip() for item in parsed if str(item or "").strip()]
+
+    @staticmethod
+    def _normalize_goods_type_token(value) -> str:
+        return StockAvailabilityService.normalize_goods_type(value)
+
+    @classmethod
+    def _processing_card_delivery_selector(cls, card_payload: dict, processing_views) -> dict:
+        rows = card_payload.get("rows") if isinstance(card_payload.get("rows"), list) else []
+        requested_qty = 0
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            requested_qty += processing_views._parse_qty_value(row.get("qty")) or 0
+        return {
+            "article": str(card_payload.get("article") or card_payload.get("sku") or "").strip().lower(),
+            "goods_type": cls._normalize_goods_type_token(card_payload.get("goods_type")),
+            "barcodes": {
+                str(value).strip().lower()
+                for value in cls._barcodes_from_rows(rows)
+                if str(value or "").strip() and str(value or "").strip() != "-"
+            },
+            "requested_qty": max(requested_qty, 0),
+        }
+
+    @classmethod
+    def _processing_task_matches_card(cls, task: MoveTask, selector: dict) -> bool:
+        payload = task.payload if isinstance(task.payload, dict) else {}
+        card_article = str(selector.get("article") or "").strip().lower()
+        card_goods_type = cls._normalize_goods_type_token(selector.get("goods_type"))
+        card_barcodes = {
+            str(value).strip().lower()
+            for value in (selector.get("barcodes") or set())
+            if str(value or "").strip()
+        }
+        if not card_article and not card_barcodes:
+            return False
+        task_goods_type = cls._normalize_goods_type_token(
+            payload.get("requested_goods_type") or payload.get("requested_goods_type_label")
+        )
+        if card_goods_type and task_goods_type and card_goods_type != task_goods_type:
+            return False
+        task_article = str(payload.get("requested_sku") or "").strip().lower()
+        task_barcodes = {
+            str(value).strip().lower()
+            for value in cls._parse_json_list(payload.get("requested_barcodes"))
+            if str(value or "").strip()
+        }
+        sku_matched = bool(card_article and task_article and card_article == task_article)
+        barcode_matched = bool(card_barcodes and task_barcodes and card_barcodes.intersection(task_barcodes))
+        if card_article and card_barcodes:
+            return sku_matched or barcode_matched
+        if card_article:
+            return sku_matched
+        return barcode_matched
+
+    @classmethod
+    def _processing_card_delivery_state(
+        cls,
+        *,
+        order_id: str,
+        agency,
+        card_payload: dict,
+        processing_views,
+        tasks: list[MoveTask] | None = None,
+    ) -> dict:
+        selector = cls._processing_card_delivery_selector(card_payload, processing_views)
+        requested_qty = int(selector.get("requested_qty") or 0)
+        active_tasks = tasks
+        if active_tasks is None:
+            if not agency or not str(order_id or "").strip():
+                active_tasks = []
+            else:
+                active_tasks = list(
+                    MoveTask.objects.select_related("request")
+                    .filter(
+                        request__agency=agency,
+                        request__context_type="processing",
+                        request__context_id=str(order_id or "").strip(),
+                        to_zone="OBR",
+                    )
+                    .order_by("id")
+                )
+        relevant = [task for task in active_tasks if cls._processing_task_matches_card(task, selector)]
+        if not relevant:
+            return {
+                "delivery_has_active": False,
+                "delivery_ready": False,
+                "delivery_status_lines": [],
+                "delivery_state_code": "pending",
+            }
+
+        counts = {"created": 0, "in_progress": 0}
+        done_by_label: dict[str, int] = {}
+        other: dict[str, int] = {}
+        done_picked_qty = 0
+        has_box_full_done = False
+        has_pallet_full_done = False
+        canceled_count = 0
+
+        for task in relevant:
+            payload = task.payload if isinstance(task.payload, dict) else {}
+            raw_status = str(task.status or payload.get("status") or "").strip().lower()
+            move_mode = str(payload.get("move_mode") or payload.get("pick_mode") or "").strip().lower()
+            custom_label = str(payload.get("status_label") or "").strip()
+            if raw_status == MoveTask.STATUS_CREATED:
+                counts["created"] += 1
+                continue
+            if raw_status == MoveTask.STATUS_IN_PROGRESS:
+                counts["in_progress"] += 1
+                continue
+            if raw_status == MoveTask.STATUS_DONE:
+                done_label = custom_label
+                if not done_label:
+                    if move_mode == "box_partial":
+                        done_label = "Отбор из короба выполнен"
+                    elif move_mode == "box_full":
+                        done_label = "Короба переданы в обработку"
+                    else:
+                        done_label = "Паллета доставлена в зону обработки"
+                done_by_label[done_label] = (done_by_label.get(done_label) or 0) + 1
+                if move_mode == "box_full":
+                    has_box_full_done = True
+                elif move_mode == "pallet_full":
+                    has_pallet_full_done = True
+                elif move_mode == "box_partial":
+                    picked_qty = processing_views._parse_qty_value(
+                        payload.get("picked_qty") or payload.get("requested_qty")
+                    ) or 0
+                    done_picked_qty += picked_qty
+                continue
+            if raw_status in {MoveTask.STATUS_CANCELED, "cancelled"}:
+                canceled_count += 1
+                continue
+            label = custom_label or raw_status or "Статус"
+            other[label] = (other.get(label) or 0) + 1
+
+        lines: list[str] = []
+
+        def push_line(label: str, count: int) -> None:
+            if count > 0:
+                lines.append(f"{label} · {count} палл.")
+
+        push_line("Передана водителю", counts["created"])
+        push_line("Взята в работу", counts["in_progress"])
+        for label, count in done_by_label.items():
+            push_line(label, count)
+        for label, count in other.items():
+            push_line(label, count)
+
+        has_active = counts["created"] > 0 or counts["in_progress"] > 0
+        completed_by_qty = requested_qty > 0 and done_picked_qty >= requested_qty
+        completed_by_full_transfer = (not has_active) and (has_box_full_done or has_pallet_full_done)
+        delivery_ready = completed_by_qty or completed_by_full_transfer
+        if delivery_ready:
+            lines = []
+        elif not has_active and not done_by_label and not other and canceled_count > 0:
+            lines = []
+        elif not lines:
+            lines = ["Задание на перемещение создано."]
+
+        state_code = "pending"
+        if has_active:
+            state_code = "active"
+        elif delivery_ready:
+            state_code = "done"
+        elif canceled_count > 0:
+            state_code = "canceled"
+        elif other:
+            state_code = "other"
+
+        return {
+            "delivery_has_active": has_active,
+            "delivery_ready": delivery_ready,
+            "delivery_status_lines": lines,
+            "delivery_state_code": state_code,
+        }
+
+    @classmethod
+    def _annotate_processing_cards_delivery_state(
+        cls,
+        *,
+        order_id: str,
+        agency,
+        cards_payload: list[dict],
+        processing_views,
+    ) -> list[dict]:
+        if not isinstance(cards_payload, list) or not cards_payload:
+            return cards_payload
+        tasks = []
+        if agency and str(order_id or "").strip():
+            tasks = list(
+                MoveTask.objects.select_related("request")
+                .filter(
+                    request__agency=agency,
+                    request__context_type="processing",
+                    request__context_id=str(order_id or "").strip(),
+                    to_zone="OBR",
+                )
+                .order_by("id")
+            )
+        annotated: list[dict] = []
+        for raw_card in cards_payload:
+            if not isinstance(raw_card, dict):
+                annotated.append(raw_card)
+                continue
+            card_payload = dict(raw_card)
+            card_payload.update(
+                cls._processing_card_delivery_state(
+                    order_id=str(order_id or "").strip(),
+                    agency=agency,
+                    card_payload=card_payload,
+                    processing_views=processing_views,
+                    tasks=tasks,
+                )
+            )
+            annotated.append(card_payload)
+        return annotated
 
     @classmethod
     def _printed_cz_total_for_rows(cls, printed_cz_base_qs, rows) -> int:
@@ -667,7 +900,12 @@ class ProcessingWorkflowService:
                     card_payload[option["field"]] = marking_qty_map.get(option["label_key"], 0)
                 card_payload["marking_5840_each_qty"] = marking_each_qty_value
                 enriched_cards.append(card_payload)
-            work_payload["cards"] = enriched_cards
+            work_payload["cards"] = cls._annotate_processing_cards_delivery_state(
+                order_id=str(order_id or ""),
+                agency=agency,
+                cards_payload=enriched_cards,
+                processing_views=processing_views,
+            )
         else:
             fallback_rows = work_payload.get("stock_rows") if isinstance(work_payload.get("stock_rows"), list) else []
             work_payload["printed_cz_total"] = cls._printed_cz_total_for_rows(printed_cz_base_qs, fallback_rows)
