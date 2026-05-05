@@ -114,7 +114,6 @@ class ProcessingJsonResult:
 
 class ProcessingWorkflowService:
     _PROCESSING_WAREHOUSE_STARTED_CODES = {
-        WarehouseStateCode.RESERVED_FOR_PROCESSING,
         WarehouseStateCode.MOVING_TO_PROCESSING,
         WarehouseStateCode.IN_PROCESSING_ZONE,
         WarehouseStateCode.PROCESSING_IN_PROGRESS,
@@ -4543,6 +4542,9 @@ class ProcessingWorkflowService:
             label_lower = preserved_label.lower()
             if status_lower in {"done", "completed", "closed", "finished"} or "выполн" in label_lower:
                 message = "Заявка уже утверждена и недоступна для редактирования."
+                return render_home_error(message)
+            if status_lower in {"processing_head", "processing_in_work"} or "передан" in label_lower or "взята" in label_lower:
+                message = "Заявка уже передана в обработку и недоступна для редактирования."
                 return render_home_error(message)
             processing_result = WarehouseGoodsStateResolver.resolve_for_processing_order(
                 order_id=str(edit_order_id or ""),

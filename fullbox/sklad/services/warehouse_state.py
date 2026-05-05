@@ -421,6 +421,14 @@ class WarehouseGoodsStateResolver:
             task_ids=[],
         )
         snapshots = cls._processing_snapshots(agency=agency, order_id=order_key)
+        payload_status_value = str(
+            fallback_payload.get("status") or fallback_payload.get("submit_action") or ""
+        ).strip().lower()
+        payload_status_label = str(fallback_payload.get("status_label") or "").strip().lower()
+        waiting_for_manager_approval = (
+            payload_status_value in {"sent_unconfirmed", "send", "submitted"}
+            or "подтверждени" in payload_status_label
+        )
         if snapshots:
             dominant_code = cls._dominant_state_code(
                 [snapshot.warehouse_state_code for snapshot in snapshots],
@@ -457,6 +465,15 @@ class WarehouseGoodsStateResolver:
                     next_step_processing="Дождаться доставки в зону обработки",
                 )
             if dominant_code == WarehouseStateCode.RESERVED_FOR_PROCESSING:
+                if waiting_for_manager_approval:
+                    source_facts.append("processing_reserved_waiting_manager_approval")
+                    return cls._result(
+                        WarehouseStateCode.UNKNOWN,
+                        "Ждет подтверждения",
+                        source_facts,
+                        movement,
+                        next_step_default="Дождаться подтверждения заявки менеджером",
+                    )
                 return cls._result(
                     dominant_code,
                     "Передано в обработку",

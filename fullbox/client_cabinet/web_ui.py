@@ -20,6 +20,7 @@ from fullbox.order_numbers import format_order_number
 from marking.models import MarkingCode
 from processing_app.views import _import_marking_codes
 from sklad.models import WarehouseStockSnapshot
+from sklad.services.warehouse_state import WarehouseGoodsStateResolver
 from sklad.services.warehouse_transitions import WarehouseStateCode
 from sku.models import Agency, SKU, SKUBarcode
 from sku.views import SKUCreateView, SKUUpdateView, SKUDuplicateView
@@ -255,6 +256,12 @@ def _order_status_label(entry) -> str:
         }
         if status_value in shipping_labels:
             return shipping_labels[status_value]
+    if entry.order_type == "processing":
+        return WarehouseGoodsStateResolver.resolve_for_processing_order(
+            order_id=str(getattr(entry, "order_id", "") or "").strip(),
+            agency=getattr(entry, "agency", None),
+            payload=payload,
+        ).label_for("client")
     if status_value == "draft":
         return "Черновик"
     if status_value in {"done", "completed", "closed", "finished"}:
@@ -333,6 +340,27 @@ def _order_bucket(entry) -> str:
         if status_value in {"reserved", "storekeeper_accepted", "picking", "packed"}:
             return "warehouse"
         if status_value in {"shipped", "partial_shipped", "canceled"}:
+            return "done"
+        return "manager"
+    if entry.order_type == "processing":
+        processing_state = WarehouseGoodsStateResolver.resolve_for_processing_order(
+            order_id=str(getattr(entry, "order_id", "") or "").strip(),
+            agency=getattr(entry, "agency", None),
+            payload=payload,
+        )
+        if status_value == "draft" or "черновик" in status_label:
+            return "client"
+        if processing_state.code in {
+            WarehouseStateCode.RESERVED_FOR_PROCESSING,
+            WarehouseStateCode.MOVING_TO_PROCESSING,
+            WarehouseStateCode.IN_PROCESSING_ZONE,
+            WarehouseStateCode.PROCESSING_IN_PROGRESS,
+        }:
+            return "warehouse"
+        if processing_state.code in {
+            WarehouseStateCode.PLACED_AFTER_PROCESSING,
+            WarehouseStateCode.STORED,
+        }:
             return "done"
         return "manager"
     if status_value == "draft" or "черновик" in status_label:

@@ -645,6 +645,67 @@ class TodoDisplayTitleTests(TestCase):
 
         self.assertIn("Товар в обработке", html)
 
+    def test_manager_processing_task_panel_keeps_waiting_status_before_approval_even_with_reserve(self):
+        agency = Agency.objects.create(agn_name="Клиент ожидания обработки")
+        manager = Employee.objects.create(full_name="Менеджеров Сергей", role="manager")
+        location = WarehouseWritePathService.ensure_location(
+            warehouse_code="MSK",
+            zone_code="OBR",
+        )
+        OrderAuditEntry.objects.create(
+            order_id="46",
+            order_type="processing",
+            action="status",
+            agency=agency,
+            payload={
+                "status": "sent_unconfirmed",
+                "status_label": "Ждет подтверждения",
+            },
+        )
+        snapshot = WarehouseStockSnapshot.objects.create(
+            agency=agency,
+            source_context_type="legacy_stock",
+            source_context_id="legacy-46",
+            sku_code="SKU-PROCESS-TODO-46",
+            name="Товар обработки",
+            size="42",
+            barcode="200000001046",
+            goods_type="gv",
+            qty=10,
+            available_qty=0,
+            processing_reserved_qty=10,
+            container_code="PAL-PROC-TODO-46",
+            location=location,
+            zone_code=location.zone_code,
+            zone_kind=location.zone_kind,
+            warehouse_state_code="reserved_for_processing",
+        )
+        WarehouseReserve.objects.create(
+            agency=agency,
+            reserve_type=WarehouseReserve.TYPE_PROCESSING,
+            context_type="processing",
+            context_id="46",
+            sku_code=snapshot.sku_code,
+            size=snapshot.size,
+            barcode=snapshot.barcode,
+            goods_type=snapshot.goods_type,
+            qty_reserved=10,
+            status=WarehouseReserve.STATUS_ACTIVE,
+        )
+        Task.objects.create(
+            title="Заявка на обработку №46",
+            route="/orders/processing/46/",
+            status="in_progress",
+            assigned_to=manager,
+        )
+
+        html = Template(
+            "{% load todo_panel %}{% task_panel role='manager' %}"
+        ).render(Context({}))
+
+        self.assertIn("Ждет подтверждения", html)
+        self.assertNotIn("Передано в обработку", html)
+
     def test_storekeeper_tabs_include_logistics_and_count_only_open_tasks(self):
         agency = Agency.objects.create(agn_name="Клиент рейсов")
         storekeeper = Employee.objects.create(full_name="Кладовщиков Алексей", role="storekeeper")

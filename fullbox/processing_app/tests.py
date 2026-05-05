@@ -1665,6 +1665,43 @@ class ProcessingWorkflowServiceTests(TestCase):
         self.assertFalse(context["can_approve_processing"])
         self.assertFalse(context["can_edit_processing"])
 
+    def test_build_processing_detail_page_context_keeps_manager_actions_for_reserved_only_order(self):
+        order_id = "629-RESERVE"
+        entry = OrderAuditEntry.objects.create(
+            order_id=order_id,
+            order_type="processing",
+            action="status",
+            agency=self.agency,
+            payload={
+                "status": "submitted",
+                "status_label": "На подтверждении",
+                "article": "SKU-PROC",
+            },
+        )
+        self._create_processing_snapshot(order_id=order_id, state_code="reserved_for_processing")
+        manager_user = get_user_model().objects.create_user(username="proc_manager_reserved", password="x")
+        Employee.objects.create(
+            full_name="Processing Manager Reserved",
+            user=manager_user,
+            role="manager",
+            is_active=True,
+        )
+        request = self.request_factory.get(f"/orders/processing/{order_id}/")
+        request.user = manager_user
+        base_ctx = {"agency": self.agency, "client_view": False}
+
+        context = ProcessingWorkflowService.build_processing_detail_page_context(
+            ctx=base_ctx,
+            order_id=order_id,
+            entries_list=[entry],
+            request=request,
+            payload_from_entries=lambda entries: entries[-1].payload or {},
+        )
+
+        self.assertEqual(context["status_label"], "Ждет подтверждения")
+        self.assertTrue(context["can_approve_processing"])
+        self.assertTrue(context["can_edit_processing"])
+
     def test_take_processing_redirects_to_work_when_payload_is_stale_but_warehouse_in_progress(self):
         order_id = "629-WH-TAKE"
         OrderAuditEntry.objects.create(
@@ -1709,7 +1746,7 @@ class ProcessingWorkflowServiceTests(TestCase):
                 "article": "SKU-PROC",
             },
         )
-        self._create_processing_snapshot(order_id=order_id, state_code="reserved_for_processing")
+        self._create_processing_snapshot(order_id=order_id, state_code="processing_in_progress")
         manager_user = get_user_model().objects.create_user(username="proc_manager_approve", password="x")
         Employee.objects.create(
             full_name="Processing Approver",
@@ -1735,6 +1772,47 @@ class ProcessingWorkflowServiceTests(TestCase):
         self.assertEqual(
             OrderAuditEntry.objects.filter(order_id=order_id, order_type="processing", payload__status="processing_head").count(),
             0,
+        )
+
+    def test_approve_processing_updates_status_when_only_reserved_for_processing(self):
+        order_id = "629-WH-RESERVED-APPROVE"
+        OrderAuditEntry.objects.create(
+            order_id=order_id,
+            order_type="processing",
+            action="status",
+            agency=self.agency,
+            payload={
+                "status": "submitted",
+                "status_label": "На подтверждении",
+                "article": "SKU-PROC",
+            },
+        )
+        self._create_processing_snapshot(order_id=order_id, state_code="reserved_for_processing")
+        manager_user = get_user_model().objects.create_user(username="proc_manager_reserved_approve", password="x")
+        Employee.objects.create(
+            full_name="Processing Reserved Approver",
+            user=manager_user,
+            role="manager",
+            is_active=True,
+        )
+        request = self.request_factory.post(
+            f"/orders/processing/{order_id}/",
+            data={"action": "approve_processing"},
+        )
+        request.user = manager_user
+
+        result = ProcessingWorkflowService.handle_processing_detail_action(
+            order_id=order_id,
+            request=request,
+            order_type="processing",
+            payload_from_entries=lambda entries: entries[-1].payload or {},
+        )
+
+        self.assertEqual(result.status, "ok")
+        self.assertEqual(result.redirect_to, f"/orders/processing/{order_id}/")
+        self.assertEqual(
+            OrderAuditEntry.objects.filter(order_id=order_id, order_type="processing", payload__status="processing_head").count(),
+            1,
         )
 
     def test_processing_marking_availability_counts_reserved_and_free_codes(self):

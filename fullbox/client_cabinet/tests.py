@@ -9,6 +9,7 @@ from audit.models import OrderAuditEntry
 from employees.models import Employee
 from marking.models import MarkingCode
 from shipping.models import ShippingOrder, ShippingOrderItem
+from sklad.models import WarehouseReserve
 from sklad.services import WarehouseStateCode
 from sklad.test_utils import create_warehouse_snapshot_row
 from sku.models import Agency, SKU
@@ -89,6 +90,85 @@ class ClientCabinetShippingStatusTests(SimpleTestCase):
         status_entry = SimpleNamespace(payload={"act_viewed": True})
 
         self.assertFalse(_receiving_act_needs_client_attention(act_entry, status_entry))
+
+
+class ClientCabinetProcessingStatusTests(TestCase):
+    def setUp(self):
+        self.agency = Agency.objects.create(agn_name="Клиент обработки")
+
+    def test_processing_submitted_order_keeps_manager_bucket_before_approval_even_with_reserve(self):
+        entry = OrderAuditEntry.objects.create(
+            order_id="23",
+            order_type="processing",
+            action="status",
+            agency=self.agency,
+            payload={"status": "sent_unconfirmed", "status_label": "Ждет подтверждения"},
+        )
+        snapshot = create_warehouse_snapshot_row(
+            agency=self.agency,
+            order_type="processing",
+            order_id="23",
+            sku="SKU-PROC-23",
+            barcode="200000002300",
+            goods_type="gv",
+            qty=5,
+            available_qty=0,
+            processing_reserved_qty=5,
+            zone="OBR",
+            warehouse_state_code=WarehouseStateCode.RESERVED_FOR_PROCESSING.value,
+        )
+        WarehouseReserve.objects.create(
+            agency=self.agency,
+            reserve_type=WarehouseReserve.TYPE_PROCESSING,
+            context_type="processing",
+            context_id="23",
+            sku_code=snapshot.sku_code,
+            size=snapshot.size,
+            barcode=snapshot.barcode,
+            goods_type=snapshot.goods_type,
+            qty_reserved=5,
+            status=WarehouseReserve.STATUS_ACTIVE,
+        )
+
+        self.assertEqual(_order_status_label(entry), "Ждет подтверждения")
+        self.assertEqual(_order_bucket(entry), "manager")
+
+    def test_processing_started_order_uses_warehouse_truth_on_client_dashboard(self):
+        entry = OrderAuditEntry.objects.create(
+            order_id="24",
+            order_type="processing",
+            action="status",
+            agency=self.agency,
+            payload={"status": "sent_unconfirmed", "status_label": "Ждет подтверждения"},
+        )
+        snapshot = create_warehouse_snapshot_row(
+            agency=self.agency,
+            order_type="processing",
+            order_id="24",
+            sku="SKU-PROC-24",
+            barcode="200000002400",
+            goods_type="gv",
+            qty=6,
+            available_qty=0,
+            processing_reserved_qty=6,
+            zone="OBR",
+            warehouse_state_code=WarehouseStateCode.PROCESSING_IN_PROGRESS.value,
+        )
+        WarehouseReserve.objects.create(
+            agency=self.agency,
+            reserve_type=WarehouseReserve.TYPE_PROCESSING,
+            context_type="processing",
+            context_id="24",
+            sku_code=snapshot.sku_code,
+            size=snapshot.size,
+            barcode=snapshot.barcode,
+            goods_type=snapshot.goods_type,
+            qty_reserved=6,
+            status=WarehouseReserve.STATUS_ACTIVE,
+        )
+
+        self.assertEqual(_order_status_label(entry), "Товар в обработке")
+        self.assertEqual(_order_bucket(entry), "warehouse")
 
 
 class ClientSKUListViewTests(TestCase):
