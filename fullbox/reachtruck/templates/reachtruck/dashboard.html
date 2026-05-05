@@ -898,6 +898,7 @@
                       type="text"
                       name="scan_value"
                       inputmode="none"
+                      virtualkeyboardpolicy="manual"
                       autocomplete="off"
                       autocapitalize="off"
                       autocorrect="off"
@@ -998,6 +999,7 @@
                       type="text"
                       name="scan_value"
                       inputmode="none"
+                      virtualkeyboardpolicy="manual"
                       autocomplete="off"
                       autocapitalize="off"
                       autocorrect="off"
@@ -1534,83 +1536,65 @@
       const scanPanel = scanInput ? scanInput.closest('.scan-panel') : null;
       const mobileScanMode = Boolean(scanInput && window.matchMedia('(max-width: 900px)').matches);
       if (mobileScanMode && scanInput && scanForm) {
-        let scanBuffer = String(scanInput.value || '');
-        const syncScanBuffer = () => {
-          scanInput.value = scanBuffer;
-        };
-        const focusScanPanel = () => {
-          if (!scanPanel) {
-            return;
-          }
+        const hideVirtualKeyboard = () => {
           try {
-            scanPanel.focus({ preventScroll: true });
+            if (navigator.virtualKeyboard && typeof navigator.virtualKeyboard.hide === 'function') {
+              navigator.virtualKeyboard.hide();
+            }
           } catch (e) {
-            scanPanel.focus();
           }
         };
-        scanInput.readOnly = true;
+        const focusScanInput = () => {
+          try {
+            scanInput.focus({ preventScroll: true });
+          } catch (e) {
+            scanInput.focus();
+          }
+          window.setTimeout(hideVirtualKeyboard, 0);
+        };
         scanInput.classList.add('mobile-capture');
-        scanInput.setAttribute('tabindex', '-1');
-        scanInput.setAttribute('aria-readonly', 'true');
+        scanInput.addEventListener('focus', () => {
+          hideVirtualKeyboard();
+        });
+        scanInput.addEventListener('pointerdown', () => {
+          window.setTimeout(hideVirtualKeyboard, 0);
+        });
+        scanInput.addEventListener('click', () => {
+          window.setTimeout(hideVirtualKeyboard, 0);
+        });
         if (scanPanel) {
-          scanPanel.setAttribute('tabindex', '-1');
-          scanPanel.addEventListener('click', () => focusScanPanel());
+          scanPanel.addEventListener('click', (event) => {
+            const target = event.target;
+            if (
+              target instanceof HTMLElement
+              && target.closest('a, button, input, textarea, select, label')
+            ) {
+              return;
+            }
+            focusScanInput();
+          });
         }
         scanForm.addEventListener('submit', () => {
-          scanInput.value = scanBuffer.trim();
+          scanInput.value = String(scanInput.value || '').trim();
         });
-        document.addEventListener('keydown', (event) => {
-          if (!scanForm || !document.body.contains(scanForm)) {
-            return;
-          }
-          if (event.defaultPrevented || event.ctrlKey || event.altKey || event.metaKey) {
-            return;
-          }
-          const target = event.target;
-          if (
-            target instanceof HTMLElement
-            && target.closest('input:not(.scan-input), textarea, select, [contenteditable="true"]')
-          ) {
-            return;
-          }
+        scanInput.addEventListener('keydown', (event) => {
           const key = String(event.key || '');
-          if (!key) {
-            return;
-          }
           if (key === 'Enter' || key === 'NumpadEnter' || key === 'Tab') {
-            if (!scanBuffer.trim()) {
+            const scanValue = String(scanInput.value || '').trim();
+            if (!scanValue) {
               return;
             }
             event.preventDefault();
-            scanInput.value = scanBuffer.trim();
+            scanInput.value = scanValue;
             if (typeof scanForm.requestSubmit === 'function') {
               scanForm.requestSubmit();
             } else {
               scanForm.submit();
             }
-            return;
           }
-          if (key === 'Escape') {
-            scanBuffer = '';
-            syncScanBuffer();
-            event.preventDefault();
-            return;
-          }
-          if (key === 'Backspace') {
-            scanBuffer = scanBuffer.slice(0, -1);
-            syncScanBuffer();
-            event.preventDefault();
-            return;
-          }
-          if (key.length !== 1) {
-            return;
-          }
-          scanBuffer += key;
-          syncScanBuffer();
-          event.preventDefault();
-        }, true);
-        syncScanBuffer();
-        focusScanPanel();
+        });
+        focusScanInput();
+        window.setTimeout(hideVirtualKeyboard, 50);
       } else if (scanInput && window.matchMedia('(max-width: 900px)').matches) {
         try {
           scanInput.focus({ preventScroll: true });

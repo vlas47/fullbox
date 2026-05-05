@@ -2830,7 +2830,10 @@ class ReachtruckMobileFlowTests(TestCase):
         self.assertContains(response, "Отсканируй паллету")
         self.assertContains(response, 'name="scan_value"')
         self.assertContains(response, 'inputmode="none"')
+        self.assertContains(response, 'virtualkeyboardpolicy="manual"')
         self.assertContains(response, 'autocomplete="off"')
+        self.assertContains(response, 'navigator.virtualKeyboard.hide')
+        self.assertNotContains(response, 'scanInput.readOnly = true;')
         self.assertNotContains(response, "Продолжить приемка №83_PR")
 
     def test_mobile_category_show_list_flag_opens_request_list_instead_of_auto_open(self):
