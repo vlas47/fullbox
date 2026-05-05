@@ -211,6 +211,23 @@
       border-color: var(--accent);
       box-shadow: 0 0 0 2px var(--accent-soft);
     }
+    .mini-input {
+      width: 100%;
+      min-width: 72px;
+      min-height: 34px;
+      border-radius: 8px;
+      border: 1px solid var(--stroke-strong);
+      background: #fff;
+      padding: 0 10px;
+      font: inherit;
+      color: var(--text);
+      font-size: 12px;
+    }
+    .mini-input:focus {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px var(--accent-soft);
+    }
     .table-card {
       padding: 0;
       overflow: hidden;
@@ -243,10 +260,10 @@
       min-width: 1900px;
       font-size: 13px;
     }
-    thead th {
+    .head-row th {
       position: sticky;
       top: 0;
-      z-index: 2;
+      z-index: 3;
       background: #f7f5ef;
       color: var(--muted);
       font-size: 11px;
@@ -257,6 +274,15 @@
       border-bottom: 1px solid var(--stroke-strong);
       border-right: 1px solid var(--stroke);
       white-space: nowrap;
+    }
+    .filter-row th {
+      position: sticky;
+      top: 41px;
+      z-index: 2;
+      background: #fbfaf6;
+      padding: 8px 10px;
+      border-bottom: 1px solid var(--stroke-strong);
+      border-right: 1px solid var(--stroke);
     }
     tbody td {
       padding: 9px 10px;
@@ -309,6 +335,39 @@
       padding: 24px 16px;
       color: var(--muted);
       text-align: center;
+    }
+    .sort-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      color: inherit;
+      text-decoration: none;
+    }
+    .sort-link:hover {
+      color: var(--text);
+    }
+    .sort-link.active {
+      color: var(--text);
+    }
+    .sort-icon {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 16px;
+      height: 16px;
+      border-radius: 999px;
+      border: 1px solid var(--stroke);
+      background: #fff;
+      font-size: 10px;
+      line-height: 1;
+    }
+    .sort-link.active .sort-icon {
+      border-color: #d8b14a;
+      background: #fff5d8;
+      color: #8a6510;
+    }
+    .filter-row .idx {
+      color: transparent;
     }
     .right {
       text-align: right;
@@ -402,13 +461,15 @@
       {% endif %}
 
       <section class="card">
-        <form class="controls" method="get">
+        <form id="journalFilters" class="controls" method="get">
           {% if request.GET.client %}
             <input type="hidden" name="client" value="{{ request.GET.client }}">
           {% endif %}
           {% if request.GET.agency %}
             <input type="hidden" name="agency" value="{{ request.GET.agency }}">
           {% endif %}
+          <input type="hidden" name="sort" value="{{ journal_sort_key }}">
+          <input type="hidden" name="dir" value="{{ journal_sort_dir }}">
           <div class="field">
             <label for="q">Поиск</label>
             <input id="q" class="input" type="search" name="q" value="{{ q }}" placeholder="Паллета, короб, SKU, место, заявка, клиент">
@@ -422,7 +483,7 @@
             <input id="date_to" class="input" type="date" name="date_to" value="{{ date_to }}">
           </div>
           <button class="btn primary" type="submit">Найти</button>
-          <a class="btn" href="{% if request.GET.client %}?client={{ request.GET.client }}{% elif request.GET.agency %}?agency={{ request.GET.agency }}{% else %}/sklad/journal/{% endif %}">Сброс</a>
+          <a class="btn" href="{{ journal_reset_url }}">Сброс</a>
         </form>
       </section>
 
@@ -432,8 +493,8 @@
             <h2 class="table-title">Позиции склада</h2>
           </div>
           <div class="chip warn">
-            {% if q %}
-              Найдено по запросу: {{ journal_summary.row_count }}
+            {% if journal_has_filters %}
+              По фильтру: {{ journal_summary.row_count }}
             {% else %}
               Всего строк: {{ journal_summary.row_count }}
             {% endif %}
@@ -442,23 +503,116 @@
         <div class="table-wrap">
           <table>
             <thead>
-              <tr>
+              <tr class="head-row">
                 <th class="idx">#</th>
-                <th>Когда</th>
-                <th>Паллета</th>
-                <th>Короб</th>
-                <th>Заявка</th>
-                <th>Клиент</th>
-                <th>SKU</th>
-                <th>Наименование</th>
-                <th>Размер</th>
-                <th>Тип товара</th>
-                <th>Место</th>
-                <th class="right">Всего</th>
-                <th class="right">Доступно</th>
-                <th class="right">Резерв OBR</th>
-                <th class="right">В обработке</th>
-                <th class="right">Резерв OTG</th>
+                <th>
+                  <a class="sort-link{% if journal_sort_key == 'created_at' %} active{% endif %}" href="{{ journal_sort_urls.created_at }}">
+                    <span>Когда</span>
+                    <span class="sort-icon">{% if journal_sort_key == 'created_at' %}{% if journal_sort_dir == 'asc' %}↑{% else %}↓{% endif %}{% else %}↕{% endif %}</span>
+                  </a>
+                </th>
+                <th>
+                  <a class="sort-link{% if journal_sort_key == 'pallet_code' %} active{% endif %}" href="{{ journal_sort_urls.pallet_code }}">
+                    <span>Паллета</span>
+                    <span class="sort-icon">{% if journal_sort_key == 'pallet_code' %}{% if journal_sort_dir == 'asc' %}↑{% else %}↓{% endif %}{% else %}↕{% endif %}</span>
+                  </a>
+                </th>
+                <th>
+                  <a class="sort-link{% if journal_sort_key == 'box_code' %} active{% endif %}" href="{{ journal_sort_urls.box_code }}">
+                    <span>Короб</span>
+                    <span class="sort-icon">{% if journal_sort_key == 'box_code' %}{% if journal_sort_dir == 'asc' %}↑{% else %}↓{% endif %}{% else %}↕{% endif %}</span>
+                  </a>
+                </th>
+                <th>
+                  <a class="sort-link{% if journal_sort_key == 'order_display' %} active{% endif %}" href="{{ journal_sort_urls.order_display }}">
+                    <span>Заявка</span>
+                    <span class="sort-icon">{% if journal_sort_key == 'order_display' %}{% if journal_sort_dir == 'asc' %}↑{% else %}↓{% endif %}{% else %}↕{% endif %}</span>
+                  </a>
+                </th>
+                <th>
+                  <a class="sort-link{% if journal_sort_key == 'client_label' %} active{% endif %}" href="{{ journal_sort_urls.client_label }}">
+                    <span>Клиент</span>
+                    <span class="sort-icon">{% if journal_sort_key == 'client_label' %}{% if journal_sort_dir == 'asc' %}↑{% else %}↓{% endif %}{% else %}↕{% endif %}</span>
+                  </a>
+                </th>
+                <th>
+                  <a class="sort-link{% if journal_sort_key == 'sku' %} active{% endif %}" href="{{ journal_sort_urls.sku }}">
+                    <span>SKU</span>
+                    <span class="sort-icon">{% if journal_sort_key == 'sku' %}{% if journal_sort_dir == 'asc' %}↑{% else %}↓{% endif %}{% else %}↕{% endif %}</span>
+                  </a>
+                </th>
+                <th>
+                  <a class="sort-link{% if journal_sort_key == 'name' %} active{% endif %}" href="{{ journal_sort_urls.name }}">
+                    <span>Наименование</span>
+                    <span class="sort-icon">{% if journal_sort_key == 'name' %}{% if journal_sort_dir == 'asc' %}↑{% else %}↓{% endif %}{% else %}↕{% endif %}</span>
+                  </a>
+                </th>
+                <th>
+                  <a class="sort-link{% if journal_sort_key == 'size' %} active{% endif %}" href="{{ journal_sort_urls.size }}">
+                    <span>Размер</span>
+                    <span class="sort-icon">{% if journal_sort_key == 'size' %}{% if journal_sort_dir == 'asc' %}↑{% else %}↓{% endif %}{% else %}↕{% endif %}</span>
+                  </a>
+                </th>
+                <th>
+                  <a class="sort-link{% if journal_sort_key == 'goods_type' %} active{% endif %}" href="{{ journal_sort_urls.goods_type }}">
+                    <span>Тип товара</span>
+                    <span class="sort-icon">{% if journal_sort_key == 'goods_type' %}{% if journal_sort_dir == 'asc' %}↑{% else %}↓{% endif %}{% else %}↕{% endif %}</span>
+                  </a>
+                </th>
+                <th>
+                  <a class="sort-link{% if journal_sort_key == 'location' %} active{% endif %}" href="{{ journal_sort_urls.location }}">
+                    <span>Место</span>
+                    <span class="sort-icon">{% if journal_sort_key == 'location' %}{% if journal_sort_dir == 'asc' %}↑{% else %}↓{% endif %}{% else %}↕{% endif %}</span>
+                  </a>
+                </th>
+                <th class="right">
+                  <a class="sort-link{% if journal_sort_key == 'qty' %} active{% endif %}" href="{{ journal_sort_urls.qty }}">
+                    <span>Всего</span>
+                    <span class="sort-icon">{% if journal_sort_key == 'qty' %}{% if journal_sort_dir == 'asc' %}↑{% else %}↓{% endif %}{% else %}↕{% endif %}</span>
+                  </a>
+                </th>
+                <th class="right">
+                  <a class="sort-link{% if journal_sort_key == 'available_qty' %} active{% endif %}" href="{{ journal_sort_urls.available_qty }}">
+                    <span>Доступно</span>
+                    <span class="sort-icon">{% if journal_sort_key == 'available_qty' %}{% if journal_sort_dir == 'asc' %}↑{% else %}↓{% endif %}{% else %}↕{% endif %}</span>
+                  </a>
+                </th>
+                <th class="right">
+                  <a class="sort-link{% if journal_sort_key == 'processing_reserved_qty' %} active{% endif %}" href="{{ journal_sort_urls.processing_reserved_qty }}">
+                    <span>Резерв OBR</span>
+                    <span class="sort-icon">{% if journal_sort_key == 'processing_reserved_qty' %}{% if journal_sort_dir == 'asc' %}↑{% else %}↓{% endif %}{% else %}↕{% endif %}</span>
+                  </a>
+                </th>
+                <th class="right">
+                  <a class="sort-link{% if journal_sort_key == 'processing_in_progress_qty' %} active{% endif %}" href="{{ journal_sort_urls.processing_in_progress_qty }}">
+                    <span>В обработке</span>
+                    <span class="sort-icon">{% if journal_sort_key == 'processing_in_progress_qty' %}{% if journal_sort_dir == 'asc' %}↑{% else %}↓{% endif %}{% else %}↕{% endif %}</span>
+                  </a>
+                </th>
+                <th class="right">
+                  <a class="sort-link{% if journal_sort_key == 'shipping_reserved_qty' %} active{% endif %}" href="{{ journal_sort_urls.shipping_reserved_qty }}">
+                    <span>Резерв OTG</span>
+                    <span class="sort-icon">{% if journal_sort_key == 'shipping_reserved_qty' %}{% if journal_sort_dir == 'asc' %}↑{% else %}↓{% endif %}{% else %}↕{% endif %}</span>
+                  </a>
+                </th>
+              </tr>
+              <tr class="filter-row">
+                <th class="idx"></th>
+                <th><input class="mini-input" type="text" name="f_when" value="{{ column_filters.f_when }}" form="journalFilters" placeholder="Дата"></th>
+                <th><input class="mini-input" type="text" name="f_pallet" value="{{ column_filters.f_pallet }}" form="journalFilters" placeholder="Паллета"></th>
+                <th><input class="mini-input" type="text" name="f_box" value="{{ column_filters.f_box }}" form="journalFilters" placeholder="Короб"></th>
+                <th><input class="mini-input" type="text" name="f_order" value="{{ column_filters.f_order }}" form="journalFilters" placeholder="Заявка"></th>
+                <th><input class="mini-input" type="text" name="f_client" value="{{ column_filters.f_client }}" form="journalFilters" placeholder="Клиент"></th>
+                <th><input class="mini-input" type="text" name="f_sku" value="{{ column_filters.f_sku }}" form="journalFilters" placeholder="SKU"></th>
+                <th><input class="mini-input" type="text" name="f_name" value="{{ column_filters.f_name }}" form="journalFilters" placeholder="Наименование"></th>
+                <th><input class="mini-input" type="text" name="f_size" value="{{ column_filters.f_size }}" form="journalFilters" placeholder="Размер"></th>
+                <th><input class="mini-input" type="text" name="f_goods_type" value="{{ column_filters.f_goods_type }}" form="journalFilters" placeholder="Тип"></th>
+                <th><input class="mini-input" type="text" name="f_location" value="{{ column_filters.f_location }}" form="journalFilters" placeholder="Место"></th>
+                <th></th>
+                <th></th>
+                <th></th>
+                <th></th>
+                <th></th>
               </tr>
             </thead>
             <tbody>

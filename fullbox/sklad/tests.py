@@ -1837,6 +1837,35 @@ class StaffInventoryJournalAvailableQtyTests(TestCase):
         self.assertEqual(sum(row["available_qty"] for row in agency_a_rows), 7)
         self.assertEqual(sum(row["available_qty"] for row in agency_b_rows), 3)
 
+    def test_staff_inventory_journal_renders_column_filters_and_sort_controls(self):
+        create_warehouse_snapshot_row(
+            agency=self.agency_a,
+            order_id="A-3",
+            sku="SKU-FLT",
+            name="Товар с фильтрами",
+            size="45",
+            goods_type="Оптовый",
+            qty=4,
+            pallet_code="PAL-FLT-1",
+            box_code="BOX-FLT-1",
+        )
+
+        response = self.client.get(
+            "/sklad/journal/",
+            {
+                "client": str(self.agency_a.id),
+                "sort": "sku",
+                "dir": "asc",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'name="f_pallet"', html=False)
+        self.assertContains(response, 'name="f_location"', html=False)
+        self.assertContains(response, "sort=created_at", html=False)
+        self.assertContains(response, "sort=sku", html=False)
+        self.assertContains(response, "↕", html=False)
+
 
 class InventoryJournalUiServiceTests(TestCase):
     def setUp(self):
@@ -1947,6 +1976,96 @@ class InventoryJournalUiServiceTests(TestCase):
         self.assertEqual(rows[0]["location_short"], "OS-2/3-1-4")
         self.assertEqual(page["context"]["journal_summary"]["total_qty"], 7)
         self.assertEqual(page["context"]["journal_focus"]["order_label"], "7_PR")
+
+    def test_build_inventory_journal_page_applies_column_filters_for_staff(self):
+        create_warehouse_snapshot_row(
+            agency=self.other_agency,
+            order_id="7",
+            sku="SKU-FILTER-A",
+            name="Товар Б",
+            size="44",
+            goods_type="Оптовый",
+            qty=7,
+            box_code="BOX-TD-1",
+            pallet_code="PAL-TD-1",
+            zone="OS",
+            row=2,
+            section=3,
+            tier=1,
+            cell=4,
+        )
+        create_warehouse_snapshot_row(
+            agency=self.other_agency,
+            order_id="8",
+            sku="SKU-FILTER-B",
+            name="Другой товар",
+            size="45",
+            goods_type="Готовый",
+            qty=5,
+            box_code="BOX-TD-2",
+            pallet_code="PAL-TD-2",
+            zone="OS",
+            row=1,
+            section=1,
+            tier=1,
+            cell=1,
+        )
+        request = self.factory.get(
+            "/sklad/journal/",
+            {
+                "client": str(self.other_agency.id),
+                "f_pallet": "PAL-TD-1",
+                "f_location": "OS-2/3-1-4",
+            },
+        )
+        request.user = self.staff_user
+
+        page = build_inventory_journal_page(request=request)
+
+        rows = page["context"]["rows"]
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["sku"], "SKU-FILTER-A")
+        self.assertTrue(page["context"]["journal_has_filters"])
+        self.assertEqual(page["context"]["column_filters"]["f_pallet"], "PAL-TD-1")
+
+    def test_build_inventory_journal_page_sorts_rows_by_requested_column(self):
+        create_warehouse_snapshot_row(
+            agency=self.other_agency,
+            order_id="9",
+            sku="SKU-Z",
+            name="Товар Я",
+            size="44",
+            goods_type="Оптовый",
+            qty=3,
+            row=2,
+        )
+        create_warehouse_snapshot_row(
+            agency=self.other_agency,
+            order_id="10",
+            sku="SKU-A",
+            name="Товар А",
+            size="42",
+            goods_type="Оптовый",
+            qty=9,
+            row=1,
+        )
+        request = self.factory.get(
+            "/sklad/journal/",
+            {
+                "client": str(self.other_agency.id),
+                "sort": "sku",
+                "dir": "asc",
+            },
+        )
+        request.user = self.staff_user
+
+        page = build_inventory_journal_page(request=request)
+
+        rows = page["context"]["rows"]
+        self.assertEqual([row["sku"] for row in rows], ["SKU-A", "SKU-Z"])
+        self.assertEqual(page["context"]["journal_sort_key"], "sku")
+        self.assertEqual(page["context"]["journal_sort_dir"], "asc")
+        self.assertIn("dir=desc", page["context"]["journal_sort_urls"]["sku"])
 
 
 class StockSnapshotBarcodeRecoveryTests(TestCase):

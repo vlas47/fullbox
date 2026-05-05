@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from datetime import datetime
+from urllib.parse import urlencode
 
 from django.db.models import Max, Q, Sum
 from django.http import HttpResponseForbidden
@@ -19,6 +20,35 @@ _IP_PREFIX_RE = re.compile(r"\bиндивидуальный предприним
 _JOURNAL_HIDDEN_WAREHOUSE_STATES = {
     WarehouseStateCode.IN_PROCESSING_ZONE.value,
     WarehouseStateCode.PROCESSING_IN_PROGRESS.value,
+}
+_JOURNAL_COLUMN_FILTERS = {
+    "f_when": "created_at",
+    "f_pallet": "pallet_code",
+    "f_box": "box_code",
+    "f_order": "order_display",
+    "f_client": "client_label",
+    "f_sku": "sku",
+    "f_name": "name",
+    "f_size": "size",
+    "f_goods_type": "goods_type",
+    "f_location": "location_short",
+}
+_JOURNAL_SORT_DEFAULT_DIR = {
+    "created_at": "desc",
+    "pallet_code": "asc",
+    "box_code": "asc",
+    "order_display": "asc",
+    "client_label": "asc",
+    "sku": "asc",
+    "name": "asc",
+    "size": "asc",
+    "goods_type": "asc",
+    "location": "asc",
+    "qty": "desc",
+    "available_qty": "desc",
+    "processing_reserved_qty": "desc",
+    "processing_in_progress_qty": "desc",
+    "shipping_reserved_qty": "desc",
 }
 
 
@@ -347,6 +377,84 @@ def _journal_unique_values(rows: list[dict], key: str) -> list[str]:
         seen.add(value)
         values.append(value)
     return values
+
+
+def _journal_normalized_text(value: object | None) -> str:
+    return " ".join(str(value or "").strip().split()).lower()
+
+
+def _journal_datetime_label(value) -> str:
+    if not value:
+        return ""
+    dt_value = value
+    if timezone.is_naive(dt_value):
+        dt_value = timezone.make_aware(dt_value, timezone.get_current_timezone())
+    return timezone.localtime(dt_value).strftime("%d.%m.%Y %H:%M")
+
+
+def _journal_filter_text(row: dict, filter_name: str) -> str:
+    if filter_name == "f_when":
+        return _journal_datetime_label(row.get("created_at"))
+    if filter_name == "f_order":
+        return " ".join(
+            part
+            for part in [
+                str(row.get("order_display") or "").strip(),
+                str(row.get("order_id") or "").strip(),
+                str(row.get("order_type_label") or "").strip(),
+            ]
+            if part and part != "-"
+        )
+    if filter_name == "f_location":
+        return " ".join(
+            part
+            for part in [
+                str(row.get("location_short") or "").strip(),
+                str(row.get("location") or "").strip(),
+                str(row.get("zone") or "").strip(),
+            ]
+            if part and part != "-"
+        )
+    field_name = _JOURNAL_COLUMN_FILTERS.get(filter_name)
+    if not field_name:
+        return ""
+    return str(row.get(field_name) or "").strip()
+
+
+def _journal_sort_value(row: dict, sort_key: str):
+    if sort_key == "created_at":
+        value = row.get("created_at")
+        return value.timestamp() if value else 0
+    if sort_key == "location":
+        return (
+            _journal_normalized_text(row.get("zone")),
+            int(row.get("row_no") or 0),
+            int(row.get("section_no") or 0),
+            int(row.get("tier_no") or 0),
+            int(row.get("cell_no") or 0),
+            _journal_normalized_text(row.get("location_short")),
+            _journal_normalized_text(row.get("location")),
+        )
+    if sort_key in {
+        "qty",
+        "available_qty",
+        "processing_reserved_qty",
+        "processing_in_progress_qty",
+        "shipping_reserved_qty",
+    }:
+        return int(row.get(sort_key) or 0)
+    return _journal_normalized_text(row.get(sort_key))
+
+
+def _build_journal_query_url(request, **updates) -> str:
+    params = request.GET.copy()
+    for key, value in updates.items():
+        if value in (None, ""):
+            params.pop(key, None)
+        else:
+            params[key] = str(value)
+    query = params.urlencode()
+    return f"{request.path}?{query}" if query else request.path
 
 
 def _build_inventory_journal_summary(rows: list[dict]) -> dict:
@@ -706,6 +814,16 @@ def build_inventory_journal_page(*, request):
     q = (request.GET.get("q") or "").strip()
     date_from_raw = (request.GET.get("date_from") or "").strip()
     date_to_raw = (request.GET.get("date_to") or "").strip()
+    column_filters = {
+        key: (request.GET.get(key) or "").strip()
+        for key in _JOURNAL_COLUMN_FILTERS
+    }
+    sort_key = (request.GET.get("sort") or "created_at").strip()
+    if sort_key not in _JOURNAL_SORT_DEFAULT_DIR:
+        sort_key = "created_at"
+    sort_dir = (request.GET.get("dir") or _JOURNAL_SORT_DEFAULT_DIR.get(sort_key, "asc")).strip().lower()
+    if sort_dir not in {"asc", "desc"}:
+        sort_dir = _JOURNAL_SORT_DEFAULT_DIR.get(sort_key, "asc")
     date_from = None
     date_to = None
     try:
@@ -720,7 +838,7 @@ def build_inventory_journal_page(*, request):
     except ValueError:
         date_to = None
         date_to_raw = ""
-    if date_from or date_to or q:
+    if date_from or date_to or q or any(column_filters.values()):
         q_lower = q.lower()
         filtered_rows = []
         for row in rows:
@@ -759,11 +877,38 @@ def build_inventory_journal_page(*, request):
                 ).lower()
                 if q_lower not in search_blob:
                     continue
+            matched_column_filters = True
+            for filter_name, filter_value in column_filters.items():
+                filter_text = _journal_normalized_text(filter_value)
+                if not filter_text:
+                    continue
+                row_text = _journal_normalized_text(_journal_filter_text(row, filter_name))
+                if filter_text not in row_text:
+                    matched_column_filters = False
+                    break
+            if not matched_column_filters:
+                continue
             filtered_rows.append(row)
         rows = filtered_rows
-    rows.sort(key=lambda item: item["created_at"], reverse=True)
+    rows.sort(
+        key=lambda item: _journal_sort_value(item, sort_key),
+        reverse=(sort_dir == "desc"),
+    )
     journal_summary = _build_inventory_journal_summary(rows)
     journal_focus = _build_inventory_journal_focus(rows, q)
+    journal_has_filters = bool(q or date_from_raw or date_to_raw or any(column_filters.values()))
+    sort_urls = {}
+    for key, default_dir in _JOURNAL_SORT_DEFAULT_DIR.items():
+        next_dir = default_dir
+        if sort_key == key:
+            next_dir = "desc" if sort_dir == "asc" else "asc"
+        sort_urls[key] = _build_journal_query_url(request, sort=key, dir=next_dir)
+    reset_params = {}
+    if request.GET.get("client"):
+        reset_params["client"] = request.GET.get("client")
+    if request.GET.get("agency"):
+        reset_params["agency"] = request.GET.get("agency")
+    journal_reset_url = f"{request.path}?{urlencode(reset_params)}" if reset_params else request.path
     role = get_request_role(request)
     if not staff_view:
         template_name = "client_cabinet/inventory_journal.html"
@@ -780,6 +925,12 @@ def build_inventory_journal_page(*, request):
             "q": q,
             "date_from": date_from_raw,
             "date_to": date_to_raw,
+            "column_filters": column_filters,
+            "journal_sort_key": sort_key,
+            "journal_sort_dir": sort_dir,
+            "journal_sort_urls": sort_urls,
+            "journal_has_filters": journal_has_filters,
+            "journal_reset_url": journal_reset_url,
             "journal_summary": journal_summary,
             "journal_focus": journal_focus,
         },
