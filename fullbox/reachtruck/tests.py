@@ -2698,6 +2698,332 @@ class ReachtruckMobileFlowTests(TestCase):
         self.assertIn("Паллета ТДТ-REQ-2-gv подтверждена.", result.message)
         self.assertNotIn(garbled_scan, result.message)
 
+    def test_mobile_request_flow_returns_detailed_error_for_unknown_pallet(self):
+        self._create_placement(
+            pallet_code="PAL-REQ-DET-1",
+            boxes=[("BOX-REQ-DET-1", "200000000301", 10)],
+            zone="PR",
+        )
+        self._create_placement(
+            pallet_code="PAL-REQ-DET-2",
+            boxes=[("BOX-REQ-DET-2", "200000000302", 10)],
+            zone="PR",
+        )
+        move_id_1 = create_stock_move_task(
+            user=self.manager_user,
+            agency=self.agency,
+            description="Детальная ошибка по чужой паллете 1",
+            requested_by_name="Менеджер",
+            requested_by_role="manager",
+            payload={
+                "status": "created",
+                "status_label": "Ожидает перевозки",
+                "receiving_order_id": "86",
+                "pallet_code": "PAL-REQ-DET-1",
+                "from_location": {"zone": "PR"},
+                "to_location": {"zone": "OS", "row": 1, "section": 1, "tier": 1, "cell": 1},
+                "from_label": "PR · Зона приемки",
+                "to_label": "OS · Ряд 1 · Секция 1 · Ярус 1 · Ячейка 1",
+                "move_mode": MOVE_MODE_PALLET_FULL,
+                "pick_mode": "full",
+            },
+        )
+        move_id_2 = create_stock_move_task(
+            user=self.manager_user,
+            agency=self.agency,
+            description="Детальная ошибка по чужой паллете 2",
+            requested_by_name="Менеджер",
+            requested_by_role="manager",
+            payload={
+                "status": "created",
+                "status_label": "Ожидает перевозки",
+                "receiving_order_id": "86",
+                "pallet_code": "PAL-REQ-DET-2",
+                "from_location": {"zone": "PR"},
+                "to_location": {"zone": "OS", "row": 1, "section": 1, "tier": 1, "cell": 2},
+                "from_label": "PR · Зона приемки",
+                "to_label": "OS · Ряд 1 · Секция 1 · Ярус 1 · Ячейка 2",
+                "move_mode": MOVE_MODE_PALLET_FULL,
+                "pick_mode": "full",
+            },
+        )
+        take_result = take_move_request(
+            legacy_order_ids=[move_id_1, move_id_2],
+            user=self.driver_user,
+            employee_id=self.driver_employee.id,
+            employee_name=self.driver_employee.full_name,
+        )
+        self.assertTrue(take_result.ok, take_result.error)
+
+        result = scan_move_request_step(
+            legacy_order_ids=[move_id_1, move_id_2],
+            scan_value="PAL-NOT-IN-REQUEST",
+            user=self.driver_user,
+            employee_id=self.driver_employee.id,
+            employee_name=self.driver_employee.full_name,
+        )
+
+        self.assertFalse(result.ok)
+        self.assertIn("PAL-NOT-IN-REQUEST", result.error)
+        self.assertIn("PAL-REQ-DET-1", result.error)
+        self.assertIn("PAL-REQ-DET-2", result.error)
+
+    def test_mobile_request_flow_returns_detailed_error_for_wrong_destination(self):
+        self._create_placement(
+            pallet_code="PAL-REQ-WRONG-DEST-1",
+            boxes=[("BOX-REQ-WRONG-DEST-1", "200000000311", 10)],
+            zone="PR",
+        )
+        self._create_placement(
+            pallet_code="PAL-REQ-WRONG-DEST-2",
+            boxes=[("BOX-REQ-WRONG-DEST-2", "200000000312", 10)],
+            zone="PR",
+        )
+        move_id_1 = create_stock_move_task(
+            user=self.manager_user,
+            agency=self.agency,
+            description="Ошибка по неверному месту 1",
+            requested_by_name="Менеджер",
+            requested_by_role="manager",
+            payload={
+                "status": "created",
+                "status_label": "Ожидает перевозки",
+                "receiving_order_id": "87",
+                "pallet_code": "PAL-REQ-WRONG-DEST-1",
+                "from_location": {"zone": "PR"},
+                "to_location": {"zone": "OS", "row": 1, "section": 1, "tier": 1, "cell": 3},
+                "from_label": "PR · Зона приемки",
+                "to_label": "OS · Ряд 1 · Секция 1 · Ярус 1 · Ячейка 3",
+                "move_mode": MOVE_MODE_PALLET_FULL,
+                "pick_mode": "full",
+            },
+        )
+        move_id_2 = create_stock_move_task(
+            user=self.manager_user,
+            agency=self.agency,
+            description="Ошибка по неверному месту 2",
+            requested_by_name="Менеджер",
+            requested_by_role="manager",
+            payload={
+                "status": "created",
+                "status_label": "Ожидает перевозки",
+                "receiving_order_id": "87",
+                "pallet_code": "PAL-REQ-WRONG-DEST-2",
+                "from_location": {"zone": "PR"},
+                "to_location": {"zone": "OS", "row": 1, "section": 1, "tier": 1, "cell": 4},
+                "from_label": "PR · Зона приемки",
+                "to_label": "OS · Ряд 1 · Секция 1 · Ярус 1 · Ячейка 4",
+                "move_mode": MOVE_MODE_PALLET_FULL,
+                "pick_mode": "full",
+            },
+        )
+        take_result = take_move_request(
+            legacy_order_ids=[move_id_1, move_id_2],
+            user=self.driver_user,
+            employee_id=self.driver_employee.id,
+            employee_name=self.driver_employee.full_name,
+        )
+        self.assertTrue(take_result.ok, take_result.error)
+
+        first_step = scan_move_request_step(
+            legacy_order_ids=[move_id_1, move_id_2],
+            scan_value="PAL-REQ-WRONG-DEST-1",
+            user=self.driver_user,
+            employee_id=self.driver_employee.id,
+            employee_name=self.driver_employee.full_name,
+        )
+        self.assertTrue(first_step.ok, first_step.error)
+
+        result = scan_move_request_step(
+            legacy_order_ids=[move_id_1, move_id_2],
+            scan_value="0-1/1-4",
+            user=self.driver_user,
+            employee_id=self.driver_employee.id,
+            employee_name=self.driver_employee.full_name,
+        )
+
+        self.assertFalse(result.ok)
+        self.assertIn("PAL-REQ-WRONG-DEST-1", result.error)
+        self.assertIn("0-1/1-3", result.error)
+        self.assertIn("0-1/1-4", result.error)
+
+    def test_mobile_request_flow_reports_delivered_pallet_explicitly(self):
+        self._create_placement(
+            pallet_code="PAL-REQ-DONE-1",
+            boxes=[("BOX-REQ-DONE-1", "200000000321", 10)],
+            zone="PR",
+        )
+        self._create_placement(
+            pallet_code="PAL-REQ-DONE-2",
+            boxes=[("BOX-REQ-DONE-2", "200000000322", 10)],
+            zone="PR",
+        )
+        move_id_1 = create_stock_move_task(
+            user=self.manager_user,
+            agency=self.agency,
+            description="Паллета уже доставлена 1",
+            requested_by_name="Менеджер",
+            requested_by_role="manager",
+            payload={
+                "status": "created",
+                "status_label": "Ожидает перевозки",
+                "receiving_order_id": "88",
+                "pallet_code": "PAL-REQ-DONE-1",
+                "from_location": {"zone": "PR"},
+                "to_location": {"zone": "OS", "row": 1, "section": 1, "tier": 1, "cell": 5},
+                "from_label": "PR · Зона приемки",
+                "to_label": "OS · Ряд 1 · Секция 1 · Ярус 1 · Ячейка 5",
+                "move_mode": MOVE_MODE_PALLET_FULL,
+                "pick_mode": "full",
+            },
+        )
+        move_id_2 = create_stock_move_task(
+            user=self.manager_user,
+            agency=self.agency,
+            description="Паллета уже доставлена 2",
+            requested_by_name="Менеджер",
+            requested_by_role="manager",
+            payload={
+                "status": "created",
+                "status_label": "Ожидает перевозки",
+                "receiving_order_id": "88",
+                "pallet_code": "PAL-REQ-DONE-2",
+                "from_location": {"zone": "PR"},
+                "to_location": {"zone": "OS", "row": 1, "section": 1, "tier": 1, "cell": 6},
+                "from_label": "PR · Зона приемки",
+                "to_label": "OS · Ряд 1 · Секция 1 · Ярус 1 · Ячейка 6",
+                "move_mode": MOVE_MODE_PALLET_FULL,
+                "pick_mode": "full",
+            },
+        )
+        take_result = take_move_request(
+            legacy_order_ids=[move_id_1, move_id_2],
+            user=self.driver_user,
+            employee_id=self.driver_employee.id,
+            employee_name=self.driver_employee.full_name,
+        )
+        self.assertTrue(take_result.ok, take_result.error)
+
+        self.assertTrue(
+            scan_move_request_step(
+                legacy_order_ids=[move_id_1, move_id_2],
+                scan_value="PAL-REQ-DONE-1",
+                user=self.driver_user,
+                employee_id=self.driver_employee.id,
+                employee_name=self.driver_employee.full_name,
+            ).ok
+        )
+        self.assertTrue(
+            scan_move_request_step(
+                legacy_order_ids=[move_id_1, move_id_2],
+                scan_value="0-1/1-5",
+                user=self.driver_user,
+                employee_id=self.driver_employee.id,
+                employee_name=self.driver_employee.full_name,
+            ).ok
+        )
+
+        result = scan_move_request_step(
+            legacy_order_ids=[move_id_1, move_id_2],
+            scan_value="PAL-REQ-DONE-1",
+            user=self.driver_user,
+            employee_id=self.driver_employee.id,
+            employee_name=self.driver_employee.full_name,
+        )
+
+        self.assertFalse(result.ok)
+        self.assertIn("PAL-REQ-DONE-1", result.error)
+        self.assertIn("0-1/1-5", result.error)
+        self.assertIn("уже доставлена", result.error)
+
+    def test_mobile_request_flow_duplicate_destination_scan_stays_positive(self):
+        self._create_placement(
+            pallet_code="PAL-REQ-DUP-1",
+            boxes=[("BOX-REQ-DUP-1", "200000000331", 10)],
+            zone="PR",
+        )
+        self._create_placement(
+            pallet_code="PAL-REQ-DUP-2",
+            boxes=[("BOX-REQ-DUP-2", "200000000332", 10)],
+            zone="PR",
+        )
+        move_id_1 = create_stock_move_task(
+            user=self.manager_user,
+            agency=self.agency,
+            description="Дубль места 1",
+            requested_by_name="Менеджер",
+            requested_by_role="manager",
+            payload={
+                "status": "created",
+                "status_label": "Ожидает перевозки",
+                "receiving_order_id": "89",
+                "pallet_code": "PAL-REQ-DUP-1",
+                "from_location": {"zone": "PR"},
+                "to_location": {"zone": "OS", "row": 1, "section": 1, "tier": 1, "cell": 7},
+                "from_label": "PR · Зона приемки",
+                "to_label": "OS · Ряд 1 · Секция 1 · Ярус 1 · Ячейка 7",
+                "move_mode": MOVE_MODE_PALLET_FULL,
+                "pick_mode": "full",
+            },
+        )
+        move_id_2 = create_stock_move_task(
+            user=self.manager_user,
+            agency=self.agency,
+            description="Дубль места 2",
+            requested_by_name="Менеджер",
+            requested_by_role="manager",
+            payload={
+                "status": "created",
+                "status_label": "Ожидает перевозки",
+                "receiving_order_id": "89",
+                "pallet_code": "PAL-REQ-DUP-2",
+                "from_location": {"zone": "PR"},
+                "to_location": {"zone": "OS", "row": 1, "section": 1, "tier": 1, "cell": 8},
+                "from_label": "PR · Зона приемки",
+                "to_label": "OS · Ряд 1 · Секция 1 · Ярус 1 · Ячейка 8",
+                "move_mode": MOVE_MODE_PALLET_FULL,
+                "pick_mode": "full",
+            },
+        )
+        take_result = take_move_request(
+            legacy_order_ids=[move_id_1, move_id_2],
+            user=self.driver_user,
+            employee_id=self.driver_employee.id,
+            employee_name=self.driver_employee.full_name,
+        )
+        self.assertTrue(take_result.ok, take_result.error)
+
+        self.assertTrue(
+            scan_move_request_step(
+                legacy_order_ids=[move_id_1, move_id_2],
+                scan_value="PAL-REQ-DUP-1",
+                user=self.driver_user,
+                employee_id=self.driver_employee.id,
+                employee_name=self.driver_employee.full_name,
+            ).ok
+        )
+        first_destination = scan_move_request_step(
+            legacy_order_ids=[move_id_1, move_id_2],
+            scan_value="0-1/1-7",
+            user=self.driver_user,
+            employee_id=self.driver_employee.id,
+            employee_name=self.driver_employee.full_name,
+        )
+        self.assertTrue(first_destination.ok, first_destination.error)
+
+        duplicate_destination = scan_move_request_step(
+            legacy_order_ids=[move_id_1, move_id_2],
+            scan_value="0-1/1-7",
+            user=self.driver_user,
+            employee_id=self.driver_employee.id,
+            employee_name=self.driver_employee.full_name,
+        )
+
+        self.assertTrue(duplicate_destination.ok, duplicate_destination.error)
+        self.assertFalse(duplicate_destination.completed)
+        self.assertIn("уже подтверждено", duplicate_destination.message)
+        self.assertIn("следующую паллету", duplicate_destination.message)
+
     def test_mobile_home_shows_current_request_and_in_progress_count_after_take_request(self):
         self._create_placement(
             pallet_code="PAL-REQ-HOME-1",

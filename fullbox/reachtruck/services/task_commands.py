@@ -329,6 +329,64 @@ def display_scan_text(value: str | None) -> str:
     return max(variants, key=_display_variant_score)
 
 
+def _task_pallet_display(payload: dict, fallback: str | None = None) -> str:
+    return display_scan_text(payload.get("pallet_code") or fallback)
+
+
+def _task_source_code(payload: dict) -> str:
+    return _location_scan_code(payload.get("from_location") or {})
+
+
+def _task_destination_code(payload: dict) -> str:
+    return _location_scan_code(payload.get("to_location") or {})
+
+
+def _request_remaining_pallet_labels(tasks: list[MoveTask]) -> list[str]:
+    labels: list[str] = []
+    for task in tasks:
+        payload = dict(task.payload or {})
+        if _task_payload_status(task, payload) == MoveTask.STATUS_DONE:
+            continue
+        labels.append(_task_pallet_display(payload))
+    return labels
+
+
+def _request_duplicate_destination_result(tasks: list[MoveTask], scan_code: str) -> MoveTaskCommandResult | None:
+    remaining_count = sum(
+        1
+        for task in tasks
+        if _task_payload_status(task, dict(task.payload or {})) != MoveTask.STATUS_DONE
+    )
+    for task in tasks:
+        payload = dict(task.payload or {})
+        status = _task_payload_status(task, payload)
+        execution = dict(payload.get("mobile_execution") or {})
+        if status != MoveTask.STATUS_DONE and not execution.get("destination_confirmed"):
+            continue
+        if not _same_location_scan(scan_code, payload.get("to_location") or {}):
+            continue
+        destination_code = _task_destination_code(payload)
+        pallet_code = _task_pallet_display(payload, fallback=scan_code)
+        if remaining_count <= 0:
+            return MoveTaskCommandResult(
+                ok=True,
+                message=(
+                    f"Место {destination_code} уже подтверждено. "
+                    f"Паллета {pallet_code} уже размещена."
+                ),
+                completed=True,
+            )
+        return MoveTaskCommandResult(
+            ok=True,
+            message=(
+                f"Место {destination_code} уже подтверждено. "
+                f"Паллета {pallet_code} уже размещена, сканируйте следующую паллету."
+            ),
+            completed=False,
+        )
+    return None
+
+
 def _same_scan_value(left: str | None, right: str | None) -> bool:
     return bool(_scan_compare_variants(left) & _scan_compare_variants(right))
 
@@ -842,13 +900,34 @@ def scan_move_task_step(
     payload = dict(task.payload or {})
     status = _task_payload_status(task, payload)
     assigned_to_id = _task_assignee_id(task, payload)
+    scan_code = str(scan_value or "").strip()
+    pallet_code = str(payload.get("pallet_code") or "").strip()
+    pallet_code_display = _task_pallet_display(payload, fallback=scan_code)
+    source_code = _task_source_code(payload)
+    destination_code = _task_destination_code(payload)
+    from_location = payload.get("from_location") or {}
+    to_location = payload.get("to_location") or {}
+    if status == MoveTask.STATUS_DONE:
+        if _same_location_scan(scan_code, to_location):
+            return MoveTaskCommandResult(
+                ok=True,
+                message=(
+                    f"Место {destination_code} уже подтверждено. "
+                    f"Паллета {pallet_code_display} уже размещена."
+                ),
+                completed=True,
+            )
+        if _same_pallet_code_scan(scan_code, pallet_code):
+            return MoveTaskCommandResult(
+                ok=False,
+                error=f"Паллета {pallet_code_display} уже доставлена в {destination_code}.",
+            )
+        return MoveTaskCommandResult(ok=False, error="Задание уже выполнено.")
     if status != MoveTask.STATUS_IN_PROGRESS:
         return MoveTaskCommandResult(ok=False, error="Сначала возьмите задание в работу.")
     if assigned_to_id and assigned_to_id != employee_id:
         return MoveTaskCommandResult(ok=False, error="Задание назначено другому водителю.")
 
-    pallet_code = str(payload.get("pallet_code") or "").strip()
-    pallet_code_display = display_scan_text(pallet_code)
     placement_entry = _find_placement_entry_for_pallet(
         pallet_code,
         receiving_order_id=str(payload.get("receiving_order_id") or "").strip() or None,
@@ -861,7 +940,6 @@ def scan_move_task_step(
     execution = dict(payload.get("mobile_execution") or {})
     execution.setdefault("boxes_scanned", [])
     execution.setdefault("units_scanned", {})
-    scan_code = str(scan_value or "").strip()
     if not scan_code:
         return MoveTaskCommandResult(ok=False, error="Отсканируйте код.")
 
@@ -870,14 +948,31 @@ def scan_move_task_step(
         return MoveTaskCommandResult(ok=False, error="Не удалось подготовить сценарий сканирования.")
     source_code = snapshot["source_code"]
     destination_code = snapshot["destination_code"]
-    from_location = payload.get("from_location") or {}
-    to_location = payload.get("to_location") or {}
 
     if not snapshot["source_confirmed"]:
+        if _same_pallet_code_scan(scan_code, pallet_code):
+            return MoveTaskCommandResult(
+                ok=False,
+                error=(
+                    f"Сначала подтвердите место {source_code}, "
+                    f"потом сканируйте паллету {pallet_code_display}."
+                ),
+            )
+        if _same_location_scan(scan_code, to_location):
+            return MoveTaskCommandResult(
+                ok=False,
+                error=(
+                    f"Отсканировано место назначения {destination_code}. "
+                    f"Сначала подтвердите текущее место {source_code}."
+                ),
+            )
         if not _same_location_scan(scan_code, from_location):
             return MoveTaskCommandResult(
                 ok=False,
-                error=f"Неверный код места. Ожидалось: {source_code}.",
+                error=(
+                    f"Место {display_scan_text(scan_code)} не подходит. "
+                    f"Сейчас ожидается место {source_code}."
+                ),
             )
         execution["source_confirmed"] = True
         execution["last_scan"] = scan_code
@@ -887,10 +982,29 @@ def scan_move_task_step(
         return MoveTaskCommandResult(ok=True, task=task, payload=payload, message="Место хранения подтверждено.")
 
     if not snapshot["pallet_confirmed"]:
+        if _same_location_scan(scan_code, from_location):
+            return MoveTaskCommandResult(
+                ok=False,
+                error=(
+                    f"Место {source_code} уже подтверждено. "
+                    f"Теперь отсканируйте паллету {pallet_code_display}."
+                ),
+            )
+        if _same_location_scan(scan_code, to_location):
+            return MoveTaskCommandResult(
+                ok=False,
+                error=(
+                    f"Отсканировано место назначения {destination_code}. "
+                    f"Сейчас нужно подтвердить паллету {pallet_code_display}."
+                ),
+            )
         if not _same_pallet_code_scan(scan_code, pallet_code):
             return MoveTaskCommandResult(
                 ok=False,
-                error=f"Неверный код паллеты. Ожидалось: {pallet_code_display}.",
+                error=(
+                    f"Паллета {display_scan_text(scan_code)} не подходит. "
+                    f"Ожидалась паллета {pallet_code_display}."
+                ),
             )
         execution["pallet_confirmed"] = True
         execution["last_scan"] = scan_code
@@ -966,10 +1080,29 @@ def scan_move_task_step(
 
     snapshot = build_mobile_execution_snapshot(legacy_order_id)
     if snapshot["all_boxes_complete"] and not snapshot["destination_confirmed"]:
+        if _same_pallet_code_scan(scan_code, pallet_code):
+            return MoveTaskCommandResult(
+                ok=False,
+                error=(
+                    f"Паллета {pallet_code_display} уже подтверждена. "
+                    f"Теперь отсканируйте место {destination_code}."
+                ),
+            )
+        if _same_location_scan(scan_code, from_location):
+            return MoveTaskCommandResult(
+                ok=False,
+                error=(
+                    f"Вы снова отсканировали исходное место {source_code}. "
+                    f"Нужно подтвердить место назначения {destination_code}."
+                ),
+            )
         if not _same_location_scan(scan_code, to_location):
             return MoveTaskCommandResult(
                 ok=False,
-                error=f"Неверный код места назначения. Ожидалось: {destination_code}.",
+                error=(
+                    f"Место {display_scan_text(scan_code)} не подходит для этой паллеты. "
+                    f"Ожидается место {destination_code}."
+                ),
             )
         execution = dict((task.payload or {}).get("mobile_execution") or {})
         execution["destination_confirmed"] = True
@@ -997,7 +1130,10 @@ def scan_move_task_step(
     expected = snapshot.get("expected_scan") or "следующий шаг задания"
     return MoveTaskCommandResult(
         ok=False,
-        error=f"Неверный код. Сейчас ожидается: {expected}.",
+        error=(
+            f"Код {display_scan_text(scan_code)} сейчас не нужен. "
+            f"Ожидается: {expected}."
+        ),
     )
 
 
@@ -1296,15 +1432,18 @@ def scan_move_request_step(
     if not employee_id:
         return MoveTaskCommandResult(ok=False, error="Профиль сотрудника не найден.")
 
+    scan_code = str(scan_value or "").strip()
+    if not scan_code:
+        return MoveTaskCommandResult(ok=False, error="Отсканируйте код.")
+
+    duplicate_destination_result = _request_duplicate_destination_result(tasks, scan_code)
     snapshot = build_mobile_request_execution_snapshot(legacy_order_ids, employee_id=employee_id)
     if not snapshot:
         return MoveTaskCommandResult(ok=False, error="Не удалось подготовить заявку к сканированию.")
     if not snapshot["can_scan"]:
+        if duplicate_destination_result:
+            return duplicate_destination_result
         return MoveTaskCommandResult(ok=False, error="Сначала возьмите всю заявку в работу.")
-
-    scan_code = str(scan_value or "").strip()
-    if not scan_code:
-        return MoveTaskCommandResult(ok=False, error="Отсканируйте код.")
 
     task_map = {str(task.legacy_order_id or "").strip(): task for task in tasks}
     authenticated_user = user if getattr(user, "is_authenticated", False) else None
@@ -1315,10 +1454,31 @@ def scan_move_request_step(
             return MoveTaskCommandResult(ok=False, error="Активная паллета заявки не найдена.")
         active_payload = dict(active_task.payload or {})
         expected_code = str(snapshot.get("active_destination_code") or "").strip()
+        active_pallet = _task_pallet_display(active_payload, fallback=scan_code)
+        source_code = _task_source_code(active_payload)
+        if _same_pallet_code_scan(scan_code, active_payload.get("pallet_code")):
+            return MoveTaskCommandResult(
+                ok=False,
+                error=(
+                    f"Паллета {active_pallet} уже подтверждена. "
+                    f"Теперь отсканируйте место {expected_code}."
+                ),
+            )
+        if _same_location_scan(scan_code, active_payload.get("from_location") or {}):
+            return MoveTaskCommandResult(
+                ok=False,
+                error=(
+                    f"Вы снова отсканировали исходное место {source_code}. "
+                    f"Для паллеты {active_pallet} нужно место {expected_code}."
+                ),
+            )
         if not _same_location_scan(scan_code, active_payload.get("to_location") or {}):
             return MoveTaskCommandResult(
                 ok=False,
-                error=f"Неверный код места. Ожидалось: {expected_code}.",
+                error=(
+                    f"Место {display_scan_text(scan_code)} не подходит для паллеты {active_pallet}. "
+                    f"Ожидается место {expected_code}."
+                ),
             )
         payload = active_payload
         execution = dict(payload.get("mobile_execution") or {})
@@ -1350,6 +1510,10 @@ def scan_move_request_step(
             completed=False,
         )
 
+    if duplicate_destination_result:
+        return duplicate_destination_result
+
+    remaining_pallets = _request_remaining_pallet_labels(tasks)
     candidate = None
     for task in tasks:
         payload = dict(task.payload or {})
@@ -1364,9 +1528,48 @@ def scan_move_request_step(
         candidate = task
         break
     if not candidate:
+        for task in tasks:
+            payload = dict(task.payload or {})
+            pallet_display = _task_pallet_display(payload, fallback=scan_code)
+            destination_code = _task_destination_code(payload)
+            status = _task_payload_status(task, payload)
+            execution = dict(payload.get("mobile_execution") or {})
+            if _same_pallet_code_scan(scan_code, payload.get("pallet_code")):
+                if status == MoveTask.STATUS_DONE or execution.get("destination_confirmed"):
+                    return MoveTaskCommandResult(
+                        ok=False,
+                        error=f"Паллета {pallet_display} уже доставлена в {destination_code}.",
+                    )
+                if execution.get("pallet_confirmed"):
+                    return MoveTaskCommandResult(
+                        ok=False,
+                        error=(
+                            f"Паллета {pallet_display} уже подтверждена. "
+                            f"Теперь отсканируйте место {destination_code}."
+                        ),
+                    )
+            if _same_location_scan(scan_code, payload.get("to_location") or {}):
+                return MoveTaskCommandResult(
+                    ok=False,
+                    error=(
+                        f"Отсканировано место {destination_code}, но сейчас нужно сканировать паллету. "
+                        f"Осталось перевезти: {', '.join(remaining_pallets) or 'нет паллет'}."
+                    ),
+                )
+            if _same_location_scan(scan_code, payload.get("from_location") or {}):
+                return MoveTaskCommandResult(
+                    ok=False,
+                    error=(
+                        "Отсканировано место отбора, но сейчас нужно сканировать паллету. "
+                        f"Осталось перевезти: {', '.join(remaining_pallets) or 'нет паллет'}."
+                    ),
+                )
         return MoveTaskCommandResult(
             ok=False,
-            error="Паллета не относится к этой заявке или уже доставлена.",
+            error=(
+                f"Паллета {display_scan_text(scan_code)} не относится к этой заявке. "
+                f"Осталось перевезти: {', '.join(remaining_pallets) or 'нет паллет'}."
+            ),
         )
 
     payload = dict(candidate.payload or {})
