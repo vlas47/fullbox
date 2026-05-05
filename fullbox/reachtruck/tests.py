@@ -3156,10 +3156,89 @@ class ReachtruckMobileFlowTests(TestCase):
         self.assertContains(response, "Отсканируй паллету")
         self.assertContains(response, 'name="scan_value"')
         self.assertContains(response, 'autocomplete="off"')
+        self.assertContains(response, 'class="mobile-pallet-chip">PAL-REQ-CONT-1')
+        self.assertContains(response, 'class="mobile-pallet-chip">PAL-REQ-CONT-2')
         self.assertContains(response, "scanInput.addEventListener('blur'")
         self.assertContains(response, "document.addEventListener('visibilitychange'")
         self.assertNotContains(response, 'scanInput.readOnly = true;')
         self.assertNotContains(response, "Продолжить приемка №83_PR")
+
+    def test_mobile_request_screen_highlights_active_destination_and_pallet(self):
+        self._create_placement(
+            pallet_code="PAL-REQ-HL-1",
+            boxes=[("BOX-REQ-HL-1", "200000000241", 10)],
+            zone="PR",
+        )
+        self._create_placement(
+            pallet_code="PAL-REQ-HL-2",
+            boxes=[("BOX-REQ-HL-2", "200000000242", 10)],
+            zone="PR",
+        )
+        move_id_1 = create_stock_move_task(
+            user=self.manager_user,
+            agency=self.agency,
+            description="Подсветка активного адреса 1",
+            requested_by_name="Менеджер",
+            requested_by_role="manager",
+            payload={
+                "status": "created",
+                "status_label": "Ожидает перевозки",
+                "receiving_order_id": "84",
+                "pallet_code": "PAL-REQ-HL-1",
+                "from_location": {"zone": "PR"},
+                "to_location": {"zone": "OS", "row": 1, "section": 1, "tier": 1, "cell": 7},
+                "from_label": "PR · Зона приемки",
+                "to_label": "OS · Ряд 1 · Секция 1 · Ярус 1 · Ячейка 7",
+                "move_mode": MOVE_MODE_PALLET_FULL,
+                "pick_mode": "full",
+            },
+        )
+        move_id_2 = create_stock_move_task(
+            user=self.manager_user,
+            agency=self.agency,
+            description="Подсветка активного адреса 2",
+            requested_by_name="Менеджер",
+            requested_by_role="manager",
+            payload={
+                "status": "created",
+                "status_label": "Ожидает перевозки",
+                "receiving_order_id": "84",
+                "pallet_code": "PAL-REQ-HL-2",
+                "from_location": {"zone": "PR"},
+                "to_location": {"zone": "OS", "row": 1, "section": 1, "tier": 1, "cell": 8},
+                "from_label": "PR · Зона приемки",
+                "to_label": "OS · Ряд 1 · Секция 1 · Ярус 1 · Ячейка 8",
+                "move_mode": MOVE_MODE_PALLET_FULL,
+                "pick_mode": "full",
+            },
+        )
+
+        take_result = take_move_request(
+            legacy_order_ids=[move_id_1, move_id_2],
+            user=self.driver_user,
+            employee_id=self.driver_employee.id,
+            employee_name=self.driver_employee.full_name,
+        )
+        self.assertTrue(take_result.ok, take_result.error)
+
+        first_scan = scan_move_request_step(
+            legacy_order_ids=[move_id_1, move_id_2],
+            scan_value="PAL-REQ-HL-1",
+            user=self.driver_user,
+            employee_id=self.driver_employee.id,
+            employee_name=self.driver_employee.full_name,
+        )
+        self.assertTrue(first_scan.ok, first_scan.error)
+
+        response = self.client.get("/reachtruck/?mobile_category=movement&mobile_request=receiving:84")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Место назначения")
+        self.assertContains(response, "scan-priority-code destination")
+        self.assertContains(response, "0-1/1-7")
+        self.assertContains(response, "scan-priority-code pallet")
+        self.assertContains(response, "PAL-REQ-HL-1")
+        self.assertContains(response, 'class="mobile-pallet-chip">PAL-REQ-HL-2')
 
     def test_mobile_category_show_list_flag_opens_request_list_instead_of_auto_open(self):
         self._create_placement(

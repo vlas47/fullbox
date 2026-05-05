@@ -446,12 +446,13 @@
       display: block;
       padding: 10px 12px;
       border-radius: 12px;
-      background: rgba(255,253,248,0.18);
-      border: 1px solid rgba(255,253,248,0.26);
-      color: #fff7d1;
-      font-size: 17px;
-      font-weight: 800;
-      line-height: 1.25;
+      background: linear-gradient(135deg, rgba(255,253,248,0.98), rgba(255,242,190,0.92));
+      border: 2px solid rgba(255,239,185,0.94);
+      color: #213000;
+      font-size: 21px;
+      font-weight: 900;
+      line-height: 1.15;
+      box-shadow: 0 8px 18px rgba(91,39,0,0.12);
     }
     .mobile-request-card .mobile-task-top {
       gap: 10px;
@@ -519,6 +520,11 @@
     }
     .mobile-task-summary-title strong {
       font-size: 18px;
+    }
+    .mobile-task-summary-body {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
     }
     .scan-status-badge {
       padding: 5px 10px;
@@ -592,16 +598,57 @@
     }
     .scan-panel-head {
       display: grid;
-      gap: 6px;
+      gap: 10px;
       color: #fffdf8;
     }
     .scan-panel-title {
-      font-size: 16px;
-      font-weight: 800;
+      font-size: 18px;
+      font-weight: 900;
+      line-height: 1.08;
     }
     .scan-panel-subtitle {
       font-size: 13px;
       opacity: 0.95;
+    }
+    .scan-priority-block {
+      display: grid;
+      gap: 6px;
+    }
+    .scan-priority-label {
+      font-size: 12px;
+      font-weight: 900;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: rgba(92, 43, 0, 0.88);
+    }
+    .scan-priority-code {
+      display: block;
+      padding: 12px 14px;
+      border-radius: 16px;
+      border: 2px solid rgba(91, 39, 0, 0.18);
+      background: linear-gradient(135deg, #fff4cd, #ffe39a);
+      color: #4f2100;
+      font-size: clamp(24px, 4.9vw, 34px);
+      font-weight: 900;
+      line-height: 1.05;
+      letter-spacing: 0.02em;
+      word-break: break-word;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.58), 0 8px 18px rgba(91,39,0,0.16);
+    }
+    .scan-priority-code.destination {
+      background: linear-gradient(135deg, #f7ffb3, #cfff6c);
+      color: #1f2d00;
+      border-color: rgba(74,122,18,0.32);
+    }
+    .scan-priority-code.pallet {
+      background: linear-gradient(135deg, #fff8e4, #ffd7a0);
+      color: #5b2700;
+      border-color: rgba(143,68,0,0.24);
+    }
+    .scan-priority-code.neutral {
+      background: linear-gradient(135deg, #fffdf8, #f0f4ff);
+      color: #1c1f1a;
+      border-color: rgba(28,31,26,0.14);
     }
     .scan-collapse {
       display: grid;
@@ -666,6 +713,30 @@
     .scan-hint {
       font-size: 13px;
       color: var(--muted);
+    }
+    .mobile-pallet-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .mobile-pallet-chip,
+    .mobile-task-code-accent {
+      display: inline-flex;
+      align-items: center;
+      padding: 8px 12px;
+      border-radius: 14px;
+      background: rgba(255,253,248,0.96);
+      color: #4f2100;
+      border: 2px solid rgba(255,232,176,0.9);
+      font-size: 18px;
+      font-weight: 900;
+      line-height: 1.05;
+      box-shadow: 0 6px 14px rgba(91,39,0,0.12);
+      word-break: break-word;
+    }
+    .mobile-task-code-accent {
+      padding: 5px 9px;
+      font-size: 19px;
     }
     .scan-return-note {
       margin-top: 2px;
@@ -892,6 +963,18 @@
                   <div class="scan-panel-head">
                     <div class="scan-panel-title">{{ mobile_request_prompt_title }}</div>
                     <div class="scan-panel-subtitle">{{ mobile_request_prompt_subtitle }}</div>
+                    {% if mobile_request_execution.current_step == "destination" and mobile_request_execution.active_destination_code %}
+                      <div class="scan-priority-block">
+                        <div class="scan-priority-label">Место назначения</div>
+                        <div class="scan-priority-code destination">{{ mobile_request_execution.active_destination_code }}</div>
+                      </div>
+                    {% endif %}
+                    {% if mobile_request_execution.current_step == "destination" and mobile_request_execution.active_pallet_code %}
+                      <div class="scan-priority-block">
+                        <div class="scan-priority-label">Паллета в работе</div>
+                        <div class="scan-priority-code pallet">{{ mobile_request_execution.active_pallet_code }}</div>
+                      </div>
+                    {% endif %}
                   </div>
                   <form method="post" class="scan-form">
                     {% csrf_token %}
@@ -920,7 +1003,11 @@
                     <strong>Осталось паллет</strong>
                     <span class="scan-status-badge">{{ mobile_request_remaining_label }}</span>
                   </div>
-                  <div>{{ mobile_request_remaining_pallets|join:", " }}</div>
+                  <div class="mobile-task-summary-body">
+                    {% for pallet_code in mobile_request_remaining_pallets %}
+                      <span class="mobile-pallet-chip">{{ pallet_code }}</span>
+                    {% endfor %}
+                  </div>
                 </div>
               {% endif %}
             </div>
@@ -938,7 +1025,7 @@
                   <div class="mobile-task-top">
                     <div class="mobile-task-number"><span class="mobile-task-order-id">№{{ move.order_id }}</span> {{ move.mobile_route_title }}</div>
                   </div>
-                  <div class="mobile-task-sub">Паллета {{ move.pallet_code }}</div>
+                  <div class="mobile-task-sub">Паллета <span class="mobile-task-code-accent">{{ move.pallet_code }}</span></div>
                   <div class="mobile-task-meta">
                     <span class="mobile-task-destination">{{ move.to_label }}</span>
                   </div>
@@ -988,7 +1075,24 @@
                 <div class="scan-panel">
                   <div class="scan-panel-head">
                     <div class="scan-panel-title">{{ mobile_selected_execution.prompt }}</div>
-                    <div class="scan-panel-subtitle">Ожидается код: {{ mobile_selected_execution.expected_scan }}</div>
+                    {% if mobile_selected_execution.current_step != "boxes" and mobile_selected_execution.expected_scan %}
+                      <div class="scan-priority-block">
+                        <div class="scan-priority-label">
+                          {% if mobile_selected_execution.current_step == "source" %}
+                            Место отбора
+                          {% elif mobile_selected_execution.current_step == "pallet" %}
+                            Паллета
+                          {% elif mobile_selected_execution.current_step == "destination" %}
+                            Место назначения
+                          {% else %}
+                            Код для сканирования
+                          {% endif %}
+                        </div>
+                        <div class="scan-priority-code {% if mobile_selected_execution.current_step == 'destination' %}destination{% elif mobile_selected_execution.current_step == 'pallet' %}pallet{% else %}neutral{% endif %}">{{ mobile_selected_execution.expected_scan }}</div>
+                      </div>
+                    {% elif mobile_selected_execution.expected_scan %}
+                      <div class="scan-panel-subtitle">Ожидается код: {{ mobile_selected_execution.expected_scan }}</div>
+                    {% endif %}
                   </div>
                   <form method="post" class="scan-form">
                     {% csrf_token %}
