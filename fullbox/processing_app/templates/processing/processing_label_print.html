@@ -1683,7 +1683,7 @@
 
                       {% if row.barcode and row.barcode != '-' %}
 
-                        <button class="btn" type="button" data-label-row data-barcode="{{ row.barcode|default:'' }}" data-size="{{ row.size|default:'' }}" data-cz-codes="{{ row.cz_codes_json|default:'[]'|escape }}" data-qty="{{ row.qty_value|default:0 }}" data-qty-no-cz="{{ row.print_qty_no_cz|default:0 }}" data-qty-cz="{{ row.print_qty_cz|default:0 }}">Выбрать</button>
+                        <button class="btn" type="button" data-label-row data-barcode="{{ row.barcode|default:'' }}" data-size="{{ row.size|default:'' }}" data-cz-codes="{{ row.cz_codes_json|default:'[]'|escape }}" data-qty="{{ row.qty_value|default:0 }}" data-qty-no-cz="{{ row.print_qty_no_cz|default:0 }}" data-qty-cz="{{ row.print_qty_cz|default:0 }}" data-print-qtys="{{ row.print_qtys_json|default:'{}'|escape }}">Выбрать</button>
 
                       {% else %}
 
@@ -2259,11 +2259,17 @@
 
         const printProgress = loadPrintProgress();
 
-        const getRowQty = (mode = 'no-cz') => {
-          const byMode = window.processingLabelQtyByMode || {};
-          const value = byMode[mode];
+        const getRowQty = (labelKey = 'item') => {
+          const byLabelKey = window.processingLabelQtyByLabelKey || {};
+          const value = byLabelKey[labelKey];
           if (Number.isFinite(value)) {
             return value;
+          }
+          const mode = labelModeByKey[labelKey] || 'no-cz';
+          const byMode = window.processingLabelQtyByMode || {};
+          const fallbackByMode = byMode[mode];
+          if (Number.isFinite(fallbackByMode)) {
+            return fallbackByMode;
           }
           return Number.isFinite(window.processingLabelQty) ? window.processingLabelQty : 0;
         };
@@ -2271,21 +2277,21 @@
         const cardId = '{{ card_id|default:""|escapejs }}';
 
 
-        const getPrintKey = (mode) => {
+        const getPrintKey = (labelKey) => {
 
           const barcodeValue = (document.getElementById('label-input-barcode') || {}).value || '';
 
           const sizeValue = (document.getElementById('label-input-size') || {}).value || '';
 
-          return [mode, orderId || '', barcodeValue.trim(), sizeValue.trim()].join('|');
+          return [labelKey || '', orderId || '', barcodeValue.trim(), sizeValue.trim()].join('|');
 
         };
 
-        const getPrintedCount = (mode) => printProgress[getPrintKey(mode)] || 0;
+        const getPrintedCount = (labelKey) => printProgress[getPrintKey(labelKey)] || 0;
 
-        const setPrintedCount = (mode, count) => {
+        const setPrintedCount = (labelKey, count) => {
 
-          const key = getPrintKey(mode);
+          const key = getPrintKey(labelKey);
 
           printProgress[key] = Math.max(0, count || 0);
 
@@ -2293,9 +2299,9 @@
 
         };
 
-        const addPrintedCount = (mode, delta) => {
+        const addPrintedCount = (labelKey, delta) => {
 
-          const key = getPrintKey(mode);
+          const key = getPrintKey(labelKey);
 
           const current = printProgress[key] || 0;
 
@@ -2309,9 +2315,10 @@
 
           labelCards.forEach((card) => {
 
-            const mode = resolveMode(card.dataset.labelCard);
+            const labelKey = card.dataset.labelCard;
+            const mode = resolveMode(labelKey);
 
-            const totalQty = getRowQty(mode);
+            const totalQty = getRowQty(labelKey);
 
             const availableCodes = mode === 'cz'
 
@@ -2325,7 +2332,7 @@
 
             const effectiveTotal = totalQty || (mode === 'cz' ? availableCodes : 0);
 
-            const printed = getPrintedCount(mode);
+            const printed = getPrintedCount(labelKey);
 
             const remaining = effectiveTotal > 0 ? Math.max(effectiveTotal - printed, 0) : 0;
 
@@ -2527,6 +2534,10 @@
       const labelModeByKey = {
 
         item: 'no-cz',
+
+        item_5860: 'no-cz',
+
+        item_75120: 'no-cz',
 
         item_cz: 'cz',
 
@@ -4252,9 +4263,10 @@
 
         const dims = getLabelDimensions(card, root);
         const printDims = getPrintPageDimensions(root, dims);
-        const totalQty = getRowQty(mode);
+        const labelKey = (card && card.dataset && card.dataset.labelCard) || 'item';
+        const totalQty = getRowQty(labelKey);
 
-        const printedCount = getPrintedCount(mode);
+        const printedCount = getPrintedCount(labelKey);
 
         const availableCount = czList.length;
 
@@ -4316,7 +4328,7 @@
 
           removePrintedCzCodes(jobs);
 
-          addPrintedCount(mode, jobs.length);
+          addPrintedCount(labelKey, jobs.length);
 
           updatePrintProgress();
 
@@ -4344,7 +4356,7 @@
             requested,
           });
           if (pdfOk && mode !== 'cz') {
-            addPrintedCount(mode, jobs.length);
+            addPrintedCount(labelKey, jobs.length);
             updatePrintProgress();
           }
           return;
@@ -4438,7 +4450,7 @@
 
             clearLastError();
 
-            addPrintedCount(mode, 1);
+            addPrintedCount(labelKey, 1);
 
             updatePrintProgress();
 
@@ -4550,7 +4562,7 @@
 
             }
 
-            const key = getPrintKey('cz');
+            const key = getPrintKey('item_cz');
 
             const current = printProgress[key] || 0;
 
@@ -4743,9 +4755,11 @@
       const params = new URLSearchParams(window.location.search);
 
       const forcedMode = (params.get('label_mode') || '').trim();
-      if (forcedMode) {
+      const forcedLabelKey = (params.get('label_size') || '').trim();
+      if (forcedMode || forcedLabelKey) {
         const normalized = forcedMode === 'cz' ? 'cz' : 'no-cz';
-        const labelKey = normalized === 'cz' ? 'item_cz' : 'item';
+        const fallbackLabelKey = normalized === 'cz' ? 'item_cz' : 'item';
+        const labelKey = forcedLabelKey || fallbackLabelKey;
         localStorage.setItem('labels_settings_size', labelKey);
         localStorage.setItem('processing_label_mode', normalized);
         localStorage.setItem('labels_label_mode', normalized);
@@ -4765,6 +4779,7 @@
 
       let selectedQty = 0;
       let selectedQtyByMode = { 'no-cz': 0, 'cz': 0 };
+      let selectedQtyByLabelKey = {};
 
       const parseCodes = (raw) => {
 
@@ -4806,7 +4821,7 @@
 
       };
 
-      const setRow = (barcode, size, codes, qty, qtyNoCz, qtyCz) => {
+      const setRow = (barcode, size, codes, qty, qtyNoCz, qtyCz, qtyMap = null) => {
 
         const list = Array.isArray(codes) ? codes : [];
 
@@ -4816,6 +4831,13 @@
         const noCzQty = Number.isFinite(qtyNoCz) ? qtyNoCz : selectedQty;
         const czQty = Number.isFinite(qtyCz) ? qtyCz : selectedQty;
         selectedQtyByMode = { 'no-cz': noCzQty, 'cz': czQty };
+        selectedQtyByLabelKey = {};
+        if (qtyMap && typeof qtyMap === 'object' && !Array.isArray(qtyMap)) {
+          Object.entries(qtyMap).forEach(([key, value]) => {
+            const parsed = parseInt(String(value || '').trim(), 10);
+            selectedQtyByLabelKey[key] = Number.isFinite(parsed) ? parsed : 0;
+          });
+        }
 
         setValue(barcodeInput, barcode);
 
@@ -4833,6 +4855,7 @@
 
         window.processingLabelQty = selectedQty;
         window.processingLabelQtyByMode = selectedQtyByMode;
+        window.processingLabelQtyByLabelKey = selectedQtyByLabelKey;
 
         if (window.processingLabelUpdateProgress) {
 
@@ -4856,6 +4879,12 @@
         const qtyNoCz = parseInt(btn.dataset.qtyNoCz || '', 10);
         const qtyCz = parseInt(btn.dataset.qtyCz || '', 10);
         const codes = parseCodes(btn.dataset.czCodes || '[]');
+        let qtyMap = {};
+        try {
+          qtyMap = JSON.parse(btn.dataset.printQtys || '{}');
+        } catch (err) {
+          qtyMap = {};
+        }
         setRow(
           btn.dataset.barcode || '',
           btn.dataset.size || '',
@@ -4863,6 +4892,7 @@
           Number.isFinite(qty) ? qty : 0,
           Number.isFinite(qtyNoCz) ? qtyNoCz : undefined,
           Number.isFinite(qtyCz) ? qtyCz : undefined,
+          qtyMap,
         );
 
       };

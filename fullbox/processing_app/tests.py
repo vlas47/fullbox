@@ -171,6 +171,8 @@ class ProcessingResultsReadinessTests(SimpleTestCase):
                     "status": "processing_in_work",
                     "status_label": "Взята в работу",
                     "cards": [{"article": "SKU-ONE", "rows": [{"size": "42", "qty": "10"}]}],
+                    "marking_5860_qty": "2",
+                    "marking_75120_qty": "1",
                     "processing_results": [
                         {"article": "SKU-ONE", "size": "42", "destination": "-", "processed": "10"},
                     ],
@@ -196,6 +198,8 @@ class ProcessingResultsReadinessTests(SimpleTestCase):
         self.assertEqual(payload.get("status"), "processing_in_work")
         self.assertEqual(len(payload.get("cards") or []), 1)
         self.assertEqual(len(payload.get("processing_results") or []), 1)
+        self.assertEqual(payload.get("marking_5860_qty"), "2")
+        self.assertEqual(payload.get("marking_75120_qty"), "1")
 
     def test_processing_placement_entry_prefers_closed_flow_snapshot_over_partial_updates(self):
         agency = Agency(agn_name="Placement Agency")
@@ -1468,9 +1472,46 @@ class ProcessingWorkflowServiceTests(TestCase):
 
         self.assertTrue(bool(context["tech_checks"]["measure_yes"]))
         self.assertTrue(bool(context["tech_checks"]["marking_sticker_2"]))
+        self.assertTrue(bool(context["tech_checks"]["marking_58x40_2"]))
         self.assertTrue(bool(context["tech_checks"]["bubble_wrap_supply_client"]))
         self.assertEqual(context["tech"]["measure_weight"], "100")
         self.assertIn(f"/orders/processing/{order_id}/card/card-a/", context["card_page_url"])
+
+    def test_build_processing_technical_card_page_context_marks_expanded_sizes(self):
+        order_id = "626-b"
+        entries = self._create_ready_processing_entries(order_id)
+        payload = dict(entries[0].payload or {})
+        payload.update(
+            {
+                "marking_5860_qty": "1",
+                "marking_75120_qty": "3",
+                "marking_info": "Да",
+            }
+        )
+        request = self.request_factory.get(f"/orders/processing/{order_id}/card/card-a/technical/")
+        request.user = self.user
+        base_ctx = ProcessingWorkflowService.build_processing_card_page_context(
+            order_id=order_id,
+            card_id="card-a",
+            request=request,
+            payload=payload,
+            agency=self.agency,
+        )
+
+        context = ProcessingWorkflowService.build_processing_technical_card_page_context(
+            ctx=base_ctx,
+            order_id=order_id,
+            card_id="card-a",
+            request=request,
+            payload=payload,
+        )
+
+        self.assertTrue(bool(context["tech_checks"]["marking_58_60"]))
+        self.assertTrue(bool(context["tech_checks"]["marking_58x60_1"]))
+        self.assertTrue(bool(context["tech_checks"]["marking_75_120"]))
+        self.assertTrue(bool(context["tech_checks"]["marking_75x120_3"]))
+        self.assertEqual(context["tech"]["marking_5860_qty"], "1")
+        self.assertEqual(context["tech"]["marking_75120_qty"], "3")
 
     def test_build_processing_label_print_page_context_enriches_rows_and_status(self):
         order_id = "627"
@@ -1532,6 +1573,48 @@ class ProcessingWorkflowServiceTests(TestCase):
         self.assertIn("CZ-CODE-1", context["label_rows"][0]["cz_codes"])
         self.assertEqual(context["print_queue_pending"], 1)
         self.assertIn(f"/orders/processing/{order_id}/card/card-a/", context["processing_card_url"])
+
+    def test_build_processing_label_print_page_context_supports_expanded_no_cz_sizes(self):
+        order_id = "627-b"
+        payload = {
+            "status": "processing_in_work",
+            "status_label": "Взята в работу",
+            "marking_5860_qty": "1",
+            "marking_75120_qty": "3",
+            "cards": [
+                {
+                    "id": "card-a",
+                    "article": "SKU-A",
+                    "rows": [{"size": "42", "barcode": "BAR-42", "qty": "10"}],
+                }
+            ],
+        }
+        request = self.request_factory.get(f"/orders/processing/{order_id}/card/card-a/labels/")
+        request.user = self.user
+        base_ctx = ProcessingWorkflowService.build_processing_card_page_context(
+            order_id=order_id,
+            card_id="card-a",
+            request=request,
+            payload=payload,
+            agency=self.agency,
+        )
+
+        context = ProcessingWorkflowService.build_processing_label_print_page_context(
+            ctx=base_ctx,
+            order_id=order_id,
+            card_id="card-a",
+            request=request,
+            payload=payload,
+            agency=self.agency,
+        )
+
+        self.assertEqual(
+            [item["key"] for item in context["label_sizes"]],
+            ["item_5860", "item_75120"],
+        )
+        self.assertEqual(context["label_rows"][0]["print_qtys"]["item_5860"], 10)
+        self.assertEqual(context["label_rows"][0]["print_qtys"]["item_75120"], 30)
+        self.assertEqual(context["label_rows"][0]["print_qty_no_cz"], 40)
 
     def test_build_processing_detail_page_context_prefers_warehouse_status_label(self):
         order_id = "628"

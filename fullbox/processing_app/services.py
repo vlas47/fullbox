@@ -641,8 +641,8 @@ class ProcessingWorkflowService:
         processing_views = cls._views()
         ctx: dict = {}
         work_payload = dict(payload or {})
-        marking_qty_value = processing_views._parse_qty_value(work_payload.get("marking_5840_qty")) or 0
-        marking_each_qty_value = processing_views._parse_qty_value(work_payload.get("marking_5840_each_qty")) or 0
+        marking_qty_map = processing_views._processing_marking_qty_by_label_key(work_payload)
+        marking_each_qty_value = marking_qty_map.get(processing_views.PROCESSING_CZ_LABEL_KEY, 0)
         printed_cz_base_qs = None
         if order_id and marking_each_qty_value:
             printed_cz_base_qs = MarkingCode.objects.filter(
@@ -663,14 +663,16 @@ class ProcessingWorkflowService:
                 card_payload = dict(raw_card)
                 card_rows = card_payload.get("rows") if isinstance(card_payload.get("rows"), list) else []
                 card_payload["printed_cz_total"] = cls._printed_cz_total_for_rows(printed_cz_base_qs, card_rows)
-                card_payload["marking_5840_qty"] = marking_qty_value
+                for option in processing_views.PROCESSING_MARKING_LABELS:
+                    card_payload[option["field"]] = marking_qty_map.get(option["label_key"], 0)
                 card_payload["marking_5840_each_qty"] = marking_each_qty_value
                 enriched_cards.append(card_payload)
             work_payload["cards"] = enriched_cards
         else:
             fallback_rows = work_payload.get("stock_rows") if isinstance(work_payload.get("stock_rows"), list) else []
             work_payload["printed_cz_total"] = cls._printed_cz_total_for_rows(printed_cz_base_qs, fallback_rows)
-            work_payload["marking_5840_qty"] = marking_qty_value
+            for option in processing_views.PROCESSING_MARKING_LABELS:
+                work_payload[option["field"]] = marking_qty_map.get(option["label_key"], 0)
             work_payload["marking_5840_each_qty"] = marking_each_qty_value
         payload = work_payload
 
@@ -2140,45 +2142,12 @@ class ProcessingWorkflowService:
                 }
             )
 
-        label_print_buttons: list[dict] = []
-        marking_qty = processing_views._parse_qty_value(payload.get("marking_5840_qty"))
-        marking_each_qty = processing_views._parse_qty_value(payload.get("marking_5840_each_qty"))
-        if marking_qty or marking_each_qty:
-            card_path_id = card_id or processing_views._processing_card_id(selected_card) or article_value or ""
-            base_path = f"/orders/processing/{order_id}/card/{card_path_id}/labels/"
-            base_params: dict[str, str] = {}
-            if article_param:
-                base_params["article"] = article_param
-            if return_url:
-                base_params["return"] = return_url
-
-            def build_label_print_url(mode: str) -> str:
-                params = dict(base_params)
-                params["label_print"] = "1"
-                params["label_mode"] = mode
-                return f"{base_path}?{urlencode(params)}"
-
-            if marking_qty:
-                label_print_buttons.append(
-                    {"label": "Распечатать этикетки", "mode": "no-cz", "url": build_label_print_url("no-cz")}
-                )
-            if marking_each_qty:
-                label_print_buttons.append(
-                    {"label": "Распечатать этикетки ЧЗ", "mode": "cz", "url": build_label_print_url("cz")}
-                )
-
-        ctx["card"] = {
-            "article": article_value,
-            "product_name": product_name,
-            "photo_url": photo_url,
-            "goods_type": goods_type_label,
-        }
-        ctx["card_fields"] = card_fields
-        ctx["card_rows"] = card_rows
-        ctx["label_print_buttons"] = label_print_buttons
-
+        marking_qty_map = processing_views._processing_marking_qty_by_label_key(payload)
         printed_no_cz_total = 0
         printed_cz_total = 0
+        printed_label_totals: dict[str, int] = {
+            option["label_key"]: 0 for option in processing_views.PROCESSING_MARKING_LABELS
+        }
         if order_id:
             barcodes = [
                 str(row.get("barcode") or "").strip()
@@ -2193,6 +2162,15 @@ class ProcessingWorkflowService:
             if barcodes:
                 printed_jobs_qs = printed_jobs_qs.filter(barcode__in=barcodes)
             printed_no_cz_total = printed_jobs_qs.count()
+            printed_job_rows = printed_jobs_qs.values("label_width_mm", "label_height_mm").annotate(count=Count("id"))
+            for item in printed_job_rows:
+                label_key = processing_views._processing_marking_label_key_from_dimensions(
+                    item.get("label_width_mm"),
+                    item.get("label_height_mm"),
+                )
+                if not label_key:
+                    continue
+                printed_label_totals[label_key] = printed_label_totals.get(label_key, 0) + int(item.get("count") or 0)
             qs = MarkingCode.objects.filter(
                 order_type="processing",
                 order_id=order_id,
@@ -2203,6 +2181,60 @@ class ProcessingWorkflowService:
             if barcodes:
                 qs = qs.filter(barcode__in=barcodes)
             printed_cz_total = qs.count()
+
+        label_print_buttons: list[dict] = []
+        card_path_id = card_id or processing_views._processing_card_id(selected_card) or article_value or ""
+        base_path = f"/orders/processing/{order_id}/card/{card_path_id}/labels/"
+        base_params: dict[str, str] = {}
+        if article_param:
+            base_params["article"] = article_param
+        if return_url:
+            base_params["return"] = return_url
+
+        def build_label_print_url(label_key: str) -> str:
+            params = dict(base_params)
+            params["label_print"] = "1"
+            params["label_mode"] = "cz" if label_key == processing_views.PROCESSING_CZ_LABEL_KEY else "no-cz"
+            params["label_size"] = label_key
+            return f"{base_path}?{urlencode(params)}"
+
+        for option in processing_views.PROCESSING_MARKING_LABELS:
+            label_key = option["label_key"]
+            if marking_qty_map.get(label_key, 0) <= 0:
+                continue
+            label_print_buttons.append(
+                {
+                    "label": "Распечатать этикетки",
+                    "button_label": f"Распечатать {option['label_type']}",
+                    "mode": "no-cz",
+                    "row_label": option["label"],
+                    "label_key": label_key,
+                    "url": build_label_print_url(label_key),
+                    "printed_total": printed_label_totals.get(label_key, 0),
+                }
+            )
+        if marking_qty_map.get(processing_views.PROCESSING_CZ_LABEL_KEY, 0) > 0:
+            label_print_buttons.append(
+                {
+                    "label": "Распечатать этикетки ЧЗ",
+                    "button_label": "Распечатать ЧЗ",
+                    "mode": "cz",
+                    "row_label": "Маркировка 58/40 (шт/чз)",
+                    "label_key": processing_views.PROCESSING_CZ_LABEL_KEY,
+                    "url": build_label_print_url(processing_views.PROCESSING_CZ_LABEL_KEY),
+                    "printed_total": printed_cz_total,
+                }
+            )
+
+        ctx["card"] = {
+            "article": article_value,
+            "product_name": product_name,
+            "photo_url": photo_url,
+            "goods_type": goods_type_label,
+        }
+        ctx["card_fields"] = card_fields
+        ctx["card_rows"] = card_rows
+        ctx["label_print_buttons"] = label_print_buttons
         ctx["printed_no_cz_total"] = printed_no_cz_total
         ctx["printed_cz_total"] = printed_cz_total
 
@@ -2601,6 +2633,20 @@ class ProcessingWorkflowService:
             if size_label and key not in size_label_by_key:
                 size_label_by_key[key] = size_label
 
+        marking_qty_map = processing_views._processing_marking_qty_by_label_key(payload)
+        active_no_cz_labels = [
+            option
+            for option in processing_views.PROCESSING_MARKING_LABELS
+            if marking_qty_map.get(option["label_key"], 0) > 0
+        ]
+        no_cz_multiplier = sum(marking_qty_map.get(option["label_key"], 0) for option in active_no_cz_labels)
+        if len(active_no_cz_labels) == 1:
+            no_cz_label_type = active_no_cz_labels[0]["label_type"]
+        elif active_no_cz_labels:
+            no_cz_label_type = "Без ЧЗ"
+        else:
+            no_cz_label_type = "58/40"
+        marking_each_qty = marking_qty_map.get(processing_views.PROCESSING_CZ_LABEL_KEY, 0)
         label_summary_rows: list[dict] = []
         for key in sorted(received_by_key.keys()):
             article_key, size_key = key
@@ -2609,14 +2655,14 @@ class ProcessingWorkflowService:
             printed_no_cz = job_sku_map.get(key, 0)
             if barcode_value and barcode_value != "-":
                 printed_no_cz = max(printed_no_cz, job_barcode_map.get((barcode_value, size_key), 0))
-            required_no_cz = received_qty * (marking_qty or 0)
-            if (marking_qty or 0) > 0 or printed_no_cz > 0:
+            required_no_cz = received_qty * no_cz_multiplier
+            if no_cz_multiplier > 0 or printed_no_cz > 0:
                 label_summary_rows.append(
                     {
                         "article": article_key,
                         "size": size_label_by_key.get(key) or size_key or "-",
                         "barcode": barcode_value or "-",
-                        "label_type": "58/40",
+                        "label_type": no_cz_label_type,
                         "required_qty": required_no_cz,
                         "printed_qty": printed_no_cz,
                     }
@@ -2631,7 +2677,7 @@ class ProcessingWorkflowService:
                         "article": article_key,
                         "size": size_label_by_key.get(key) or size_key or "-",
                         "barcode": barcode_value or "-",
-                        "label_type": "58/40 (шт/чз)",
+                        "label_type": processing_views.PROCESSING_CZ_LABEL_TYPE,
                         "required_qty": required_cz,
                         "printed_qty": printed_cz,
                     }
@@ -2643,10 +2689,10 @@ class ProcessingWorkflowService:
             article_key = str(item.get("article") or "").strip().lower()
             size_key = str(item.get("size") or "").strip().lower()
             barcode_key = str(item.get("barcode") or "").strip()
-            mode = "cz" if str(item.get("label_type") or "").strip() == "58/40 (шт/чз)" else "no-cz"
+            mode = "cz" if str(item.get("label_type") or "").strip() == processing_views.PROCESSING_CZ_LABEL_TYPE else "no-cz"
             normalized_item = {
                 "mode": mode,
-                "label_type": str(item.get("label_type") or "58/40").strip() or "58/40",
+                "label_type": str(item.get("label_type") or no_cz_label_type).strip() or no_cz_label_type,
                 "required_qty": int(item.get("required_qty") or 0),
                 "printed_qty": int(item.get("printed_qty") or 0),
                 "barcode": barcode_key or "-",
@@ -2773,15 +2819,6 @@ class ProcessingWorkflowService:
             text = str(value or "").strip().lower()
             return text in {"да", "yes", "true", "1", "file", "set", "comment"}
 
-        def normalize_size_code(value: str) -> str:
-            text = str(value or "").strip().upper()
-            text = text.replace("Х", "X")
-            text = text.replace("*", "X")
-            text = text.replace("MM", "")
-            text = text.replace("ММ", "")
-            text = text.replace(" ", "")
-            return text
-
         def contains_keyword(value, keywords: tuple[str, ...]) -> bool:
             text = str(value or "").strip().lower()
             if not text:
@@ -2809,12 +2846,9 @@ class ProcessingWorkflowService:
                 return True
             return True
 
-        marking_sizes = payload.get("marking_sizes") or []
-        if isinstance(marking_sizes, str):
-            marking_sizes = [marking_sizes] if marking_sizes else []
-        size_codes = {normalize_size_code(item) for item in marking_sizes}
-        if not size_codes and (raw_value("marking_5840_qty") or raw_value("marking_5840_each_qty")):
-            size_codes.add("58X40")
+        marking_sizes = processing_views._processing_marking_sizes_from_payload(payload)
+        size_codes = {processing_views._normalize_marking_size_code(item) for item in marking_sizes}
+        marking_qty_map = processing_views._processing_marking_qty_by_label_key(payload)
 
         insert_types = payload.get("insert_types") or []
         if isinstance(insert_types, str):
@@ -2848,6 +2882,8 @@ class ProcessingWorkflowService:
             "remove_tag_qty": raw_value("remove_tag_qty"),
             "attach_tag_qty": raw_value("attach_tag_qty"),
             "marking_5840_qty": raw_value("marking_5840_qty"),
+            "marking_5860_qty": raw_value("marking_5860_qty"),
+            "marking_75120_qty": raw_value("marking_75120_qty"),
             "marking_5840_each_qty": raw_value("marking_5840_each_qty"),
             "marking_info": raw_value("marking_info"),
             "set_qty": raw_value("set_qty"),
@@ -2892,6 +2928,7 @@ class ProcessingWorkflowService:
             "attach_tag_no": not is_yes(payload.get("attach_tag")),
             "marking_30_20": "30X20" in size_codes,
             "marking_58_40": "58X40" in size_codes,
+            "marking_58_60": "58X60" in size_codes,
             "marking_75_120": "75X120" in size_codes,
             "set_yes": is_yes(payload.get("set_build")),
             "set_no": not is_yes(payload.get("set_build")),
@@ -2921,20 +2958,19 @@ class ProcessingWorkflowService:
         tech_checks["defect_20"] = defect_key == "20"
         tech_checks["defect_100"] = defect_key == "100"
 
-        marking_sticker_raw = str(payload.get("marking_5840_qty") or "").strip()
-        if not marking_sticker_raw:
-            marking_sticker_raw = str(payload.get("marking_5840_each_qty") or "").strip()
-        marking_sticker_count = 0
-        if marking_sticker_raw:
-            match = processing_views.re.search(r"\d+", marking_sticker_raw)
-            if match:
-                try:
-                    marking_sticker_count = int(match.group(0))
-                except (TypeError, ValueError):
-                    marking_sticker_count = 0
-        tech_checks["marking_sticker_1"] = marking_sticker_count == 1
-        tech_checks["marking_sticker_2"] = marking_sticker_count == 2
-        tech_checks["marking_sticker_3"] = marking_sticker_count == 3
+        tech_checks["marking_sticker_1"] = False
+        tech_checks["marking_sticker_2"] = False
+        tech_checks["marking_sticker_3"] = False
+        for option in processing_views.PROCESSING_MARKING_LABELS:
+            label_key = option["label_key"]
+            qty_value = marking_qty_map.get(label_key, 0)
+            field_suffix = option["size_code"].lower()
+            tech_checks[f"marking_{field_suffix}_1"] = qty_value == 1
+            tech_checks[f"marking_{field_suffix}_2"] = qty_value == 2
+            tech_checks[f"marking_{field_suffix}_3"] = qty_value == 3
+            tech_checks["marking_sticker_1"] = tech_checks["marking_sticker_1"] or qty_value == 1
+            tech_checks["marking_sticker_2"] = tech_checks["marking_sticker_2"] or qty_value == 2
+            tech_checks["marking_sticker_3"] = tech_checks["marking_sticker_3"] or qty_value == 3
         tech_checks["marking_cz"] = bool(raw_value("marking_5840_each_qty"))
         tech_checks["marking_info"] = bool(raw_value("marking_info"))
         tech_checks["marking_block_visible"] = (
@@ -3032,10 +3068,12 @@ class ProcessingWorkflowService:
                     continue
                 codes_map.setdefault((barcode, size_key), []).append(code)
 
-        marking_qty = processing_views._parse_qty_value(payload.get("marking_5840_qty")) or 0
-        marking_each_qty = processing_views._parse_qty_value(payload.get("marking_5840_each_qty")) or 0
-        multiplier_no_cz = marking_qty if marking_qty > 0 else 1
-        multiplier_cz = marking_each_qty if marking_each_qty > 0 else 1
+        marking_qty_map = processing_views._processing_marking_qty_by_label_key(payload)
+        no_cz_total_multiplier = sum(
+            marking_qty_map.get(option["label_key"], 0)
+            for option in processing_views.PROCESSING_MARKING_LABELS
+        )
+        multiplier_cz = marking_qty_map.get(processing_views.PROCESSING_CZ_LABEL_KEY, 0)
         for row in card_rows:
             if not isinstance(row, dict):
                 continue
@@ -3044,7 +3082,14 @@ class ProcessingWorkflowService:
             qty_value = processing_views._parse_qty_value(row.get("qty"))
             base_qty = qty_value if qty_value is not None else 0
             row["qty_value"] = base_qty
-            row["print_qty_no_cz"] = base_qty * multiplier_no_cz
+            print_qtys = {
+                option["label_key"]: base_qty * marking_qty_map.get(option["label_key"], 0)
+                for option in processing_views.PROCESSING_MARKING_LABELS
+            }
+            print_qtys[processing_views.PROCESSING_CZ_LABEL_KEY] = base_qty * multiplier_cz
+            row["print_qtys"] = print_qtys
+            row["print_qtys_json"] = json.dumps(print_qtys, ensure_ascii=True)
+            row["print_qty_no_cz"] = base_qty * no_cz_total_multiplier
             row["print_qty_cz"] = base_qty * multiplier_cz
             codes = codes_map.get((barcode, size_key)) or codes_map.get((barcode, "")) or [] if barcode else []
             row["cz_codes"] = codes
@@ -3080,7 +3125,16 @@ class ProcessingWorkflowService:
             "barcode_extra": label_base.get("barcode_extra") or "",
             "cz_code": default_cz,
         }
-        label_sizes = [entry for entry in processing_views.LABEL_SIZES if entry.get("key") in {"item", "item_cz"}]
+        allowed_label_keys = {
+            option["label_key"]
+            for option in processing_views.PROCESSING_MARKING_LABELS
+            if marking_qty_map.get(option["label_key"], 0) > 0
+        }
+        if not allowed_label_keys:
+            allowed_label_keys.add("item")
+        if marking_qty_map.get(processing_views.PROCESSING_CZ_LABEL_KEY, 0) > 0:
+            allowed_label_keys.add(processing_views.PROCESSING_CZ_LABEL_KEY)
+        label_sizes = [entry for entry in processing_views.LABEL_SIZES if entry.get("key") in allowed_label_keys]
 
         agent_status = processing_views.load_print_agent_status()
         agent_name = str(agent_status.get("agent") or "").strip() or "неизвестно"
@@ -4782,6 +4836,10 @@ class ProcessingWorkflowService:
             "marking_info": request.POST.get("marking_info"),
             "marking_5840_needed": request.POST.get("marking_5840_needed"),
             "marking_5840_qty": request.POST.get("marking_5840_qty"),
+            "marking_5860_needed": request.POST.get("marking_5860_needed"),
+            "marking_5860_qty": request.POST.get("marking_5860_qty"),
+            "marking_75120_needed": request.POST.get("marking_75120_needed"),
+            "marking_75120_qty": request.POST.get("marking_75120_qty"),
             "marking_5840_each_needed": request.POST.get("marking_5840_each_needed"),
             "marking_5840_each_qty": request.POST.get("marking_5840_each_qty"),
             "set_build": request.POST.get("set_build"),
@@ -4831,6 +4889,7 @@ class ProcessingWorkflowService:
             "box_forming_other": request.POST.get("box_forming_other"),
             "comments": request.POST.get("comments"),
         }
+        payload["marking_sizes"] = processing_views._processing_marking_sizes_from_payload(payload)
         if cards_payload:
             payload["cards"] = cards_payload
         photo_file = request.FILES.get("product_photo")

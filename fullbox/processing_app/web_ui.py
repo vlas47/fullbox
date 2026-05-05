@@ -104,6 +104,36 @@ _PROCESSING_WORK_WAREHOUSE_CODES = {
 
 _PROCESSING_CARD_WAREHOUSE_CODES = _PROCESSING_WORK_WAREHOUSE_CODES
 
+PROCESSING_MARKING_LABELS = (
+    {
+        "field": "marking_5840_qty",
+        "needed_field": "marking_5840_needed",
+        "label": "Маркировка 58/40",
+        "label_key": "item",
+        "label_type": "58/40",
+        "size_code": "58X40",
+    },
+    {
+        "field": "marking_5860_qty",
+        "needed_field": "marking_5860_needed",
+        "label": "Маркировка 58/60",
+        "label_key": "item_5860",
+        "label_type": "58/60",
+        "size_code": "58X60",
+    },
+    {
+        "field": "marking_75120_qty",
+        "needed_field": "marking_75120_needed",
+        "label": "Маркировка 75/120",
+        "label_key": "item_75120",
+        "label_type": "75/120",
+        "size_code": "75X120",
+    },
+)
+PROCESSING_CZ_LABEL_KEY = "item_cz"
+PROCESSING_CZ_LABEL_TYPE = "58/40 (шт/чз)"
+PROCESSING_CZ_SIZE_CODE = "58X40"
+
 
 def _format_payload_value(value):
     if value is None or value == "":
@@ -148,6 +178,60 @@ def _non_empty_text(value) -> str:
     if text.isdigit() and int(text) == 0:
         return ""
     return text
+
+
+def _normalize_marking_size_code(value) -> str:
+    return re.sub(r"[^0-9A-Z]", "", str(value or "").upper())
+
+
+def _processing_marking_sizes_from_payload(payload: dict | None) -> list[str]:
+    source = payload or {}
+    raw_sizes = source.get("marking_sizes") or []
+    if isinstance(raw_sizes, str):
+        raw_sizes = [raw_sizes] if raw_sizes else []
+    ordered: list[str] = []
+    seen: set[str] = set()
+
+    def add_size(raw_value) -> None:
+        code = _normalize_marking_size_code(raw_value)
+        if not code or code in seen:
+            return
+        seen.add(code)
+        ordered.append(code)
+
+    for raw_value in raw_sizes:
+        add_size(raw_value)
+    for option in PROCESSING_MARKING_LABELS:
+        if (_parse_qty_value(source.get(option["field"])) or 0) > 0:
+            add_size(option["size_code"])
+    if (_parse_qty_value(source.get("marking_5840_each_qty")) or 0) > 0:
+        add_size(PROCESSING_CZ_SIZE_CODE)
+    return ordered
+
+
+def _processing_marking_qty_by_label_key(payload: dict | None) -> dict[str, int]:
+    source = payload or {}
+    qty_map: dict[str, int] = {}
+    for option in PROCESSING_MARKING_LABELS:
+        qty_map[option["label_key"]] = _parse_qty_value(source.get(option["field"])) or 0
+    qty_map[PROCESSING_CZ_LABEL_KEY] = _parse_qty_value(source.get("marking_5840_each_qty")) or 0
+    return qty_map
+
+
+def _processing_marking_label_key_from_dimensions(width_mm, height_mm) -> str:
+    try:
+        width = int(width_mm or 0)
+        height = int(height_mm or 0)
+    except (TypeError, ValueError):
+        return ""
+    dims = (width, height)
+    if dims == (58, 40):
+        return "item"
+    if dims == (58, 60):
+        return "item_5860"
+    if dims == (75, 120):
+        return "item_75120"
+    return ""
 
 
 def _format_list_value(value) -> str:
@@ -1987,9 +2071,7 @@ def _processing_params_from_payload(payload: dict) -> list[dict]:
     marking_stickers = payload.get("marking_stickers") or []
     if isinstance(marking_stickers, str):
         marking_stickers = [marking_stickers] if marking_stickers else []
-    marking_sizes = payload.get("marking_sizes") or []
-    if isinstance(marking_sizes, str):
-        marking_sizes = [marking_sizes] if marking_sizes else []
+    marking_sizes = _processing_marking_sizes_from_payload(payload)
 
     processing_params: list[dict] = []
     _add_param(processing_params, "Маркетплейс", payload.get("marketplace"))
@@ -1997,7 +2079,8 @@ def _processing_params_from_payload(payload: dict) -> list[dict]:
     if defect_percent and defect_percent.isdigit():
         defect_percent = f"{defect_percent}%"
     _add_param(processing_params, "Проверка на брак", defect_percent)
-    _add_param(processing_params, "Маркировка 58/40", payload.get("marking_5840_qty"))
+    for option in PROCESSING_MARKING_LABELS:
+        _add_param(processing_params, option["label"], payload.get(option["field"]))
     _add_param(processing_params, "Маркировка 58/40 (шт/чз)", payload.get("marking_5840_each_qty"))
     _add_param(processing_params, "Замена бирок", payload.get("tag_owner"))
 
@@ -2232,10 +2315,8 @@ def _processing_result_requirements(payload: dict, has_direction_distribution: b
         str(payload.get("defect_percent") or "").strip()
         or str(payload.get("defect_qty") or "").strip()
     )
-    labels_required = bool(
-        (_parse_qty_value(payload.get("marking_5840_qty")) or 0) > 0
-        or (_parse_qty_value(payload.get("marking_5840_each_qty")) or 0) > 0
-    )
+    label_qty_map = _processing_marking_qty_by_label_key(payload)
+    labels_required = any(value > 0 for value in label_qty_map.values())
     tags_required = bool(
         _non_empty_text(payload.get("tag_owner"))
         or _is_yes_value(payload.get("tag_replace_needed"))
@@ -2631,7 +2712,10 @@ def _processing_work_payload_from_entries(entries: list[OrderAuditEntry]) -> dic
         "direction_addresses_json",
         "defect_percent",
         "marking_5840_qty",
+        "marking_5860_qty",
+        "marking_75120_qty",
         "marking_5840_each_qty",
+        "marking_sizes",
         "tag_owner",
         "goods_type",
         "goods_type_label",

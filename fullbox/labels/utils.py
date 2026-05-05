@@ -29,6 +29,22 @@ LABEL_SIZES = [
         "description": "Этикетка для товара с честным знаком (58x40).",
     },
     {
+        "key": "item_5860",
+        "title": "Товар",
+        "width_mm": 58,
+        "height_mm": 60,
+        "preview_scale": 1.7,
+        "description": "Этикетка для товара (58x60).",
+    },
+    {
+        "key": "item_75120",
+        "title": "Товар",
+        "width_mm": 75,
+        "height_mm": 120,
+        "preview_scale": 0.95,
+        "description": "Этикетка для товара (75x120).",
+    },
+    {
         "key": "box",
         "title": "Короб",
         "width_mm": 58,

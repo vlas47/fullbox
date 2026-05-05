@@ -1050,21 +1050,12 @@
                     <div class="param-value-line">
                       <span>{{ row.value|default:"-" }}</span>
                       {% if label_print_buttons %}
-                        {% if row.label == "Маркировка 58/40 (шт/чз)" %}
-                          {% for btn in label_print_buttons %}
-                            {% if btn.mode == "cz" %}
-                              <a class="btn small" href="{{ btn.url }}">Распечатать этикетки</a>
-                              <span class="muted" data-print-count data-print-mode="cz" data-print-base="{{ printed_cz_total|default:0 }}">Напечатано: {{ printed_cz_total|default:0 }}</span>
-                            {% endif %}
-                          {% endfor %}
-                        {% elif row.label == "Маркировка 58/40" %}
-                          {% for btn in label_print_buttons %}
-                            {% if btn.mode == "no-cz" %}
-                              <a class="btn small" href="{{ btn.url }}">Распечатать этикетки</a>
-                              <span class="muted" data-print-count data-print-mode="no-cz" data-print-base="{{ printed_no_cz_total|default:0 }}">Напечатано: {{ printed_no_cz_total|default:0 }}</span>
-                            {% endif %}
-                          {% endfor %}
-                        {% endif %}
+                        {% for btn in label_print_buttons %}
+                          {% if btn.row_label == row.label %}
+                            <a class="btn small" href="{{ btn.url }}">{{ btn.button_label|default:"Распечатать этикетки" }}</a>
+                            <span class="muted">Напечатано: {{ btn.printed_total|default:0 }}</span>
+                          {% endif %}
+                        {% endfor %}
                       {% endif %}
                     </div>
                   </td>
