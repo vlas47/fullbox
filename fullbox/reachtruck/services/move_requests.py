@@ -175,6 +175,25 @@ def _location_label(location: dict | None) -> str:
     return zone
 
 
+def _location_scan_code(location: dict | None) -> str:
+    data = _normalize_location(location if isinstance(location, dict) else {})
+    zone = data.get("zone") or "PR"
+    row = _as_int(data.get("row"))
+    section = _as_int(data.get("section"))
+    tier = _as_int(data.get("tier"))
+    cell = _as_int(data.get("cell"))
+    if zone == "OS":
+        line_label = _os_line_display_label(section)
+        if line_label and row and tier and cell:
+            return f"{line_label}-{row}/{tier}-{cell}"
+        if line_label and row:
+            return f"{line_label}-{row}"
+        return "OS"
+    if zone == "MR":
+        return f"MR-{row}" if row else "MR"
+    return zone
+
+
 def _location_parts(location_value, pallet=None) -> dict:
     pallet = pallet or {}
     zone = ""
@@ -729,6 +748,14 @@ def _candidate_pallets_for_rows(
                 "receiving_order_id": str(_row_value(row, "order_id", "") or "").strip(),
             },
         )
+        entry["from_location"] = _build_location(
+            _row_value(row, "zone", ""),
+            _as_int(_row_value(row, "row", 0)),
+            _as_int(_row_value(row, "section", 0)),
+            _as_int(_row_value(row, "tier", 0)),
+            _as_int(_row_value(row, "cell", 0)),
+        )
+        entry["receiving_order_id"] = str(_row_value(row, "order_id", "") or "").strip()
         entry["available_qty"] += available_qty
         entry["rows"].append((row, available_qty))
     return list(grouped.values())
@@ -878,6 +905,10 @@ def create_stock_move_task(
     move_payload.setdefault("move_mode", MoveTask.MODE_PALLET_FULL)
     move_payload.setdefault("from_label", _location_label(from_location))
     move_payload.setdefault("to_label", _location_label(to_location))
+    move_payload.setdefault("from_code", _location_scan_code(from_location))
+    move_payload.setdefault("to_code", _location_scan_code(to_location))
+    move_payload.setdefault("source_code", move_payload.get("from_code"))
+    move_payload.setdefault("destination_code", move_payload.get("to_code"))
     if requested_by_name:
         move_payload["requested_by_name"] = requested_by_name
     if requested_by_role:
@@ -964,6 +995,8 @@ def create_stock_move_task(
             "to_location": to_location,
             "from_label": move_payload.get("from_label"),
             "to_label": move_payload.get("to_label"),
+            "from_code": move_payload.get("from_code") or move_payload.get("source_code"),
+            "to_code": move_payload.get("to_code") or move_payload.get("destination_code"),
             "receiving_order_id": move_payload.get("receiving_order_id") or "",
             "processing_order_id": move_payload.get("processing_order_id") or "",
             "status": "created",
@@ -1013,9 +1046,23 @@ def _plan_move_request_to_tasks(
     explicit_requested_rows = explicit_requested_rows or []
     if explicit_requested_rows:
         pallet_info_by_code: dict[str, dict] = {}
+        explicit_pallet_codes = {
+            str(row.get("pallet_code") or "").strip()
+            for row in explicit_requested_rows
+            if str(row.get("pallet_code") or "").strip()
+        }
+        for pallet_code in sorted(explicit_pallet_codes):
+            found = _find_pallet_by_code(pallet_code, agency_id=agency_id)
+            if not found:
+                continue
+            synthetic_entry, _, _, location = found
+            pallet_info_by_code[pallet_code] = {
+                "from_location": location or _build_location("PR", 0, 0, 0, 0),
+                "receiving_order_id": str(getattr(synthetic_entry, "order_id", "") or "").strip(),
+            }
         for row in base_rows:
             pallet_code = str(_row_value(row, "pallet_code", "") or "").strip()
-            if not pallet_code or pallet_code in pallet_info_by_code:
+            if not pallet_code:
                 continue
             pallet_info_by_code[pallet_code] = {
                 "from_location": _build_location(

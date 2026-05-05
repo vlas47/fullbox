@@ -2519,18 +2519,21 @@
           if (!response.ok || !data.ok) {
             if (locationEl) {
               locationEl.textContent = 'Не найдена';
+              locationEl.title = '';
             }
             setRowStatus(row, data.error || 'Паллета не найдена.', 'error');
             return;
           }
           if (locationEl) {
             locationEl.textContent = data.label || '—';
+            locationEl.title = data.location_label || '';
           }
           syncRowPickMeta(row);
           setRowStatus(row, 'Ок', 'success');
         } catch (err) {
           if (locationEl) {
             locationEl.textContent = 'Ошибка';
+            locationEl.title = '';
           }
           setRowStatus(row, 'Не удалось проверить место.', 'error');
         }
@@ -2553,8 +2556,9 @@
           input.readOnly = true;
         }
         const locationEl = row.querySelector('.reachtruck-location');
-        if (locationEl && options.location) {
-          locationEl.textContent = options.location;
+        if (locationEl) {
+          locationEl.textContent = options.locationCode || options.location || '—';
+          locationEl.title = options.locationLabel || '';
         }
         const modeSelect = row.querySelector('.reachtruck-mode');
         const initialMode = normalizeMoveMode(options.mode || MOVE_MODE_BOX_PARTIAL);
@@ -2973,6 +2977,8 @@
             }
             candidates.push({
               palletCode,
+              locationCode: location,
+              locationLabel: String(item?.location_label || '').trim(),
               location,
               boxCode,
               boxQty,
@@ -3103,7 +3109,8 @@
                     ? MOVE_MODE_BOX_FULL
                     : MOVE_MODE_BOX_PARTIAL;
                   const row = createMoveRow(rowPlan.palletCode, {
-                    location: rowPlan.location || '',
+                    locationCode: rowPlan.locationCode || rowPlan.location || '',
+                    locationLabel: rowPlan.locationLabel || '',
                     availableQty: rowPlan.boxQty,
                     mode: rowMode,
                     boxCodes: [rowPlan.boxCode],

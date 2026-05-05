@@ -24,6 +24,7 @@ from .move_requests import (
     _os_line_display_label,
     sync_task_status_by_legacy_order_id,
 )
+from .putaway_planner import putaway_location_scan_code
 from .pallet_ops import (
     MOVE_MODE_BOX_FULL,
     MOVE_MODE_BOX_PARTIAL,
@@ -212,18 +213,9 @@ def _legacy_location_scan_code(location: dict | None) -> str:
 
 
 def _location_scan_code(location: dict | None) -> str:
-    location = location or {}
-    zone = _normalize_zone_code(location.get("zone") or "") or "PR"
-    row = _as_int(location.get("row"))
-    section = _as_int(location.get("section"))
-    tier = _as_int(location.get("tier"))
-    cell = _as_int(location.get("cell"))
-    if zone == "OS":
-        line_label = _os_line_display_label(section)
-        if line_label and row and tier and cell:
-            return f"{line_label}-{row}/{tier}-{cell}"
-        if line_label and row:
-            return f"{line_label}-{row}"
+    code = str(putaway_location_scan_code(location) or "").strip()
+    if code:
+        return code
     return _legacy_location_scan_code(location)
 
 
@@ -334,10 +326,16 @@ def _task_pallet_display(payload: dict, fallback: str | None = None) -> str:
 
 
 def _task_source_code(payload: dict) -> str:
+    explicit = str(payload.get("source_code") or payload.get("from_code") or "").strip()
+    if explicit:
+        return explicit
     return _location_scan_code(payload.get("from_location") or {})
 
 
 def _task_destination_code(payload: dict) -> str:
+    explicit = str(payload.get("destination_code") or payload.get("to_code") or "").strip()
+    if explicit:
+        return explicit
     return _location_scan_code(payload.get("to_location") or {})
 
 
@@ -841,7 +839,7 @@ def build_mobile_execution_snapshot(legacy_order_id: str) -> dict:
     scanned_units_total = sum(int(row["unit_scanned_total"]) for row in box_specs)
     current_step = "source"
     expected_scan = source_code
-    prompt = f"Подъедь к месту {source_label or source_code} и отсканируй код места."
+    prompt = f"Подъедь к месту {source_code} и отсканируй код места."
     if source_confirmed:
         current_step = "pallet"
         expected_scan = display_scan_text(payload.get("pallet_code"))

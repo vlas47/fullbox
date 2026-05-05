@@ -42,6 +42,7 @@ from .pallet_ops import (
     _requested_partial_rows,
     _single_requested_box,
 )
+from .putaway_planner import putaway_location_scan_code
 from .task_commands import (
     build_mobile_execution_snapshot,
     build_mobile_request_execution_snapshot,
@@ -429,7 +430,8 @@ def lookup_pallet_location_response(request):
     return JsonResponse(
         {
             "ok": True,
-            "label": _location_label(location),
+            "label": putaway_location_scan_code(location),
+            "location_label": _location_label(location),
             "location": location,
             "receiving_order_id": entry.order_id,
         }
@@ -504,7 +506,25 @@ def lookup_item_pallets_response(request):
         prev = matches.get(pallet_code)
         payload = {
             "pallet": pallet_code,
-            "location": str(state_row.get("location") or "").strip() or "—",
+            "location": putaway_location_scan_code(
+                {
+                    "zone": state_row.get("zone") or "",
+                    "row": state_row.get("row") or 0,
+                    "section": state_row.get("section") or 0,
+                    "tier": state_row.get("tier") or 0,
+                    "cell": state_row.get("cell") or 0,
+                }
+            ),
+            "location_label": str(state_row.get("location") or "").strip()
+            or _location_label(
+                {
+                    "zone": state_row.get("zone") or "",
+                    "row": state_row.get("row") or 0,
+                    "section": state_row.get("section") or 0,
+                    "tier": state_row.get("tier") or 0,
+                    "cell": state_row.get("cell") or 0,
+                }
+            ),
             "receiving_order_id": state_row.get("order_id") or "",
             "qty": int(state_row.get("qty") or 0),
             "box_qty": 0,
@@ -552,7 +572,15 @@ def lookup_item_pallets_response(request):
             move_requested_goods_type = _normalize_goods_type(move_payload.get("requested_goods_type"))
             payload = {
                 "pallet": pallet_code,
-                "location": str(move_payload.get("to_label") or "").strip() or "—",
+                "location": str(
+                    move_payload.get("from_code")
+                    or move_payload.get("source_code")
+                    or putaway_location_scan_code(move_payload.get("from_location") or {})
+                    or ""
+                ).strip()
+                or "—",
+                "location_label": str(move_payload.get("from_label") or "").strip()
+                or _location_label(move_payload.get("from_location") or {}),
                 "receiving_order_id": "",
                 "qty": 0,
                 "box_qty": 0,

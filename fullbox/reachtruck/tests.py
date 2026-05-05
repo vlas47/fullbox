@@ -27,6 +27,7 @@ from .services import (
     build_mobile_request_execution_snapshot,
     complete_move_task,
     create_stock_move_task,
+    putaway_location_scan_code,
     scan_move_request_step,
     scan_move_task_step,
     take_move_request,
@@ -326,6 +327,16 @@ class ReachtruckHelpersTests(SimpleTestCase):
         self.assertEqual(
             _location_scan_code({"zone": "OS", "row": 3, "section": 6, "tier": 3, "cell": 2}),
             "E-3/3-2",
+        )
+
+    def test_public_putaway_location_scan_code_matches_mobile_format(self):
+        self.assertEqual(
+            putaway_location_scan_code({"zone": "OS", "row": 1, "section": 1, "tier": 3, "cell": 2}),
+            "0-1/3-2",
+        )
+        self.assertEqual(
+            putaway_location_scan_code({"zone": "OBR"}),
+            "OBR",
         )
 
     def test_same_location_scan_accepts_stockmap_and_legacy_os_codes(self):
@@ -974,6 +985,10 @@ class ReachtruckMoveRequestTests(TestCase):
         self.assertTrue(payload.get("ok"))
         task = MoveTask.objects.get()
         self.assertEqual(task.move_mode, MOVE_MODE_BOX_PARTIAL)
+        self.assertEqual(task.payload.get("from_code"), "0-1/1-2")
+        self.assertEqual(task.payload.get("to_code"), "OBR")
+        self.assertEqual(task.payload.get("source_code"), "0-1/1-2")
+        self.assertEqual(task.payload.get("destination_code"), "OBR")
         self.assertEqual(
             task.payload.get("requested_rows"),
             [
@@ -988,6 +1003,42 @@ class ReachtruckMoveRequestTests(TestCase):
         plan_rows = _pallet_box_plan(task.payload, "PAL-100", agency_id=self.agency.id)
         deliver_codes = [row["box_code"] for row in plan_rows if row["action"] == "Доставить"]
         self.assertEqual(deliver_codes, ["BOX-100", "BOX-101"])
+
+    def test_lookup_item_pallets_returns_short_location_code_for_processing_modal(self):
+        OrderAuditEntry.objects.create(
+            order_id="PROC-LOOKUP-1",
+            order_type="processing",
+            action="status",
+            agency=self.agency,
+            payload={"status": "processing_in_work"},
+        )
+        move_warehouse_pallet(
+            agency=self.agency,
+            pallet_code="PAL-100",
+            zone="OS",
+            row=1,
+            section=1,
+            tier=1,
+            cell=2,
+            location="OS · Ряд 1 · Секция 1 · Ярус 1 · Ячейка 2",
+        )
+
+        response = self.client.get(
+            "/reachtruck/lookup-item/",
+            data={
+                "processing_order_id": "PROC-LOOKUP-1",
+                "barcode": "200000000100",
+                "include_moves": "1",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload.get("ok"))
+        self.assertEqual(len(payload.get("pallets") or []), 1)
+        pallet = payload["pallets"][0]
+        self.assertEqual(pallet.get("location"), "0-1/1-2")
+        self.assertEqual(pallet.get("location_label"), "OS · Ряд 1 · Секция 1 · Ярус 1 · Ячейка 2")
 
     def test_create_move_request_prefers_minimal_number_of_pallets(self):
         create_warehouse_snapshot_row(

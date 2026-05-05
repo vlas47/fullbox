@@ -14,6 +14,7 @@ _EXPORTS = {
     "parse_int_value": ".putaway_planner",
     "parse_putaway_destinations": ".putaway_planner",
     "putaway_location_label": ".putaway_planner",
+    "putaway_location_scan_code": ".putaway_planner",
     "suggest_putaway_destinations": ".putaway_planner",
     "build_mobile_execution_snapshot": ".task_commands",
     "build_mobile_request_execution_snapshot": ".task_commands",

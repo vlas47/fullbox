@@ -86,6 +86,25 @@ def putaway_location_label(location: dict | None) -> str:
     return zone
 
 
+def putaway_location_scan_code(location: dict | None) -> str:
+    source = normalize_putaway_location(location)
+    zone = normalize_zone_code(source.get("zone") or "") or "PR"
+    row = parse_int_value(source.get("row"))
+    section = parse_int_value(source.get("section"))
+    tier = parse_int_value(source.get("tier"))
+    cell = parse_int_value(source.get("cell"))
+    if zone == "OS":
+        line_label = _os_line_display_label(section)
+        if line_label and row and tier and cell:
+            return f"{line_label}-{row}/{tier}-{cell}"
+        if line_label and row:
+            return f"{line_label}-{row}"
+        return "OS"
+    if zone == "MR":
+        return f"MR-{row}" if row else "MR"
+    return zone
+
+
 def parse_putaway_destinations(
     raw,
     *,
