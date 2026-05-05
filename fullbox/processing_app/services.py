@@ -4137,8 +4137,8 @@ class ProcessingWorkflowService:
     @classmethod
     def processing_print_jobs_next(cls, *, agent_name: str) -> ProcessingJsonResult:
         processing_views = cls._views()
-        processing_views.save_print_agent_status(agent_name)
-        if processing_views.load_print_agent_status().get("paused"):
+        agent_status = processing_views.save_print_agent_status(agent_name)
+        if agent_status.get("paused"):
             return ProcessingJsonResult(
                 status="paused",
                 http_status=200,

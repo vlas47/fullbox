@@ -16,7 +16,12 @@ from labels.services import (
     scanner_settings_apply_response,
     scanner_test_response,
 )
-from labels.utils import build_print_status_snapshot, load_available_printers_data
+from labels.utils import (
+    build_print_status_snapshot,
+    load_available_printers_data,
+    load_print_agent_status,
+    save_print_agent_status,
+)
 
 
 class AvailablePrintersFromAgentTests(TestCase):
@@ -157,3 +162,38 @@ class LabelServiceTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 400)
+
+
+class PrintAgentStatusTests(TestCase):
+    def test_save_print_agent_status_throttles_repeated_heartbeat_writes(self):
+        with TemporaryDirectory() as tmp_dir:
+            status_path = Path(tmp_dir) / "print_agent_status.json"
+            started_at = timezone.now()
+            with patch("labels.utils.print_agent_status_path", return_value=status_path):
+                first_payload = save_print_agent_status("agent-1", when=started_at)
+                first_mtime = status_path.stat().st_mtime_ns
+
+                second_payload = save_print_agent_status(
+                    "agent-1",
+                    when=started_at + timedelta(seconds=2),
+                )
+                second_mtime = status_path.stat().st_mtime_ns
+                stored = load_print_agent_status()
+
+        self.assertEqual(first_payload["agent"], "agent-1")
+        self.assertEqual(second_payload["agent"], "agent-1")
+        self.assertEqual(first_mtime, second_mtime)
+        self.assertEqual(stored["agent"], "agent-1")
+        self.assertEqual(stored["last_seen"], started_at.isoformat())
+
+    def test_save_print_agent_status_updates_immediately_for_new_agent(self):
+        with TemporaryDirectory() as tmp_dir:
+            status_path = Path(tmp_dir) / "print_agent_status.json"
+            started_at = timezone.now()
+            with patch("labels.utils.print_agent_status_path", return_value=status_path):
+                save_print_agent_status("agent-1", when=started_at)
+                save_print_agent_status("agent-2", when=started_at + timedelta(seconds=1))
+                stored = load_print_agent_status()
+
+        self.assertEqual(stored["agent"], "agent-2")
+        self.assertEqual(stored["last_seen"], (started_at + timedelta(seconds=1)).isoformat())

@@ -1,6 +1,7 @@
 import json
 from unittest import mock
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from urllib.parse import quote
 
 from django.contrib.auth import get_user_model
@@ -20,6 +21,7 @@ from sklad.services.warehouse_write_path import WarehouseWritePathService
 from sklad.test_utils import create_warehouse_snapshot_row
 from sku.models import Agency
 from todo.models import Task
+from labels.utils import set_print_agent_pause
 
 from .models import ProcessingFlowSession, ProcessingPrintJob
 from .services import ProcessingWorkflowService
@@ -1844,6 +1846,31 @@ class ProcessingWorkflowServiceTests(TestCase):
         job = ProcessingPrintJob.objects.get()
         self.assertEqual(job.status, ProcessingPrintJob.STATUS_PRINTING)
         self.assertEqual(job.agent, "agent-1")
+
+    def test_processing_print_jobs_next_respects_paused_queue_without_claiming_job(self):
+        ProcessingPrintJob.objects.create(
+            order_id="ORD-4",
+            card_id="card-a",
+            article="SKU-A",
+            barcode="BAR-42",
+            size="42",
+            printer_name="Printer",
+            label_png_base64="abc123",
+            label_width_mm=58,
+            label_height_mm=40,
+            status=ProcessingPrintJob.STATUS_PENDING,
+        )
+
+        with TemporaryDirectory() as tmp_dir:
+            status_path = Path(tmp_dir) / "print_agent_status.json"
+            with mock.patch("labels.utils.print_agent_status_path", return_value=status_path):
+                set_print_agent_pause(True, by="tester")
+                result = ProcessingWorkflowService.processing_print_jobs_next(agent_name="agent-1")
+
+        self.assertEqual(result.status, "paused")
+        job = ProcessingPrintJob.objects.get()
+        self.assertEqual(job.status, ProcessingPrintJob.STATUS_PENDING)
+        self.assertEqual(job.agent, "")
 
     def test_processing_print_jobs_complete_updates_job_status(self):
         job = ProcessingPrintJob.objects.create(

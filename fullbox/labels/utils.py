@@ -2,6 +2,7 @@ import json
 import re
 import time
 from datetime import datetime, timedelta
+from functools import lru_cache
 from pathlib import Path
 
 from django.conf import settings
@@ -67,6 +68,7 @@ PRINT_AGENT_ONLINE_SECONDS = 30
 PRINT_QUEUE_STUCK_SECONDS = 180
 PRINT_REFRESH_WAIT_SECONDS = 8.0
 PRINT_REFRESH_POLL_SECONDS = 0.25
+PRINT_AGENT_STATUS_WRITE_INTERVAL_SECONDS = 5
 _CLIENT_PREFIX_RE = re.compile(r"^\s*клиент\s*:\s*", re.IGNORECASE)
 _IP_PREFIX_RE = re.compile(r"^\s*(?:ип|индивидуальный\s+предприниматель)\s+", re.IGNORECASE)
 SCANNER_DEFAULT = {
@@ -561,15 +563,29 @@ def scanner_settings_path() -> Path:
     return settings.BASE_DIR.parent / "scanner_settings.json"
 
 
-def load_print_agent_status() -> dict:
-    path = print_agent_status_path()
-    if not path.exists():
-        return {}
-    raw_bytes: bytes
+def _write_json_file(path: Path, payload: dict) -> None:
+    path.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+
+def _parse_status_datetime(value) -> datetime | None:
+    if not value:
+        return None
     try:
-        raw_bytes = path.read_bytes()
-    except OSError:
-        return {}
+        parsed = datetime.fromisoformat(str(value))
+    except (TypeError, ValueError):
+        return None
+    if timezone.is_naive(parsed):
+        parsed = timezone.make_aware(parsed)
+    return parsed
+
+
+@lru_cache(maxsize=8)
+def _load_print_agent_status_cached(path_text: str, mtime_ns: int) -> dict:
+    path = Path(path_text)
+    raw_bytes = path.read_bytes()
     encodings = ("utf-8", "utf-8-sig", "cp1251", "latin-1")
     parsed = None
     used_encoding = ""
@@ -584,24 +600,43 @@ def load_print_agent_status() -> dict:
         return {}
     if used_encoding and used_encoding != "utf-8":
         try:
-            path.write_text(
-                json.dumps(parsed, ensure_ascii=False, indent=2),
-                encoding="utf-8",
-            )
+            _write_json_file(path, parsed)
         except OSError:
             pass
     return parsed
 
 
-def save_print_agent_status(agent: str, when: datetime | None = None) -> None:
+def load_print_agent_status() -> dict:
+    path = print_agent_status_path()
+    if not path.exists():
+        return {}
+    try:
+        stat = path.stat()
+    except OSError:
+        return {}
+    try:
+        parsed = _load_print_agent_status_cached(str(path), stat.st_mtime_ns)
+    except OSError:
+        return {}
+    return dict(parsed) if isinstance(parsed, dict) else {}
+
+
+def save_print_agent_status(agent: str, when: datetime | None = None) -> dict:
     when_value = when or timezone.now()
     payload = load_print_agent_status()
-    payload["agent"] = str(agent or "").strip()
-    payload["last_seen"] = when_value.isoformat()
-    print_agent_status_path().write_text(
-        json.dumps(payload, ensure_ascii=False, indent=2),
-        encoding="utf-8",
+    normalized_agent = str(agent or "").strip()
+    previous_agent = str(payload.get("agent") or "").strip()
+    previous_last_seen = _parse_status_datetime(payload.get("last_seen"))
+    payload["agent"] = normalized_agent
+    should_write = (
+        normalized_agent != previous_agent
+        or previous_last_seen is None
+        or (when_value - previous_last_seen).total_seconds() >= PRINT_AGENT_STATUS_WRITE_INTERVAL_SECONDS
     )
+    if should_write:
+        payload["last_seen"] = when_value.isoformat()
+        _write_json_file(print_agent_status_path(), payload)
+    return payload
 
 
 def set_print_agent_pause(paused: bool, by: str | None = None, when: datetime | None = None) -> dict:
@@ -616,10 +651,7 @@ def set_print_agent_pause(paused: bool, by: str | None = None, when: datetime | 
         payload["resumed_at"] = when_value.isoformat()
         if by:
             payload["resumed_by"] = str(by)
-    print_agent_status_path().write_text(
-        json.dumps(payload, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
+    _write_json_file(print_agent_status_path(), payload)
     return payload
 
 
