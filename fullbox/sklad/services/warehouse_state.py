@@ -181,6 +181,52 @@ class WarehouseMovementResolver:
             task_ids=task_ids,
         )
 
+    @classmethod
+    def active_for_processing_order(cls, *, agency, order_id: str) -> WarehouseMovementResult:
+        order_key = str(order_id or "").strip()
+        if not agency or not order_key:
+            return WarehouseMovementResult(
+                has_active_tasks=False,
+                active_task_count=0,
+                done_task_count=0,
+                blocked_task_count=0,
+                destination_zone="OBR",
+                operation_kind="processing_move",
+                task_ids=[],
+            )
+        tasks = (
+            MoveTask.objects.filter(
+                request__agency=agency,
+                request__context_type="processing",
+                request__context_id=order_key,
+                to_zone="OBR",
+            )
+            .order_by("id")
+        )
+        active = 0
+        done = 0
+        blocked = 0
+        task_ids: list[str] = []
+        for task in tasks:
+            task_id = str(task.legacy_order_id or task.id or "").strip()
+            if task_id:
+                task_ids.append(task_id)
+            if task.status in {MoveTask.STATUS_CREATED, MoveTask.STATUS_IN_PROGRESS}:
+                active += 1
+            elif task.status == MoveTask.STATUS_DONE:
+                done += 1
+            elif task.status in {MoveTask.STATUS_FAILED, MoveTask.STATUS_CANCELED}:
+                blocked += 1
+        return WarehouseMovementResult(
+            has_active_tasks=active > 0,
+            active_task_count=active,
+            done_task_count=done,
+            blocked_task_count=blocked,
+            destination_zone="OBR",
+            operation_kind="processing_move",
+            task_ids=task_ids,
+        )
+
 
 class WarehouseGoodsStateResolver:
     _SHIPPING_STATE_PRIORITY = [
@@ -411,15 +457,16 @@ class WarehouseGoodsStateResolver:
         order_key = str(order_id or "").strip()
         fallback_payload = payload if isinstance(payload, dict) else {}
         source_facts = [f"processing_order:{order_key or '-'}"]
-        movement = WarehouseMovementResult(
-            has_active_tasks=False,
-            active_task_count=0,
-            done_task_count=0,
-            blocked_task_count=0,
-            destination_zone="OBR",
-            operation_kind="processing_flow",
-            task_ids=[],
+        movement = WarehouseMovementResolver.active_for_processing_order(
+            agency=agency,
+            order_id=order_key,
         )
+        if movement.active_task_count:
+            source_facts.append(f"processing_active_tasks:{movement.active_task_count}")
+        if movement.done_task_count:
+            source_facts.append(f"processing_done_tasks:{movement.done_task_count}")
+        if movement.blocked_task_count:
+            source_facts.append(f"processing_blocked_tasks:{movement.blocked_task_count}")
         snapshots = cls._processing_snapshots(agency=agency, order_id=order_key)
         payload_status_value = str(
             fallback_payload.get("status") or fallback_payload.get("submit_action") or ""
@@ -436,6 +483,19 @@ class WarehouseGoodsStateResolver:
             )
             source_facts.append(f"processing_snapshots:{len(snapshots)}")
             source_facts.append(f"warehouse_state:{dominant_code.value}")
+            if movement.has_active_tasks and dominant_code in {
+                WarehouseStateCode.RESERVED_FOR_PROCESSING,
+                WarehouseStateCode.MOVING_TO_PROCESSING,
+            }:
+                source_facts.append("processing_move_task_override")
+                return cls._result(
+                    WarehouseStateCode.MOVING_TO_PROCESSING,
+                    "Доставка в зону обработки (ричтрак)",
+                    source_facts,
+                    movement,
+                    next_step_default="Дождаться доставки в зону обработки",
+                    next_step_processing="Дождаться доставки в зону обработки",
+                )
             if dominant_code == WarehouseStateCode.PROCESSING_IN_PROGRESS:
                 return cls._result(
                     dominant_code,
@@ -503,6 +563,16 @@ class WarehouseGoodsStateResolver:
                     next_step_default="Товар доступен для следующей операции",
                     is_ready_for_next_step=True,
                 )
+        if movement.has_active_tasks:
+            source_facts.append("processing_move_task_without_snapshot")
+            return cls._result(
+                WarehouseStateCode.MOVING_TO_PROCESSING,
+                "Доставка в зону обработки (ричтрак)",
+                source_facts,
+                movement,
+                next_step_default="Дождаться доставки в зону обработки",
+                next_step_processing="Дождаться доставки в зону обработки",
+            )
         return cls._fallback_processing_result(
             payload=fallback_payload,
             source_facts=source_facts,
@@ -684,7 +754,17 @@ class WarehouseGoodsStateResolver:
         if status_value == "processing_in_work" or "взята" in lowered_label:
             return cls._result(WarehouseStateCode.PROCESSING_IN_PROGRESS, "Взята в работу", source_facts, movement)
         if status_value == "processing_head" or ("передан" in lowered_label and "обработ" in lowered_label):
-            return cls._result(WarehouseStateCode.RESERVED_FOR_PROCESSING, "Передано в обработку", source_facts, movement)
+            return cls._result(
+                WarehouseStateCode.RESERVED_FOR_PROCESSING,
+                "Передано в обработку",
+                source_facts,
+                movement,
+                storekeeper_label="Ожидает доставки в зону обработки",
+                processing_label="Ожидает доставки в зону обработки",
+                next_step_default="Передать товар ричтраку в зону обработки",
+                next_step_storekeeper="Создать или выполнить доставку в зону обработки",
+                next_step_processing="Дождаться доставки в зону обработки",
+            )
         if status_value in {"sent_unconfirmed", "send", "submitted"} or "подтверждени" in lowered_label:
             return cls._result(WarehouseStateCode.UNKNOWN, "Ждет подтверждения", source_facts, movement)
         if status_value == "draft" or "черновик" in lowered_label:

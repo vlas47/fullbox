@@ -226,12 +226,20 @@ def _status_label_from_entry(entry) -> str:
     return payload.get("status_label") or payload.get("status") or "-"
 
 
-def _processing_status_label_from_entry(entry) -> str:
+def _processing_status_audience_for_role(role_key: str | None) -> str:
+    if role_key in {"processing_head", "processing_worker"}:
+        return "processing"
+    if role_key == "storekeeper":
+        return "storekeeper"
+    return "default"
+
+
+def _processing_status_label_from_entry(entry, *, audience: str = "default") -> str:
     return WarehouseGoodsStateResolver.resolve_for_processing_order(
         order_id=str(getattr(entry, "order_id", "") or ""),
         agency=getattr(entry, "agency", None),
         payload=entry.payload or {},
-    ).label_for("default")
+    ).label_for(audience)
 
 
 def _existing_receiving_order_ids(order_ids) -> set[str]:
@@ -330,6 +338,7 @@ def task_panel(context, role=None, limit=6, show_meta=True, include_created_by=T
         tasks_qs = tasks_qs.filter(role_filter)
     limit_value = _normalize_limit(limit)
     today = timezone.localdate()
+    processing_status_audience = _processing_status_audience_for_role(role_key)
 
     tasks = list(tasks_qs)
     receiving_by_order = {}
@@ -463,7 +472,10 @@ def task_panel(context, role=None, limit=6, show_meta=True, include_created_by=T
                 continue
             if not _is_status_entry(entry):
                 continue
-            status_by_order[entry.order_id] = _processing_status_label_from_entry(entry)
+            status_by_order[entry.order_id] = _processing_status_label_from_entry(
+                entry,
+                audience=processing_status_audience,
+            )
         for task in combined_tasks:
             order_id = _extract_processing_order_id(task.route)
             if not order_id:
@@ -550,7 +562,10 @@ def task_panel(context, role=None, limit=6, show_meta=True, include_created_by=T
                 continue
             if not _is_status_entry(entry):
                 continue
-            processing_status_by_order[entry.order_id] = _processing_status_label_from_entry(entry)
+            processing_status_by_order[entry.order_id] = _processing_status_label_from_entry(
+                entry,
+                audience=processing_status_audience,
+            )
         processing_routes = [
             f"/orders/processing/{order_id}/flow/" for order_id in processing_order_ids
         ]

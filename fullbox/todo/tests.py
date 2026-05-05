@@ -645,6 +645,118 @@ class TodoDisplayTitleTests(TestCase):
 
         self.assertIn("Товар в обработке", html)
 
+    def test_processing_head_task_panel_shows_move_to_processing_when_reachtruck_task_active(self):
+        agency = Agency.objects.create(agn_name="Клиент доставки в OBR")
+        processing_head = Employee.objects.create(full_name="Руководитель обработки", role="processing_head")
+        OrderAuditEntry.objects.create(
+            order_id="145",
+            order_type="processing",
+            action="status",
+            agency=agency,
+            payload={
+                "status": "processing_in_work",
+                "status_label": "Взята в работу",
+            },
+        )
+        move_request = MoveRequest.objects.create(
+            context_type=MoveRequest.CONTEXT_PROCESSING,
+            context_id="145",
+            agency=agency,
+            destination_zone="OBR",
+            status=MoveRequest.STATUS_IN_PROGRESS,
+        )
+        MoveTask.objects.create(
+            request=move_request,
+            pallet_code="PAL-PROC-TODO-145",
+            from_zone="OS",
+            to_zone="OBR",
+            move_mode=MoveTask.MODE_BOX_PARTIAL,
+            status=MoveTask.STATUS_IN_PROGRESS,
+            payload={
+                "processing_order_id": "145",
+                "status": "in_progress",
+                "status_label": "В работе",
+            },
+        )
+        Task.objects.create(
+            title="Заявка на обработку №145",
+            route="/orders/processing/145/",
+            status="in_progress",
+            assigned_to=processing_head,
+        )
+
+        html = Template(
+            "{% load todo_panel %}{% task_panel role='processing_head' %}"
+        ).render(Context({}))
+
+        self.assertIn("Доставка в зону обработки (ричтрак)", html)
+        self.assertNotIn("Передано в обработку", html)
+
+    def test_processing_head_task_panel_uses_processing_label_for_reserved_order(self):
+        agency = Agency.objects.create(agn_name="Клиент ожидания OBR")
+        processing_head = Employee.objects.create(full_name="Руководитель обработки", role="processing_head")
+        storage_location = WarehouseWritePathService.ensure_location(
+            warehouse_code="MSK",
+            zone_code="OS",
+            row_no=1,
+            section_no=1,
+            tier_no=3,
+            cell_no=2,
+        )
+        OrderAuditEntry.objects.create(
+            order_id="146",
+            order_type="processing",
+            action="status",
+            agency=agency,
+            payload={
+                "status": "processing_head",
+                "status_label": "Передано в обработку",
+            },
+        )
+        WarehouseStockSnapshot.objects.create(
+            agency=agency,
+            source_context_type="legacy_stock",
+            source_context_id="legacy-146",
+            sku_code="SKU-PROCESS-TODO-146",
+            name="Товар обработки",
+            size="42",
+            barcode="200000001146",
+            goods_type="gv",
+            qty=10,
+            available_qty=0,
+            processing_reserved_qty=10,
+            container_code="PAL-PROC-TODO-146",
+            location=storage_location,
+            zone_code=storage_location.zone_code,
+            zone_kind=storage_location.zone_kind,
+            warehouse_state_code="reserved_for_processing",
+        )
+        WarehouseReserve.objects.create(
+            agency=agency,
+            reserve_type=WarehouseReserve.TYPE_PROCESSING,
+            context_type="processing",
+            context_id="146",
+            sku_code="SKU-PROCESS-TODO-146",
+            size="42",
+            barcode="200000001146",
+            goods_type="gv",
+            qty_reserved=10,
+            status=WarehouseReserve.STATUS_ACTIVE,
+        )
+        Task.objects.create(
+            title="Заявка на обработку №146",
+            route="/orders/processing/146/",
+            status="in_progress",
+            assigned_to=processing_head,
+        )
+
+        html = Template(
+            "{% load todo_panel %}{% task_panel role='processing_head' %}"
+        ).render(Context({}))
+
+        self.assertIn("Ожидает доставки в зону обработки", html)
+        self.assertNotIn("Передано в обработку", html)
+
     def test_manager_processing_task_panel_keeps_waiting_status_before_approval_even_with_reserve(self):
         agency = Agency.objects.create(agn_name="Клиент ожидания обработки")
         manager = Employee.objects.create(full_name="Менеджеров Сергей", role="manager")
