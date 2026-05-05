@@ -252,7 +252,7 @@ class ProcessingWorkTemplateRegressionTests(SimpleTestCase):
             template_source,
         )
 
-    def test_work_template_uses_compact_move_summary_and_collapsed_reachtruck_details(self):
+    def test_work_template_uses_compact_move_summary_without_reachtruck_planning_details(self):
         template_path = (
             Path(__file__).resolve().parent
             / "templates"
@@ -262,9 +262,11 @@ class ProcessingWorkTemplateRegressionTests(SimpleTestCase):
         template_source = template_path.read_text(encoding="utf-8")
         self.assertIn('id="reachtruck-summary"', template_source)
         self.assertIn("Сводка доставки", template_source)
-        self.assertIn('id="reachtruck-details"', template_source)
-        self.assertIn("Как это работает", template_source)
-        self.assertIn("Сервис ричтракера сам построит план доставки", template_source)
+        self.assertIn("Паллеты, короба и маршрут сервер спланирует сам после отправки", template_source)
+        self.assertIn("reachtruck-summary-line-qty", template_source)
+        self.assertNotIn('id="reachtruck-details"', template_source)
+        self.assertNotIn("Как это работает", template_source)
+        self.assertNotIn('id="reachtruck-card-label"', template_source)
         self.assertNotIn("requested_rows_json", template_source)
 
 

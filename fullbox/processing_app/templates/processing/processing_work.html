@@ -437,47 +437,12 @@
       color: var(--ink);
       word-break: break-word;
     }
-    .reachtruck-summary-line-meta {
-      color: var(--muted);
-      font-size: 12px;
-      line-height: 1.35;
-      display: flex;
-      gap: 10px;
-      flex-wrap: wrap;
-    }
-    .reachtruck-details {
-      border: 1px solid var(--stroke);
-      border-radius: 14px;
-      background: var(--surface-2);
-      overflow: hidden;
-    }
-    .reachtruck-details summary {
-      list-style: none;
-      cursor: pointer;
-      padding: 12px 14px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 10px;
-      font-weight: 700;
+    .reachtruck-summary-line-qty {
       color: var(--ink);
-    }
-    .reachtruck-details summary::-webkit-details-marker {
-      display: none;
-    }
-    .reachtruck-details summary::after {
-      content: 'Показать';
-      font-size: 12px;
-      font-weight: 700;
-      color: var(--accent-strong);
-    }
-    .reachtruck-details[open] summary::after {
-      content: 'Скрыть';
-    }
-    .reachtruck-details-body {
-      display: grid;
-      gap: 10px;
-      padding: 0 12px 12px;
+      font-size: 28px;
+      line-height: 1;
+      font-weight: 800;
+      white-space: nowrap;
     }
     .reachtruck-plan {
       border: 1px solid var(--stroke);
@@ -1686,7 +1651,6 @@
             <div class="modal-header">
               <div>
                 <div class="modal-title">Перемещение в зону обработки</div>
-                <div class="panel-subtitle" id="reachtruck-card-label">Подтвердите создание заданий для паллет.</div>
               </div>
               <button type="button" class="btn ghost" data-reachtruck-close>Закрыть</button>
             </div>
@@ -1720,24 +1684,6 @@
                   </div>
                   <div class="reachtruck-summary-list" id="reachtruck-summary-list"></div>
                 </div>
-                <details class="reachtruck-details" id="reachtruck-details">
-                  <summary>Как это работает</summary>
-                  <div class="reachtruck-details-body">
-                    <div class="reachtruck-guide">
-                      <div class="reachtruck-guide-item">
-                        <strong>Что отправляется в сервис ричтрака</strong>
-                        <span>Только потребность: какой товар и в каком количестве нужно доставить в OBR.</span>
-                      </div>
-                      <div class="reachtruck-guide-item">
-                        <strong>Что сервис делает сам</strong>
-                        <span>Сам подбирает паллеты, короба, режим отбора и строит маршрут для ричтракера по актуальным остаткам склада.</span>
-                      </div>
-                    </div>
-                    <div class="hint">
-                      После отправки подробности подбора будут доступны уже на стороне ричтракера и в его заданиях.
-                    </div>
-                  </div>
-                </details>
                 <div class="alert" id="reachtruck-status" hidden></div>
                 <div class="actions">
                   <button type="button" class="btn ghost" data-reachtruck-close>Отмена</button>
@@ -1856,7 +1802,6 @@
       const moveModal = document.getElementById('reachtruck-modal');
       const moveForm = document.getElementById('reachtruck-form');
       const moveStatus = document.getElementById('reachtruck-status');
-      const moveLabel = document.getElementById('reachtruck-card-label');
       const movePlan = document.getElementById('reachtruck-plan');
       const moveRows = document.getElementById('reachtruck-rows');
       const moveSummary = document.getElementById('reachtruck-summary');
@@ -1865,7 +1810,6 @@
       const moveSummaryCards = document.getElementById('reachtruck-summary-cards');
       const moveSummaryQty = document.getElementById('reachtruck-summary-qty');
       const moveSummaryList = document.getElementById('reachtruck-summary-list');
-      const moveDetails = document.getElementById('reachtruck-details');
       const moveRowTemplate = document.getElementById('reachtruck-row-template');
       const moveAddRow = document.getElementById('reachtruck-add-row');
       const moveCloseButtons = Array.from(document.querySelectorAll('[data-reachtruck-close]'));
@@ -2369,15 +2313,11 @@
           main.className = 'reachtruck-summary-line-main';
           const titleParts = [entry.article, entry.productName].filter(Boolean);
           main.textContent = titleParts.length ? titleParts.join(' · ') : 'Товар';
-          const meta = document.createElement('div');
-          meta.className = 'reachtruck-summary-line-meta';
-          const qtyText = `${entry.qty} шт.`;
-          const barcodeText = entry.barcodeCount > 0
-            ? `${entry.barcodeCount} ${pluralizeRu(entry.barcodeCount, 'штрихкод', 'штрихкода', 'штрихкодов')}`
-            : 'без привязки к ШК';
-          meta.innerHTML = `<span>${qtyText}</span><span>${barcodeText}</span><span>назначение: OBR</span>`;
+          const qty = document.createElement('div');
+          qty.className = 'reachtruck-summary-line-qty';
+          qty.textContent = `${entry.qty} шт.`;
           line.appendChild(main);
-          line.appendChild(meta);
+          line.appendChild(qty);
           moveSummaryList.appendChild(line);
         });
         moveSummary.hidden = !itemEntries.length;
@@ -3289,22 +3229,8 @@
         }, 0);
         activeMovePalletMeta = new Map();
         activeMoveBoxMeta = new Map();
-        if (moveLabel) {
-          if (targets.length === 1) {
-            const card = targets[0];
-            const article = (card?.dataset?.article || '').trim();
-            const productName = (card?.querySelector('[data-field="product_name"]')?.value || '').trim();
-            const parts = [article, productName].filter(Boolean);
-            moveLabel.textContent = parts.length ? parts.join(' · ') : 'Подтвердите создание задания.';
-          } else {
-            moveLabel.textContent = `Подтвердите создание заданий по ${targets.length} товарам заявки.`;
-          }
-        }
         if (moveRows) {
           moveRows.innerHTML = '';
-        }
-        if (moveDetails) {
-          moveDetails.open = false;
         }
         if (moveSummary) {
           moveSummary.hidden = true;
@@ -3318,10 +3244,7 @@
           return;
         }
         renderMoveSummary(targets);
-        setMoveStatus(
-          `Будет отправлена потребность на ${activeMoveRequestedQty} шт. Сервис ричтракера сам построит план доставки.`,
-          'success',
-        );
+        setMoveStatus('', '');
         moveModal.classList.add('active');
       };
 
@@ -3341,9 +3264,6 @@
         if (movePlan) {
           movePlan.hidden = true;
           Array.from(movePlan.querySelectorAll('.reachtruck-plan-line')).forEach((el) => el.remove());
-        }
-        if (moveDetails) {
-          moveDetails.open = false;
         }
         if (moveSummary) {
           moveSummary.hidden = true;
