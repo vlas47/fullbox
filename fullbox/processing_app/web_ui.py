@@ -2728,9 +2728,9 @@ def _replace_processing_reserves(order_id: str, agency: Agency, stock_rows: list
         qty_value = _parse_qty_value(row.get("qty"))
         if qty_value is None or qty_value <= 0:
             continue
-        size = (row.get("size") or "").strip()
-        barcode = (row.get("barcode") or "").strip()
-        goods_type = (row.get("goods_type") or "").strip()
+        size = str(row.get("size") or "").strip()
+        barcode = str(row.get("barcode") or "").strip()
+        goods_type = str(row.get("goods_type") or "").strip()
         key = (sku, size, barcode, goods_type)
         reserves[key] = reserves.get(key, 0) + qty_value
     if not reserves:
@@ -2845,9 +2845,10 @@ class ProcessingHomeView(RoleRequiredMixin, TemplateView):
     def get(self, request, *args, **kwargs):
         status = (request.GET.get("status") or "").lower()
         ok = request.GET.get("ok") == "1"
-        submitted = kwargs.get("submitted") or (ok and status != "draft")
+        context_kwargs = dict(kwargs)
+        submitted = context_kwargs.get("submitted") or (ok and status != "draft")
         draft_saved = ok and status == "draft"
-        error = kwargs.get("error")
+        error = context_kwargs.pop("error", None)
         order_id = request.GET.get("order")
         if order_id and not getattr(request, "_client_agency", None):
             latest_entry = (
@@ -2861,7 +2862,7 @@ class ProcessingHomeView(RoleRequiredMixin, TemplateView):
             submitted=submitted,
             draft_saved=draft_saved,
             error=error,
-            **kwargs,
+            **context_kwargs,
         )
         return self.render_to_response(ctx)
 

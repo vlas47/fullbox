@@ -4500,6 +4500,14 @@ class ProcessingWorkflowService:
                 return None
             return JsonResponse({"ok": False, "error": message}, status=400)
 
+        def render_home_error(message: str):
+            error_response = autosave_error(message)
+            if error_response:
+                return error_response
+            view = processing_views.ProcessingHomeView()
+            view.setup(request)
+            return view.get(request, error=message)
+
         submit_action = str(request.POST.get("submit_action") or "send").strip().lower()
         is_draft = submit_action == "draft"
         draft_order_id = str(request.POST.get("draft_order_id") or "").strip()
@@ -4511,10 +4519,7 @@ class ProcessingWorkflowService:
             agency_id = request.POST.get("agency_id")
             agency = processing_views.Agency.objects.filter(pk=agency_id).first()
         if not agency:
-            error_response = autosave_error("Выберите клиента.")
-            if error_response:
-                return error_response
-            return processing_views.ProcessingHomeView().get(request, error="Выберите клиента.")
+            return render_home_error("Выберите клиента.")
 
         role = get_request_role(request)
         existing_entries = []
@@ -4529,10 +4534,7 @@ class ProcessingWorkflowService:
                 .order_by("created_at")
             )
             if not existing_entries:
-                error_response = autosave_error("Заявка не найдена.")
-                if error_response:
-                    return error_response
-                return processing_views.ProcessingHomeView().get(request, error="Заявка не найдена.")
+                return render_home_error("Заявка не найдена.")
             latest_payload = existing_entries[-1].payload or {}
             preserved_status = str(latest_payload.get("status") or latest_payload.get("submit_action") or "").strip()
             preserved_label = str(latest_payload.get("status_label") or "").strip()
@@ -4541,10 +4543,7 @@ class ProcessingWorkflowService:
             label_lower = preserved_label.lower()
             if status_lower in {"done", "completed", "closed", "finished"} or "выполн" in label_lower:
                 message = "Заявка уже утверждена и недоступна для редактирования."
-                error_response = autosave_error(message)
-                if error_response:
-                    return error_response
-                return processing_views.ProcessingHomeView().get(request, error=message)
+                return render_home_error(message)
             processing_result = WarehouseGoodsStateResolver.resolve_for_processing_order(
                 order_id=str(edit_order_id or ""),
                 agency=existing_entries[-1].agency if existing_entries else agency,
@@ -4552,10 +4551,7 @@ class ProcessingWorkflowService:
             )
             if processing_result.code in cls._PROCESSING_WAREHOUSE_STARTED_CODES:
                 message = "Заявка уже передана в обработку и недоступна для редактирования."
-                error_response = autosave_error(message)
-                if error_response:
-                    return error_response
-                return processing_views.ProcessingHomeView().get(request, error=message)
+                return render_home_error(message)
             is_draft = False
 
         existing_draft_entries = []
@@ -4620,15 +4616,9 @@ class ProcessingWorkflowService:
         if not is_draft:
             if cards_payload:
                 if not any(card.get("product_name") for card in cards_payload):
-                    error_response = autosave_error("Укажите наименование товара.")
-                    if error_response:
-                        return error_response
-                    return processing_views.ProcessingHomeView().get(request, error="Укажите наименование товара.")
+                    return render_home_error("Укажите наименование товара.")
             elif not product_name:
-                error_response = autosave_error("Укажите наименование товара.")
-                if error_response:
-                    return error_response
-                return processing_views.ProcessingHomeView().get(request, error="Укажите наименование товара.")
+                return render_home_error("Укажите наименование товара.")
 
         def collect_rows(field_map: dict) -> list[dict]:
             row_count = 0
@@ -4722,23 +4712,20 @@ class ProcessingWorkflowService:
                     requested_map[key] = requested_map.get(key, 0) + qty_value
                     max_qty = available_map.get(key, 0)
                     if requested_map[key] > max_qty:
-                        return processing_views.ProcessingHomeView().get(
-                            request,
-                            error=f"Количество для {sku_label} ({size_label}) превышает доступный остаток: {max_qty}.",
+                        return render_home_error(
+                            f"Количество для {sku_label} ({size_label}) превышает доступный остаток: {max_qty}."
                         )
                     continue
                 if barcode_value:
                     requested_barcode_map[barcode_value] = requested_barcode_map.get(barcode_value, 0) + qty_value
                     max_qty = barcode_map.get(barcode_value, 0)
                     if requested_barcode_map[barcode_value] > max_qty:
-                        return processing_views.ProcessingHomeView().get(
-                            request,
-                            error=f"Количество для {sku_label} ({size_label}) превышает доступный остаток: {max_qty}.",
+                        return render_home_error(
+                            f"Количество для {sku_label} ({size_label}) превышает доступный остаток: {max_qty}."
                         )
                     continue
-                return processing_views.ProcessingHomeView().get(
-                    request,
-                    error=f"Не удалось проверить остаток для {sku_label} ({size_label}): нет артикула или штрихкода.",
+                return render_home_error(
+                    f"Не удалось проверить остаток для {sku_label} ({size_label}): нет артикула или штрихкода."
                 )
 
         primary_article = str(request.POST.get("article") or "").strip()
@@ -4887,24 +4874,15 @@ class ProcessingWorkflowService:
         if marking_each:
             required_map, required_total, missing_barcodes = processing_views._marking_required_by_barcode(payload)
             if not is_draft and required_total <= 0:
-                error_response = autosave_error("Добавьте товары для проверки ЧЗ.")
-                if error_response:
-                    return error_response
-                return processing_views.ProcessingHomeView().get(request, error="Добавьте товары для проверки ЧЗ.")
+                return render_home_error("Добавьте товары для проверки ЧЗ.")
             if not is_draft and missing_barcodes > 0:
                 message = "Для маркировки ЧЗ заполните штрихкоды товара."
-                error_response = autosave_error(message)
-                if error_response:
-                    return error_response
-                return processing_views.ProcessingHomeView().get(request, error=message)
+                return render_home_error(message)
             if cz_file and getattr(cz_file, "name", ""):
                 ok, import_result = processing_views._import_marking_codes(cz_file, payload, order_id, agency, request.user)
                 if not ok:
                     message = import_result.get("error") or "Ошибка импорта ЧЗ."
-                    error_response = autosave_error(message)
-                    if error_response:
-                        return error_response
-                    return processing_views.ProcessingHomeView().get(request, error=message)
+                    return render_home_error(message)
                 payload["marking_cz_import"] = import_result
             if not is_draft:
                 available_map = processing_views._marking_available_by_barcode(agency, order_id)
@@ -4914,34 +4892,50 @@ class ProcessingWorkflowService:
                     missing_total += max(required_qty - available_qty, 0)
                 if missing_total > 0:
                     message = f"Не хватает ЧЗ: {missing_total}. Загрузите файл с ЧЗ."
-                    error_response = autosave_error(message)
-                    if error_response:
-                        return error_response
-                    return processing_views.ProcessingHomeView().get(request, error=message)
+                    return render_home_error(message)
                 ok, reserve_error = processing_views._reserve_marking_codes(agency, order_id, required_map)
                 if not ok:
                     message = reserve_error or "Не удалось забронировать ЧЗ."
-                    error_response = autosave_error(message)
-                    if error_response:
-                        return error_response
-                    return processing_views.ProcessingHomeView().get(request, error=message)
-        log_order_action(
-            action,
-            order_id=order_id,
-            order_type="processing",
-            user=request.user if request.user.is_authenticated else None,
-            agency=agency,
-            description=description,
-            payload=payload,
-        )
-        if not is_draft:
-            processing_views._replace_processing_reserves(order_id, agency, stock_rows)
-        if not is_draft and draft_order_id and not edit_order_id:
-            OrderAuditEntry.objects.filter(
-                order_id=draft_order_id,
-                order_type="processing",
-                agency=agency,
-            ).delete()
+                    return render_home_error(message)
+        try:
+            with transaction.atomic():
+                log_order_action(
+                    action,
+                    order_id=order_id,
+                    order_type="processing",
+                    user=request.user if request.user.is_authenticated else None,
+                    agency=agency,
+                    description=description,
+                    payload=payload,
+                )
+                if not is_draft:
+                    processing_views._replace_processing_reserves(order_id, agency, stock_rows)
+                if not is_draft and draft_order_id and not edit_order_id:
+                    OrderAuditEntry.objects.filter(
+                        order_id=draft_order_id,
+                        order_type="processing",
+                        agency=agency,
+                    ).delete()
+                if not edit_order_id and not is_draft and client_agency:
+                    processing_views._create_processing_manager_task(order_id, agency, request, timezone.localtime())
+        except ValueError as exc:
+            if not is_draft and not edit_order_id:
+                MarkingCode.objects.filter(
+                    agency=agency,
+                    order_type="processing",
+                    order_id=order_id,
+                    used_at__isnull=True,
+                ).update(order_id="")
+            message = str(exc).strip()
+            if message.startswith("No stored snapshots with enough available qty for "):
+                sku_code = message.rsplit(" for ", 1)[-1].strip()
+                message = f"Не удалось забронировать товар на складе: для {sku_code} не хватает доступного остатка."
+            elif message.startswith("No stored snapshot with enough available qty for "):
+                sku_code = message.rsplit(" for ", 1)[-1].strip()
+                message = f"Не удалось забронировать товар на складе: для {sku_code} не хватает доступного остатка."
+            elif not message:
+                message = "Не удалось синхронизировать заявку со складом."
+            return render_home_error(message)
         if edit_order_id:
             if autosave:
                 return JsonResponse(
@@ -4954,8 +4948,6 @@ class ProcessingWorkflowService:
                     }
                 )
             return redirect(f"/orders/processing/{order_id}/")
-        if not is_draft and client_agency:
-            processing_views._create_processing_manager_task(order_id, agency, request, timezone.localtime())
         if autosave:
             return JsonResponse(
                 {

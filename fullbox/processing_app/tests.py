@@ -2101,6 +2101,146 @@ class ProcessingWorkflowServiceTests(TestCase):
             ).exclude(status="done").exists()
         )
 
+    def test_submit_processing_from_draft_with_placeholder_barcode_creates_manager_task(self):
+        manager_user = get_user_model().objects.create_user(username="proc_placeholder_manager", password="x")
+        manager_employee = Employee.objects.create(
+            full_name="Processing Placeholder Manager",
+            user=manager_user,
+            role="manager",
+            is_active=True,
+        )
+        create_warehouse_snapshot_row(
+            agency=self.agency,
+            order_type="receiving",
+            order_id="REC-PLACEHOLDER-1",
+            sku="028",
+            name="Placeholder Barcode Item",
+            size="25-32",
+            barcode="",
+            goods_type="op",
+            qty=240,
+            available_qty=240,
+            pallet_code="PAL-028-1",
+            zone="OS",
+        )
+        draft_order_id = "draft-placeholder-proc"
+        OrderAuditEntry.objects.create(
+            order_id=draft_order_id,
+            order_type="processing",
+            action="update",
+            agency=self.agency,
+            payload={
+                "status": "draft",
+                "status_label": "Черновик",
+            },
+        )
+        request = self.request_factory.post(
+            "/orders/processing/",
+            data={
+                "submit_action": "send",
+                "draft_order_id": draft_order_id,
+                "cards_json": json.dumps(
+                    [
+                        {
+                            "id": "card-1",
+                            "article": "028",
+                            "product_name": "Placeholder Barcode Item",
+                            "goods_type": "op",
+                            "rows": [
+                                {
+                                    "article": "028",
+                                    "size": "25-32",
+                                    "barcode": "-",
+                                    "qty": "240",
+                                }
+                            ],
+                        }
+                    ],
+                    ensure_ascii=False,
+                ),
+            },
+        )
+        request.user = self.user
+        request._client_agency = self.agency
+
+        response = ProcessingWorkflowService.submit_processing(request=request)
+
+        self.assertEqual(response.status_code, 302)
+        latest = OrderAuditEntry.objects.filter(order_type="processing", agency=self.agency).order_by("-id").first()
+        self.assertIsNotNone(latest)
+        self.assertNotEqual(latest.order_id, draft_order_id)
+        self.assertFalse(OrderAuditEntry.objects.filter(order_id=draft_order_id, order_type="processing").exists())
+        reserve = WarehouseReserve.objects.get(
+            agency=self.agency,
+            reserve_type=WarehouseReserve.TYPE_PROCESSING,
+            context_type="processing",
+            context_id=latest.order_id,
+            sku_code="028",
+        )
+        self.assertEqual(reserve.barcode, "")
+        self.assertEqual(reserve.goods_type, "op")
+        self.assertTrue(
+            Task.objects.filter(
+                route=f"/orders/processing/{latest.order_id}/",
+                assigned_to=manager_employee,
+            ).exclude(status="done").exists()
+        )
+
+    def test_submit_processing_rolls_back_order_when_warehouse_reserve_sync_fails(self):
+        create_warehouse_snapshot_row(
+            agency=self.agency,
+            order_type="receiving",
+            order_id="REC-ROLLBACK-1",
+            sku="028",
+            name="Rollback Item",
+            size="25-32",
+            barcode="",
+            goods_type="op",
+            qty=240,
+            available_qty=240,
+            pallet_code="PAL-ROLLBACK-1",
+            zone="OS",
+        )
+        request = self.request_factory.post(
+            "/orders/processing/",
+            data={
+                "submit_action": "send",
+                "cards_json": json.dumps(
+                    [
+                        {
+                            "id": "card-1",
+                            "article": "028",
+                            "product_name": "Rollback Item",
+                            "goods_type": "op",
+                            "rows": [
+                                {
+                                    "article": "028",
+                                    "size": "25-32",
+                                    "barcode": "-",
+                                    "qty": "240",
+                                }
+                            ],
+                        }
+                    ],
+                    ensure_ascii=False,
+                ),
+            },
+        )
+        request.user = self.user
+        request._client_agency = self.agency
+
+        with mock.patch(
+            "processing_app.views._replace_processing_reserves",
+            side_effect=ValueError("No stored snapshots with enough available qty for 028"),
+        ):
+            response = ProcessingWorkflowService.submit_processing(request=request)
+
+        self.assertEqual(response.status_code, 200)
+        response.render()
+        self.assertIn("для 028 не хватает доступного остатка", response.content.decode("utf-8"))
+        self.assertFalse(OrderAuditEntry.objects.filter(order_type="processing", agency=self.agency).exists())
+        self.assertFalse(Task.objects.filter(route__startswith="/orders/processing/").exists())
+
     def test_submit_processing_rejects_edit_when_warehouse_already_started(self):
         order_id = "630-EDIT-WH"
         OrderAuditEntry.objects.create(
@@ -2848,6 +2988,38 @@ class ProcessingReserveMaterializedAvailabilityTests(TestCase):
         self.assertEqual(snapshot.processing_reserved_qty, 30)
         self.assertEqual(snapshot.available_qty, 40)
         self.assertEqual(snapshot.warehouse_state_code, "reserved_for_processing")
+
+    def test_replace_processing_reserves_treats_placeholder_barcode_as_empty(self):
+        _replace_processing_reserves(
+            "P-103",
+            self.agency,
+            [
+                {
+                    "sku": "SKU-RESERVE",
+                    "size": "44",
+                    "barcode": "-",
+                    "goods_type": "Не обработанный",
+                    "qty": 25,
+                }
+            ],
+        )
+
+        warehouse_reserve = WarehouseReserve.objects.get(
+            agency=self.agency,
+            reserve_type=WarehouseReserve.TYPE_PROCESSING,
+            context_type="processing",
+            context_id="P-103",
+        )
+        snapshot = WarehouseStockSnapshot.objects.get(
+            agency=self.agency,
+            container_code="PAL-RESERVE-1",
+            sku_code="SKU-RESERVE",
+            size="44",
+        )
+        self.assertEqual(warehouse_reserve.barcode, "")
+        self.assertEqual(warehouse_reserve.qty_reserved, 25)
+        self.assertEqual(snapshot.processing_reserved_qty, 25)
+        self.assertEqual(snapshot.available_qty, 45)
 
     def test_processing_reserve_rows_for_order_return_outstanding_warehouse_qty(self):
         WarehouseReserve.objects.create(

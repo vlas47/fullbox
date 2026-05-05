@@ -2155,11 +2155,19 @@ class WarehouseWritePathService:
         ).exists()
 
     @staticmethod
+    def _normalize_reserve_lookup_text(value) -> str:
+        text = str(value or "").strip()
+        if text in {"-", "–", "—"}:
+            return ""
+        return text
+
+    @staticmethod
     def _match_snapshot_for_processing_reserve(*, agency: Agency, item: dict, required_qty: int) -> WarehouseStockSnapshot:
+        normalize = WarehouseWritePathService._normalize_reserve_lookup_text
         sku_code = str(item.get("sku_code") or item.get("sku") or "").strip()
-        size = str(item.get("size") or "").strip()
-        barcode = str(item.get("barcode") or "").strip()
-        goods_type = str(item.get("goods_type") or "").strip()
+        size = normalize(item.get("size"))
+        barcode = normalize(item.get("barcode"))
+        goods_type = normalize(item.get("goods_type"))
         qs = WarehouseStockSnapshot.objects.filter(
             agency=agency,
             sku_code=sku_code,
@@ -2181,10 +2189,11 @@ class WarehouseWritePathService:
         item: dict,
         required_qty: int,
     ) -> list[tuple[WarehouseStockSnapshot, int]]:
+        normalize = WarehouseWritePathService._normalize_reserve_lookup_text
         sku_code = str(item.get("sku_code") or item.get("sku") or "").strip()
-        size = str(item.get("size") or "").strip()
-        barcode = str(item.get("barcode") or "").strip()
-        goods_type = str(item.get("goods_type") or "").strip()
+        size = normalize(item.get("size"))
+        barcode = normalize(item.get("barcode"))
+        goods_type = normalize(item.get("goods_type"))
         remaining_qty = max(int(required_qty or 0), 0)
         allocations: list[tuple[WarehouseStockSnapshot, int]] = []
         qs = (
@@ -2236,10 +2245,11 @@ class WarehouseWritePathService:
 
     @staticmethod
     def _match_snapshot_for_shipping_reserve(*, agency: Agency, item: dict, required_qty: int) -> WarehouseStockSnapshot:
+        normalize = WarehouseWritePathService._normalize_reserve_lookup_text
         sku_code = str(item.get("sku_code") or item.get("sku") or "").strip()
-        size = str(item.get("size") or "").strip()
-        barcode = str(item.get("barcode") or "").strip()
-        goods_type = str(item.get("goods_type") or "").strip()
+        size = normalize(item.get("size"))
+        barcode = normalize(item.get("barcode"))
+        goods_type = normalize(item.get("goods_type"))
         qs = WarehouseStockSnapshot.objects.filter(
             agency=agency,
             sku_code=sku_code,
@@ -2264,10 +2274,11 @@ class WarehouseWritePathService:
         item: dict,
         required_qty: int,
     ) -> list[tuple[WarehouseStockSnapshot, int]]:
+        normalize = WarehouseWritePathService._normalize_reserve_lookup_text
         sku_code = str(item.get("sku_code") or item.get("sku") or "").strip()
-        size = str(item.get("size") or "").strip()
-        barcode = str(item.get("barcode") or "").strip()
-        goods_type = str(item.get("goods_type") or "").strip()
+        size = normalize(item.get("size"))
+        barcode = normalize(item.get("barcode"))
+        goods_type = normalize(item.get("goods_type"))
         remaining_qty = max(int(required_qty or 0), 0)
         allocations: list[tuple[WarehouseStockSnapshot, int]] = []
         qs = (
