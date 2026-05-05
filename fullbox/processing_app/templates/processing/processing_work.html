@@ -367,6 +367,118 @@
       color: var(--muted);
       line-height: 1.35;
     }
+    .reachtruck-summary {
+      border: 1px solid var(--stroke);
+      border-radius: 14px;
+      background: linear-gradient(135deg, rgba(14,107,91,0.08), rgba(255,255,255,0.88));
+      padding: 12px;
+      display: grid;
+      gap: 10px;
+    }
+    .reachtruck-summary-head {
+      display: grid;
+      gap: 4px;
+    }
+    .reachtruck-summary-title {
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--accent-strong);
+      font-weight: 700;
+    }
+    .reachtruck-summary-copy {
+      font-size: 13px;
+      color: var(--muted);
+      line-height: 1.35;
+    }
+    .reachtruck-summary-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 8px;
+    }
+    .reachtruck-summary-card {
+      border: 1px solid var(--stroke);
+      border-radius: 12px;
+      background: var(--surface);
+      padding: 10px 12px;
+      display: grid;
+      gap: 4px;
+    }
+    .reachtruck-summary-card-label {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+      color: var(--muted);
+      font-weight: 700;
+    }
+    .reachtruck-summary-card-value {
+      font-size: 18px;
+      line-height: 1.1;
+      color: var(--ink);
+      font-weight: 800;
+    }
+    .reachtruck-summary-list {
+      display: grid;
+      gap: 8px;
+    }
+    .reachtruck-summary-line {
+      border: 1px solid var(--stroke);
+      border-radius: 12px;
+      background: rgba(255,255,255,0.92);
+      padding: 10px 12px;
+      display: flex;
+      gap: 10px;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .reachtruck-summary-line-main {
+      font-weight: 700;
+      color: var(--ink);
+      word-break: break-word;
+    }
+    .reachtruck-summary-line-meta {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.35;
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .reachtruck-details {
+      border: 1px solid var(--stroke);
+      border-radius: 14px;
+      background: var(--surface-2);
+      overflow: hidden;
+    }
+    .reachtruck-details summary {
+      list-style: none;
+      cursor: pointer;
+      padding: 12px 14px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      font-weight: 700;
+      color: var(--ink);
+    }
+    .reachtruck-details summary::-webkit-details-marker {
+      display: none;
+    }
+    .reachtruck-details summary::after {
+      content: 'Показать';
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--accent-strong);
+    }
+    .reachtruck-details[open] summary::after {
+      content: 'Скрыть';
+    }
+    .reachtruck-details-body {
+      display: grid;
+      gap: 10px;
+      padding: 0 12px 12px;
+    }
     .reachtruck-plan {
       border: 1px solid var(--stroke);
       border-radius: 14px;
@@ -1581,37 +1693,51 @@
             <div class="modal-body">
               <form id="reachtruck-form" method="post" action="/reachtruck/requests/create/">
                 {% csrf_token %}
-                <div class="table-wrap">
-                  <table class="params-table">
-                    <thead>
-                      <tr>
-                        <th style="width: 240px;">Паллета</th>
-                        <th style="width: 190px;">Режим выдачи</th>
-                        <th style="width: 220px;">Короб(а)</th>
-                        <th>Текущее место</th>
-                        <th style="width: 110px;">Доступно</th>
-                        <th style="width: 120px;">К отбору</th>
-                        <th>Место назначения</th>
-                        <th style="width: 90px;"></th>
-                      </tr>
-                    </thead>
-                    <tbody id="reachtruck-rows"></tbody>
-                  </table>
-                </div>
-                <div class="hint">
-                  Назначение: OBR · Зона обработки.
-                  Источник вручную не выбирается: сервис сам подбирает палеты и короба по доступным остаткам.
-                  Ниже показан план, который будет отправлен ричтраку.
-                </div>
-                <div class="reachtruck-guide">
-                  <div class="reachtruck-guide-item">
-                    <strong>Автосбор задания</strong>
-                    <span>Система сама подбирает: палета, короб и количество по товару из заявки. Вы проверяете и отправляете.</span>
+                <div class="reachtruck-summary" id="reachtruck-summary" hidden>
+                  <div class="reachtruck-summary-head">
+                    <div class="reachtruck-summary-title">Сводка доставки</div>
+                    <div class="reachtruck-summary-copy">
+                      Вы указываете только, какой товар нужно доставить в OBR. Паллеты, короба и маршрут сервер спланирует сам после отправки.
+                    </div>
                   </div>
+                  <div class="reachtruck-summary-grid">
+                    <div class="reachtruck-summary-card">
+                      <span class="reachtruck-summary-card-label">Куда</span>
+                      <span class="reachtruck-summary-card-value" id="reachtruck-summary-destination">OBR</span>
+                    </div>
+                    <div class="reachtruck-summary-card">
+                      <span class="reachtruck-summary-card-label">Товарных позиций</span>
+                      <span class="reachtruck-summary-card-value" id="reachtruck-summary-items">0</span>
+                    </div>
+                    <div class="reachtruck-summary-card">
+                      <span class="reachtruck-summary-card-label">Карточек в отправке</span>
+                      <span class="reachtruck-summary-card-value" id="reachtruck-summary-cards">0</span>
+                    </div>
+                    <div class="reachtruck-summary-card">
+                      <span class="reachtruck-summary-card-label">Всего к доставке</span>
+                      <span class="reachtruck-summary-card-value" id="reachtruck-summary-qty">0 шт.</span>
+                    </div>
+                  </div>
+                  <div class="reachtruck-summary-list" id="reachtruck-summary-list"></div>
                 </div>
-                <div class="reachtruck-plan" id="reachtruck-plan" hidden>
-                  <div class="reachtruck-plan-title">Формулировка задания ричтракеру</div>
-                </div>
+                <details class="reachtruck-details" id="reachtruck-details">
+                  <summary>Как это работает</summary>
+                  <div class="reachtruck-details-body">
+                    <div class="reachtruck-guide">
+                      <div class="reachtruck-guide-item">
+                        <strong>Что отправляется в сервис ричтрака</strong>
+                        <span>Только потребность: какой товар и в каком количестве нужно доставить в OBR.</span>
+                      </div>
+                      <div class="reachtruck-guide-item">
+                        <strong>Что сервис делает сам</strong>
+                        <span>Сам подбирает паллеты, короба, режим отбора и строит маршрут для ричтракера по актуальным остаткам склада.</span>
+                      </div>
+                    </div>
+                    <div class="hint">
+                      После отправки подробности подбора будут доступны уже на стороне ричтракера и в его заданиях.
+                    </div>
+                  </div>
+                </details>
                 <div class="alert" id="reachtruck-status" hidden></div>
                 <div class="actions">
                   <button type="button" class="btn ghost" data-reachtruck-close>Отмена</button>
@@ -1733,6 +1859,13 @@
       const moveLabel = document.getElementById('reachtruck-card-label');
       const movePlan = document.getElementById('reachtruck-plan');
       const moveRows = document.getElementById('reachtruck-rows');
+      const moveSummary = document.getElementById('reachtruck-summary');
+      const moveSummaryDestination = document.getElementById('reachtruck-summary-destination');
+      const moveSummaryItems = document.getElementById('reachtruck-summary-items');
+      const moveSummaryCards = document.getElementById('reachtruck-summary-cards');
+      const moveSummaryQty = document.getElementById('reachtruck-summary-qty');
+      const moveSummaryList = document.getElementById('reachtruck-summary-list');
+      const moveDetails = document.getElementById('reachtruck-details');
       const moveRowTemplate = document.getElementById('reachtruck-row-template');
       const moveAddRow = document.getElementById('reachtruck-add-row');
       const moveCloseButtons = Array.from(document.querySelectorAll('[data-reachtruck-close]'));
@@ -1855,6 +1988,18 @@
           return 0;
         }
         return parsed;
+      };
+      const pluralizeRu = (value, one, twoToFour, many) => {
+        const number = Math.abs(toPositiveInt(value));
+        const mod10 = number % 10;
+        const mod100 = number % 100;
+        if (mod10 === 1 && mod100 !== 11) {
+          return one;
+        }
+        if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) {
+          return twoToFour;
+        }
+        return many;
       };
       const toBoolFlag = (value) => {
         if (value === true || value === false) {
@@ -2147,6 +2292,95 @@
           movePlan.appendChild(rowEl);
         });
         movePlan.hidden = !lines.length;
+      };
+      const buildMoveRequestItems = (targetCards) => {
+        const requestItems = [];
+        (Array.isArray(targetCards) ? targetCards : []).forEach((card) => {
+          const meta = buildCardRequestMeta(card);
+          const qty = toPositiveInt(meta.requestedQty);
+          if (qty <= 0) {
+            return;
+          }
+          if (!meta.article && !(meta.barcodes || []).length) {
+            return;
+          }
+          requestItems.push({
+            requested_article: meta.article,
+            requested_barcodes: meta.barcodes || [],
+            requested_goods_type: meta.goodsType || '',
+            requested_qty: qty,
+            product_name: meta.productName || '',
+          });
+        });
+        return requestItems;
+      };
+      const renderMoveSummary = (targetCards) => {
+        if (!moveSummary || !moveSummaryList) {
+          return;
+        }
+        const requestItems = buildMoveRequestItems(targetCards);
+        const items = new Map();
+        let totalQty = 0;
+        requestItems.forEach((item) => {
+          const article = String(item.requested_article || '').trim();
+          const productName = String(item.product_name || '').trim();
+          const qty = toPositiveInt(item.requested_qty);
+          const barcodes = Array.isArray(item.requested_barcodes) ? item.requested_barcodes.filter(Boolean) : [];
+          const key = [
+            article,
+            productName,
+            String(item.requested_goods_type || '').trim(),
+            barcodes.join(','),
+          ].join('|');
+          if (!key) {
+            return;
+          }
+          if (!items.has(key)) {
+            items.set(key, {
+              article,
+              productName,
+              goodsType: String(item.requested_goods_type || '').trim(),
+              barcodeCount: barcodes.length,
+              qty: 0,
+            });
+          }
+          const entry = items.get(key);
+          entry.qty += qty;
+          totalQty += qty;
+        });
+        const itemEntries = Array.from(items.values());
+        if (moveSummaryDestination) {
+          moveSummaryDestination.textContent = 'OBR';
+        }
+        if (moveSummaryItems) {
+          moveSummaryItems.textContent = String(itemEntries.length);
+        }
+        if (moveSummaryCards) {
+          moveSummaryCards.textContent = String((Array.isArray(targetCards) ? targetCards : []).length);
+        }
+        if (moveSummaryQty) {
+          moveSummaryQty.textContent = `${totalQty} шт.`;
+        }
+        moveSummaryList.innerHTML = '';
+        itemEntries.forEach((entry) => {
+          const line = document.createElement('div');
+          line.className = 'reachtruck-summary-line';
+          const main = document.createElement('div');
+          main.className = 'reachtruck-summary-line-main';
+          const titleParts = [entry.article, entry.productName].filter(Boolean);
+          main.textContent = titleParts.length ? titleParts.join(' · ') : 'Товар';
+          const meta = document.createElement('div');
+          meta.className = 'reachtruck-summary-line-meta';
+          const qtyText = `${entry.qty} шт.`;
+          const barcodeText = entry.barcodeCount > 0
+            ? `${entry.barcodeCount} ${pluralizeRu(entry.barcodeCount, 'штрихкод', 'штрихкода', 'штрихкодов')}`
+            : 'без привязки к ШК';
+          meta.innerHTML = `<span>${qtyText}</span><span>${barcodeText}</span><span>назначение: OBR</span>`;
+          line.appendChild(main);
+          line.appendChild(meta);
+          moveSummaryList.appendChild(line);
+        });
+        moveSummary.hidden = !itemEntries.length;
       };
       const applyRowModeState = (row) => {
         if (!row) {
@@ -3040,7 +3274,7 @@
       };
 
       const openMoveModal = async (cardOrCards) => {
-        if (!moveModal || !moveForm || !moveRows) {
+        if (!moveModal || !moveForm) {
           return;
         }
         const targets = (Array.isArray(cardOrCards) ? cardOrCards : [cardOrCards]).filter(Boolean);
@@ -3068,87 +3302,26 @@
         }
         if (moveRows) {
           moveRows.innerHTML = '';
-          let createdRows = 0;
-          const missingItems = [];
-          const partialItems = [];
-          const useBarcodePlans = targets.length === 1;
-          for (const card of targets) {
-            const requestMeta = buildCardRequestMeta(card);
-            const requestedQty = toPositiveInt(requestMeta.requestedQty);
-            const requestedBarcodeQty = useBarcodePlans ? resolveRequestedBarcodeQtyMap(card) : {};
-            const cardLabel = requestMeta.article || requestMeta.productName || 'товар';
-            const pallets = await fetchItemPallets(card, { force: true });
-            pallets.forEach((item) => {
-              const palletCode = String(item?.pallet || '').trim();
-              if (!palletCode) {
-                return;
-              }
-              const rawBoxes = Array.isArray(item?.box_matches) ? item.box_matches : [];
-              let palletMax = 0;
-              rawBoxes.forEach((box) => {
-                const boxCode = String(box?.code || '').trim();
-                const boxQty = toPositiveInt(box?.qty);
-                if (!boxCode || boxQty <= 0) {
-                  return;
-                }
-                palletMax = Math.max(palletMax, boxQty);
-                activeMoveBoxMeta.set(moveBoxKey(palletCode, boxCode), {
-                  qty: boxQty,
-                  barcodeQty: normalizeBarcodeQtyMap(box?.barcode_qty || {}),
-                });
-              });
-              if (palletMax > 0) {
-                activeMovePalletMeta.set(palletCodeKey(palletCode), { qty: palletMax });
-              }
-            });
-            if (pallets.length) {
-              const autoPlan = buildAutoPickRows(pallets, requestedQty, requestedBarcodeQty);
-              if (autoPlan.rows.length) {
-                autoPlan.rows.forEach((rowPlan) => {
-                  const rowMode = rowPlan.pickQty >= rowPlan.boxQty
-                    ? MOVE_MODE_BOX_FULL
-                    : MOVE_MODE_BOX_PARTIAL;
-                  const row = createMoveRow(rowPlan.palletCode, {
-                    locationCode: rowPlan.locationCode || rowPlan.location || '',
-                    locationLabel: rowPlan.locationLabel || '',
-                    availableQty: rowPlan.boxQty,
-                    mode: rowMode,
-                    boxCodes: [rowPlan.boxCode],
-                    pickQty: rowPlan.pickQty,
-                    barcodePlan: useBarcodePlans ? rowPlan.barcodePlan : {},
-                    requestMeta,
-                  });
-                  if (!row) {
-                    return;
-                  }
-                  createdRows += 1;
-                  setRowStatus(row, 'Сформировано автоматически', 'success');
-                });
-                if (autoPlan.remaining > 0) {
-                  partialItems.push(
-                    `${cardLabel}: найдено ${requestedQty - autoPlan.remaining} из ${requestedQty} шт.`,
-                  );
-                }
-              } else {
-                missingItems.push(`${cardLabel}: не найден подходящий короб.`);
-              }
-            } else {
-              missingItems.push(`${cardLabel}: паллеты не найдены.`);
-            }
-          }
-          if (!createdRows) {
-            setMoveStatus('Автоподбор не нашел подходящие паллеты/короба.', 'error');
-          } else if (missingItems.length || partialItems.length) {
-            const lines = [...partialItems, ...missingItems];
-            setMoveStatus(lines.join(' '), 'error');
-          } else {
-            setMoveStatus(
-              `Автоматически подобраны палеты и короба на ${activeMoveRequestedQty} шт.`,
-              'success',
-            );
-          }
         }
-        updateMovePlan();
+        if (moveDetails) {
+          moveDetails.open = false;
+        }
+        if (moveSummary) {
+          moveSummary.hidden = true;
+        }
+        if (moveSummaryList) {
+          moveSummaryList.innerHTML = '';
+        }
+        const requestItems = buildMoveRequestItems(targets);
+        if (!requestItems.length) {
+          setMoveStatus('Не удалось сформировать потребность: проверьте товар и количество в карте.', 'error');
+          return;
+        }
+        renderMoveSummary(targets);
+        setMoveStatus(
+          `Будет отправлена потребность на ${activeMoveRequestedQty} шт. Сервис ричтракера сам построит план доставки.`,
+          'success',
+        );
         moveModal.classList.add('active');
       };
 
@@ -3162,9 +3335,21 @@
         activeMoveRequestMeta = {};
         activeMovePalletMeta = new Map();
         activeMoveBoxMeta = new Map();
+        if (moveRows) {
+          moveRows.innerHTML = '';
+        }
         if (movePlan) {
           movePlan.hidden = true;
           Array.from(movePlan.querySelectorAll('.reachtruck-plan-line')).forEach((el) => el.remove());
+        }
+        if (moveDetails) {
+          moveDetails.open = false;
+        }
+        if (moveSummary) {
+          moveSummary.hidden = true;
+        }
+        if (moveSummaryList) {
+          moveSummaryList.innerHTML = '';
         }
         moveModal.classList.remove('active');
         updateMoveHeroButton();
@@ -3209,23 +3394,7 @@
           const targetCards = (activeMoveCards && activeMoveCards.length)
             ? activeMoveCards
             : (activeMoveCard ? [activeMoveCard] : []);
-          const requestItems = [];
-          targetCards.forEach((card) => {
-            const meta = buildCardRequestMeta(card);
-            const qty = toPositiveInt(meta.requestedQty);
-            if (qty <= 0) {
-              return;
-            }
-            if (!meta.article && !(meta.barcodes || []).length) {
-              return;
-            }
-            requestItems.push({
-              requested_article: meta.article,
-              requested_barcodes: meta.barcodes || [],
-              requested_goods_type: meta.goodsType || '',
-              requested_qty: qty,
-            });
-          });
+          const requestItems = buildMoveRequestItems(targetCards);
           if (!requestItems.length) {
             setMoveStatus('Не удалось сформировать потребность: проверьте товар и количество в карте.', 'error');
             if (submitBtn) {
@@ -3238,7 +3407,6 @@
             formData.append('processing_order_id', orderId || '');
             formData.append('to_zone', 'OBR');
             formData.append('request_items_json', JSON.stringify(requestItems));
-            formData.append('requested_rows_json', JSON.stringify(serializeMoveRows()));
             const response = await fetch('/reachtruck/requests/create/', {
               method: 'POST',
               body: formData,
