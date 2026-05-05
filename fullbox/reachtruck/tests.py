@@ -1004,6 +1004,230 @@ class ReachtruckMoveRequestTests(TestCase):
         deliver_codes = [row["box_code"] for row in plan_rows if row["action"] == "Доставить"]
         self.assertEqual(deliver_codes, ["BOX-100", "BOX-101"])
 
+    def test_processing_request_uses_box_full_for_full_box_pick_from_shared_pallet(self):
+        create_warehouse_snapshot_row(
+            agency=self.agency,
+            order_type="receiving",
+            order_id="R-103",
+            sku="SKU-100",
+            barcode="200000000110",
+            goods_type="gv",
+            qty=25,
+            box_code="BOX-110",
+            pallet_code="PAL-110",
+            zone="OS",
+            row=1,
+            section=1,
+            tier=1,
+            cell=3,
+            location="OS · Ряд 1 · Секция 1 · Ярус 1 · Ячейка 3",
+        )
+        create_warehouse_snapshot_row(
+            agency=self.agency,
+            order_type="receiving",
+            order_id="R-103",
+            sku="SKU-100",
+            barcode="200000000111",
+            goods_type="gv",
+            qty=25,
+            box_code="BOX-111",
+            pallet_code="PAL-110",
+            zone="OS",
+            row=1,
+            section=1,
+            tier=1,
+            cell=3,
+            location="OS · Ряд 1 · Секция 1 · Ярус 1 · Ячейка 3",
+        )
+        _replace_processing_reserves(
+            "PROC-BOX-1",
+            self.agency,
+            [
+                {
+                    "sku": "SKU-100",
+                    "barcode": "200000000110",
+                    "goods_type": "gv",
+                    "qty": 25,
+                }
+            ],
+        )
+
+        response = self.client.post(
+            "/reachtruck/requests/create/",
+            data={
+                "processing_order_id": "PROC-BOX-1",
+                "to_zone": "OBR",
+                "agency_id": str(self.agency.id),
+                "request_items_json": json.dumps(
+                    [
+                        {
+                            "requested_article": "SKU-100",
+                            "requested_goods_type": "gv",
+                            "requested_qty": 25,
+                            "requested_barcodes": ["200000000110"],
+                        }
+                    ]
+                ),
+                "requested_rows_json": json.dumps(
+                    [
+                        {
+                            "pallet_code": "PAL-110",
+                            "box_code": "BOX-110",
+                            "qty": 25,
+                            "barcode_qty": {"200000000110": 25},
+                            "requested_article": "SKU-100",
+                            "requested_goods_type": "gv",
+                            "requested_barcodes": ["200000000110"],
+                        }
+                    ]
+                ),
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json().get("ok"))
+        task = MoveTask.objects.get()
+        payload = dict(task.payload or {})
+        self.assertEqual(task.move_mode, MOVE_MODE_BOX_FULL)
+        self.assertEqual(payload.get("requested_boxes"), ["BOX-110"])
+        self.assertIn("сними короба: BOX-110", payload.get("instruction") or "")
+        self.assertIn("Палету верни на исходное место", payload.get("instruction") or "")
+        operation = WarehouseOperation.objects.get(id=payload["warehouse_operation_id"])
+        warehouse_task = operation.tasks.get()
+        self.assertEqual(warehouse_task.task_type, WarehouseOperationTask.TYPE_BOX_MOVE)
+        self.assertEqual(warehouse_task.container.container_code, "BOX-110")
+
+    def test_processing_request_blocks_same_pallet_while_active_obr_task_exists(self):
+        create_warehouse_snapshot_row(
+            agency=self.agency,
+            order_type="receiving",
+            order_id="R-104",
+            sku="SKU-100",
+            barcode="200000000120",
+            goods_type="gv",
+            qty=25,
+            box_code="BOX-120",
+            pallet_code="PAL-120",
+            zone="OS",
+            row=1,
+            section=1,
+            tier=1,
+            cell=4,
+            location="OS · Ряд 1 · Секция 1 · Ярус 1 · Ячейка 4",
+        )
+        create_warehouse_snapshot_row(
+            agency=self.agency,
+            order_type="receiving",
+            order_id="R-104",
+            sku="SKU-100",
+            barcode="200000000121",
+            goods_type="gv",
+            qty=25,
+            box_code="BOX-121",
+            pallet_code="PAL-120",
+            zone="OS",
+            row=1,
+            section=1,
+            tier=1,
+            cell=4,
+            location="OS · Ряд 1 · Секция 1 · Ярус 1 · Ячейка 4",
+        )
+        _replace_processing_reserves(
+            "PROC-BLOCK-1",
+            self.agency,
+            [
+                {
+                    "sku": "SKU-100",
+                    "barcode": "200000000120",
+                    "goods_type": "gv",
+                    "qty": 25,
+                }
+            ],
+        )
+        first_response = self.client.post(
+            "/reachtruck/requests/create/",
+            data={
+                "processing_order_id": "PROC-BLOCK-1",
+                "to_zone": "OBR",
+                "agency_id": str(self.agency.id),
+                "request_items_json": json.dumps(
+                    [
+                        {
+                            "requested_article": "SKU-100",
+                            "requested_goods_type": "gv",
+                            "requested_qty": 25,
+                            "requested_barcodes": ["200000000120"],
+                        }
+                    ]
+                ),
+                "requested_rows_json": json.dumps(
+                    [
+                        {
+                            "pallet_code": "PAL-120",
+                            "box_code": "BOX-120",
+                            "qty": 25,
+                            "barcode_qty": {"200000000120": 25},
+                            "requested_article": "SKU-100",
+                            "requested_goods_type": "gv",
+                            "requested_barcodes": ["200000000120"],
+                        }
+                    ]
+                ),
+            },
+        )
+        self.assertEqual(first_response.status_code, 200)
+        self.assertTrue(first_response.json().get("ok"))
+
+        _replace_processing_reserves(
+            "PROC-BLOCK-2",
+            self.agency,
+            [
+                {
+                    "sku": "SKU-100",
+                    "barcode": "200000000121",
+                    "goods_type": "gv",
+                    "qty": 25,
+                }
+            ],
+        )
+        second_response = self.client.post(
+            "/reachtruck/requests/create/",
+            data={
+                "processing_order_id": "PROC-BLOCK-2",
+                "to_zone": "OBR",
+                "agency_id": str(self.agency.id),
+                "request_items_json": json.dumps(
+                    [
+                        {
+                            "requested_article": "SKU-100",
+                            "requested_goods_type": "gv",
+                            "requested_qty": 25,
+                            "requested_barcodes": ["200000000121"],
+                        }
+                    ]
+                ),
+                "requested_rows_json": json.dumps(
+                    [
+                        {
+                            "pallet_code": "PAL-120",
+                            "box_code": "BOX-121",
+                            "qty": 25,
+                            "barcode_qty": {"200000000121": 25},
+                            "requested_article": "SKU-100",
+                            "requested_goods_type": "gv",
+                            "requested_barcodes": ["200000000121"],
+                        }
+                    ]
+                ),
+            },
+        )
+
+        self.assertEqual(second_response.status_code, 400)
+        payload = second_response.json()
+        self.assertFalse(payload.get("ok"))
+        self.assertEqual(int(payload.get("tasks_created") or 0), 0)
+        self.assertIn("Паллета уже занята активным заданием", payload.get("error") or "")
+
     def test_lookup_item_pallets_returns_short_location_code_for_processing_modal(self):
         OrderAuditEntry.objects.create(
             order_id="PROC-LOOKUP-1",

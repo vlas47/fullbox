@@ -18,10 +18,12 @@ from .pallet_ops import (
     MOVE_MODE_BOX_FULL,
     MOVE_MODE_BOX_PARTIAL,
     MOVE_MODE_PALLET_FULL,
+    _all_stock_boxes_for_pallet,
     _normalize_barcode_qty_map,
     _normalize_box_code,
     _normalize_move_mode,
     _parse_json_list,
+    _planned_stock_box_codes_for_move,
     _payload_box_codes,
     _requested_barcode_qty,
     _requested_partial_rows,
@@ -103,6 +105,8 @@ def _os_line_display_label(section: int) -> str:
 def _shipping_task_kind_label(move_mode: str) -> str:
     if str(move_mode or "").strip() == MoveTask.MODE_PALLET_FULL:
         return "Паллета целиком"
+    if str(move_mode or "").strip() == MoveTask.MODE_BOX_FULL:
+        return "Короба с палеты для отгрузки"
     return "Частичный отбор с палеты для отгрузки"
 
 
@@ -309,6 +313,8 @@ def _move_instruction(payload: dict) -> str:
         return explicit_instruction
     pallet_code = str(payload.get("pallet_code") or "").strip() or "палету"
     mode = _normalize_move_mode(payload.get("move_mode"), payload.get("pick_mode"))
+    destination_label = str(payload.get("to_label") or "").strip() or _location_label(payload.get("to_location"))
+    source_label = str(payload.get("from_label") or "").strip() or _location_label(payload.get("from_location"))
     requested_qty = _as_int(payload.get("requested_qty"))
     requested_sku = str(payload.get("requested_sku") or "").strip()
     requested_goods_type = _normalize_goods_type(payload.get("requested_goods_type"))
@@ -333,14 +339,18 @@ def _move_instruction(payload: dict) -> str:
     product_label = "; ".join(product_parts)
     box_codes = _payload_box_codes(payload)
     if mode == MOVE_MODE_PALLET_FULL:
-        return f"Возьми палету {pallet_code} целиком и доставь в назначенную зону."
+        return f"Возьми палету {pallet_code} целиком и доставь в {destination_label}."
     if mode == MOVE_MODE_BOX_FULL:
         if box_codes:
             return (
-                f"Возьми палету {pallet_code}, отдай короба: {', '.join(box_codes)}. "
-                "Разбирать короба не нужно."
+                f"Возьми палету {pallet_code}, сними короба: {', '.join(box_codes)}. "
+                f"Доставь короба в {destination_label}. "
+                f"Палету верни на исходное место ({source_label})."
             )
-        return f"Возьми палету {pallet_code} и отдай указанные короба без разбора."
+        return (
+            f"Возьми палету {pallet_code}, сними указанные короба, "
+            f"доставь их в {destination_label}, а палету верни на исходное место ({source_label})."
+        )
     if len(requested_rows) > 1:
         steps = []
         for row in requested_rows[:5]:
@@ -357,7 +367,8 @@ def _move_instruction(payload: dict) -> str:
             return (
                 f"Возьми палету {pallet_code}, выполни отбор из коробов: {'; '.join(steps)}{tail}. "
                 f"Общий отбор: {total_label}.{product_suffix} "
-                "Остаток оставь в коробах и верни палету на место."
+                f"Доставь отобранные короба в {destination_label}. "
+                f"Остаток оставь в коробах и верни палету на место ({source_label})."
             )
     if not _single_requested_box(payload) and not box_codes:
         qty_label = f"{requested_qty} шт." if requested_qty > 0 else "указанное количество"
@@ -365,7 +376,8 @@ def _move_instruction(payload: dict) -> str:
         return (
             f"Возьми палету {pallet_code} и отберите {qty_label}."
             f"{product_suffix} "
-            "Короб выбери по месту, остаток оставь на палете."
+            f"Короб выбери по месту, доставь отобранный товар в {destination_label}, "
+            f"а палету верни на место ({source_label})."
         )
     box_code = _single_requested_box(payload) or "указанный короб"
     qty_label = f"{requested_qty} шт." if requested_qty > 0 else "указанное количество"
@@ -373,7 +385,8 @@ def _move_instruction(payload: dict) -> str:
     return (
         f"Возьми палету {pallet_code}, вытащи короб {box_code} и отбери {qty_label}."
         f"{product_suffix} "
-        "Остаток оставь в коробе."
+        f"Доставь отобранный товар в {destination_label}, "
+        f"остаток оставь в коробе, а палету верни на место ({source_label})."
     )
 
 
@@ -567,6 +580,85 @@ def _request_instruction(pallet_code: str, qty: int, destination: dict, items: l
         f"и доставь в {_location_label(destination)}"
         + (f" ({'; '.join(parts)})." if parts else ".")
     )
+
+
+def _ordered_unique_codes(raw_codes) -> list[str]:
+    seen: set[str] = set()
+    result: list[str] = []
+    for raw_code in raw_codes or []:
+        code = str(raw_code or "").strip()
+        key = code.lower()
+        if not code or key in seen:
+            continue
+        seen.add(key)
+        result.append(code)
+    return result
+
+
+def _requested_box_qty_by_code(requested_rows: list[dict]) -> dict[str, int]:
+    result: dict[str, int] = {}
+    for row in requested_rows or []:
+        box_code = _normalize_box_code(row.get("box_code"))
+        qty = _as_int(row.get("qty"))
+        key = box_code.lower()
+        if not box_code or qty <= 0:
+            continue
+        result[key] = int(result.get(key, 0)) + qty
+    return result
+
+
+def _resolve_stock_move_mode(
+    payload: dict,
+    pallet_code: str,
+    *,
+    agency_id: int | None = None,
+    pallet_available_qty: int = 0,
+) -> tuple[str, list[str]]:
+    current_mode = _normalize_move_mode(payload.get("move_mode"), payload.get("pick_mode"))
+    boxes = _all_stock_boxes_for_pallet(pallet_code, agency_id=agency_id)
+    if not boxes:
+        requested_qty = _as_int(payload.get("requested_qty"))
+        if pallet_available_qty > 0 and requested_qty >= pallet_available_qty:
+            return MOVE_MODE_PALLET_FULL, []
+        return current_mode, []
+
+    box_by_code = {
+        str(box.get("code") or "").strip().lower(): box
+        for box in boxes
+        if str(box.get("code") or "").strip()
+    }
+    all_box_keys = set(box_by_code.keys())
+    requested_rows = _requested_partial_rows(payload)
+    requested_by_box = _requested_box_qty_by_code(requested_rows)
+    selected_codes = (
+        _ordered_unique_codes(row.get("box_code") for row in requested_rows)
+        if requested_rows
+        else _ordered_unique_codes(
+            _planned_stock_box_codes_for_move(payload, pallet_code, agency_id=agency_id)
+        )
+    )
+    selected_keys = [code.lower() for code in selected_codes if code.lower() in box_by_code]
+    if not selected_keys:
+        return current_mode, []
+
+    if requested_rows:
+        full_boxes = all(
+            int(requested_by_box.get(key, 0)) >= _as_int((box_by_code.get(key) or {}).get("qty"))
+            for key in selected_keys
+        )
+        if full_boxes:
+            if set(selected_keys) == all_box_keys:
+                return MOVE_MODE_PALLET_FULL, selected_codes
+            return MOVE_MODE_BOX_FULL, selected_codes
+        return MOVE_MODE_BOX_PARTIAL, selected_codes
+
+    requested_qty = _as_int(payload.get("requested_qty"))
+    selected_total_qty = sum(_as_int((box_by_code.get(key) or {}).get("qty")) for key in selected_keys)
+    if selected_total_qty > 0 and requested_qty == selected_total_qty:
+        if set(selected_keys) == all_box_keys:
+            return MOVE_MODE_PALLET_FULL, selected_codes
+        return MOVE_MODE_BOX_FULL, selected_codes
+    return current_mode, selected_codes
 
 
 def _next_stock_move_number() -> str:
@@ -1029,12 +1121,7 @@ def _plan_move_request_to_tasks(
     agency_id = move_request.agency_id
     base_rows = _warehouse_base_rows_for_planning(agency_id=agency_id)
 
-    latest_moves = _latest_moves_by_pallet(processing_order_id=processing_order_id)
-    blocked_pallets = {
-        code
-        for code, move in latest_moves.items()
-        if (move.get("status") or "").strip().lower() in {"created", "in_progress"}
-    }
+    blocked_pallets = _active_pallet_codes_for_agency(agency_id)
 
     remaining_by_row_id: dict[int, int] = {
         _as_int(_row_value(row, "id", 0)): _as_int(_row_value(row, "qty", 0))
@@ -1106,6 +1193,7 @@ def _plan_move_request_to_tasks(
                     "item_chunks": [],
                     "requested_rows": [],
                     "requested_boxes": [],
+                    "pallet_available_qty": 0,
                 },
             )
             entry["qty"] += requested_qty
@@ -1208,7 +1296,12 @@ def _plan_move_request_to_tasks(
                     "from_location": allocation.get("from_location") or _build_location("PR", 0, 0, 0, 0),
                     "receiving_order_id": allocation.get("receiving_order_id") or "",
                     "item_chunks": [],
+                    "pallet_available_qty": int(allocation.get("available_qty") or 0),
                 },
+            )
+            entry["pallet_available_qty"] = max(
+                int(entry.get("pallet_available_qty") or 0),
+                int(allocation.get("available_qty") or 0),
             )
             entry["qty"] += alloc_qty
             if requested_article:
@@ -1265,12 +1358,26 @@ def _plan_move_request_to_tasks(
             "processing_order_id": processing_order_id,
             "request_items": entry.get("item_chunks") or [],
         }
-        payload["instruction"] = _request_instruction(
+        move_mode, selected_box_codes = _resolve_stock_move_mode(
+            payload,
             pallet_code,
-            requested_qty,
-            destination,
-            entry.get("item_chunks") or [],
+            agency_id=agency_id,
+            pallet_available_qty=int(entry.get("pallet_available_qty") or 0),
         )
+        payload["move_mode"] = move_mode
+        payload["pick_mode"] = "full" if move_mode == MOVE_MODE_PALLET_FULL else "partial"
+        if move_mode == MOVE_MODE_PALLET_FULL:
+            payload["status_label"] = "Ожидает перевозки"
+            payload["requested_qty"] = ""
+            payload["requested_boxes"] = []
+            payload["requested_box"] = ""
+            payload["requested_rows"] = []
+            payload["requested_barcode_qty"] = {}
+            payload["available_qty"] = ""
+        else:
+            payload["requested_boxes"] = selected_box_codes or requested_boxes
+            payload["requested_box"] = payload["requested_boxes"][0] if len(payload["requested_boxes"]) == 1 else ""
+        payload["instruction"] = _move_instruction(payload)
         move_id = create_stock_move_task(
             user=user if getattr(user, "is_authenticated", False) else None,
             agency=move_request.agency,
@@ -1283,15 +1390,30 @@ def _plan_move_request_to_tasks(
         if processing_order_id:
             from sklad.services.warehouse_write_path import WarehouseWritePathService
 
+            warehouse_container_codes: list[str] = []
+            if move_mode == MOVE_MODE_PALLET_FULL:
+                warehouse_container_codes = [pallet_code]
+            elif move_mode == MOVE_MODE_BOX_FULL and payload["requested_boxes"]:
+                warehouse_container_codes = list(payload["requested_boxes"])
+            elif (
+                move_mode == MOVE_MODE_BOX_PARTIAL
+                and not payload["requested_rows"]
+                and not payload["requested_boxes"]
+            ):
+                warehouse_container_codes = [pallet_code]
             try:
-                warehouse_operation = WarehouseWritePathService.request_move_to_processing(
-                    agency=move_request.agency,
-                    order_id=processing_order_id,
-                    container_codes=[pallet_code],
-                    requested_by=user if getattr(user, "is_authenticated", False) else None,
-                    requested_by_role=requested_by_role or "processing_head",
-                    source_document_type="stock_move",
-                    source_document_id=move_id,
+                warehouse_operation = (
+                    WarehouseWritePathService.request_move_to_processing(
+                        agency=move_request.agency,
+                        order_id=processing_order_id,
+                        container_codes=warehouse_container_codes,
+                        requested_by=user if getattr(user, "is_authenticated", False) else None,
+                        requested_by_role=requested_by_role or "processing_head",
+                        source_document_type="stock_move",
+                        source_document_id=move_id,
+                    )
+                    if warehouse_container_codes
+                    else None
                 )
             except ValueError:
                 warehouse_operation = None
@@ -1486,7 +1608,12 @@ def create_shipping_pick_request(
                     "from_location": allocation.get("from_location") or _build_location("PR", 0, 0, 0, 0),
                     "receiving_order_id": allocation.get("receiving_order_id") or "",
                     "request_items": [],
+                    "pallet_available_qty": int(allocation.get("available_qty") or 0),
                 },
+            )
+            entry["pallet_available_qty"] = max(
+                int(entry.get("pallet_available_qty") or 0),
+                int(allocation.get("available_qty") or 0),
             )
             entry["qty"] += alloc_qty
             if str(item.sku_code or "").strip():
@@ -1525,19 +1652,9 @@ def create_shipping_pick_request(
         }
         source_label = _location_label(entry.get("from_location"))
         destination_label = _location_label(destination)
-        move_mode = (
-            MoveTask.MODE_PALLET_FULL
-            if _shipping_entry_covers_full_pallet(
-                pallet_code,
-                remaining_by_row_id=remaining_by_row_id,
-                pallet_row_ids=pallet_row_ids,
-            )
-            else MoveTask.MODE_BOX_PARTIAL
-        )
         payload = {
             "status": MoveTask.STATUS_CREATED,
-            "status_label": "Ожидает перевозки" if move_mode == MoveTask.MODE_PALLET_FULL else "Ожидает отбора по потребности",
-            "task_kind_label": _shipping_task_kind_label(move_mode),
+            "status_label": "Ожидает отбора по потребности",
             "shipping_order_id": order.number,
             "shipping_order_pk": order.pk,
             "pallet_code": pallet_code,
@@ -1548,33 +1665,50 @@ def create_shipping_pick_request(
             "receiving_order_id": entry.get("receiving_order_id") or "",
             "requested_by_name": requested_by_name,
             "requested_by_role": requested_by_role,
-            "pick_mode": "full" if move_mode == MoveTask.MODE_PALLET_FULL else "partial",
-            "move_mode": move_mode,
-            "requested_qty": "" if move_mode == MoveTask.MODE_PALLET_FULL else requested_qty,
+            "pick_mode": "partial",
+            "move_mode": MOVE_MODE_BOX_PARTIAL,
+            "requested_qty": requested_qty,
             "requested_sku": articles[0] if len(articles) == 1 else "",
             "requested_barcodes": barcodes,
-            "requested_barcode_qty": {} if move_mode == MoveTask.MODE_PALLET_FULL else barcode_qty,
+            "requested_barcode_qty": barcode_qty,
             "requested_boxes": [],
             "requested_box": "",
             "requested_rows": [],
             "requested_goods_type": goods_types[0] if len(goods_types) == 1 else "",
-            "available_qty": "" if move_mode == MoveTask.MODE_PALLET_FULL else requested_qty,
+            "available_qty": requested_qty,
             "request_items": entry.get("request_items") or [],
-            "instruction": (
-                _shipping_full_pallet_instruction(
-                    pallet_code=pallet_code,
-                    destination_label=destination_label,
-                )
-                if move_mode == MoveTask.MODE_PALLET_FULL
-                else _shipping_pick_instruction(
-                    pallet_code=pallet_code,
-                    requested_qty=requested_qty,
-                    barcode_qty=barcode_qty,
-                    destination_label=destination_label,
-                    source_label=source_label,
-                )
-            ),
         }
+        move_mode, selected_box_codes = _resolve_stock_move_mode(
+            payload,
+            pallet_code,
+            agency_id=order.agency_id,
+            pallet_available_qty=int(entry.get("pallet_available_qty") or 0),
+        )
+        if _shipping_entry_covers_full_pallet(
+            pallet_code,
+            remaining_by_row_id=remaining_by_row_id,
+            pallet_row_ids=pallet_row_ids,
+        ):
+            move_mode = MoveTask.MODE_PALLET_FULL
+            selected_box_codes = []
+        payload["move_mode"] = move_mode
+        payload["pick_mode"] = "full" if move_mode == MoveTask.MODE_PALLET_FULL else "partial"
+        payload["task_kind_label"] = _shipping_task_kind_label(move_mode)
+        if move_mode == MoveTask.MODE_PALLET_FULL:
+            payload["status_label"] = "Ожидает перевозки"
+            payload["requested_qty"] = ""
+            payload["requested_barcode_qty"] = {}
+            payload["requested_boxes"] = []
+            payload["requested_box"] = ""
+            payload["available_qty"] = ""
+            payload["instruction"] = _shipping_full_pallet_instruction(
+                pallet_code=pallet_code,
+                destination_label=destination_label,
+            )
+        else:
+            payload["requested_boxes"] = selected_box_codes
+            payload["requested_box"] = selected_box_codes[0] if len(selected_box_codes) == 1 else ""
+            payload["instruction"] = _move_instruction(payload)
         move_id = create_stock_move_task(
             user=authenticated_user,
             agency=order.agency,

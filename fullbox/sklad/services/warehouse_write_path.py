@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from django.db import models, transaction
+from django.db.models import Q
 from django.utils import timezone
 
 from sku.models import Agency, SKU
@@ -846,7 +847,10 @@ class WarehouseWritePathService:
             if str(value or "").strip()
         ]
         if normalized_container_codes:
-            snapshot_query = snapshot_query.filter(container_code__in=normalized_container_codes)
+            snapshot_query = snapshot_query.filter(
+                Q(container_code__in=normalized_container_codes)
+                | Q(parent_container__container_code__in=normalized_container_codes)
+            )
         snapshots = list(snapshot_query.order_by("id"))
         snapshots = [snapshot for snapshot in snapshots if cls._snapshot_matches_processing_context(snapshot, order_key)]
         if not snapshots:
@@ -894,33 +898,55 @@ class WarehouseWritePathService:
             occurred_at=timezone.now(),
         )
         grouped_tasks: dict[tuple[str, int], dict] = {}
+        selected_container_codes = {code.lower() for code in normalized_container_codes}
         for snapshot in snapshots:
-            if snapshot.container_id:
-                task_key = ("container", int(snapshot.container_id))
+            move_container = snapshot.container
+            if (
+                snapshot.parent_container
+                and str(snapshot.parent_container.container_code or "").strip().lower() in selected_container_codes
+            ):
+                move_container = snapshot.parent_container
+            elif (
+                snapshot.container
+                and str(snapshot.container.container_code or "").strip().lower() in selected_container_codes
+            ):
+                move_container = snapshot.container
+            elif snapshot.parent_container and not selected_container_codes:
+                move_container = snapshot.parent_container
+
+            if move_container:
+                task_key = ("container", int(move_container.id))
             else:
                 task_key = ("snapshot", int(snapshot.id))
             task_bucket = grouped_tasks.setdefault(
                 task_key,
                 {
-                    "container": snapshot.container,
+                    "container": move_container,
                     "from_location": snapshot.location,
                     "from_zone_code": snapshot.zone_code,
                     "qty_planned": 0,
                     "snapshot_ids": [],
-                    "container_code": snapshot.container_code,
+                    "container_code": (
+                        move_container.container_code
+                        if move_container
+                        else snapshot.container_code
+                    ),
                 },
             )
             task_bucket["qty_planned"] += int(snapshot.processing_reserved_qty or snapshot.qty or 0)
             task_bucket["snapshot_ids"].append(int(snapshot.id))
         for task_bucket in grouped_tasks.values():
+            task_container = task_bucket["container"]
             WarehouseOperationTask.objects.create(
                 operation=operation,
                 task_type=(
                     WarehouseOperationTask.TYPE_PALLET_MOVE
-                    if task_bucket["container"]
+                    if task_container
+                    and task_container.container_type
+                    in {WarehouseContainer.TYPE_PALLET, WarehouseContainer.TYPE_MIXED_PALLET}
                     else WarehouseOperationTask.TYPE_BOX_MOVE
                 ),
-                container=task_bucket["container"],
+                container=task_container,
                 from_location=task_bucket["from_location"],
                 to_location=destination,
                 from_zone_code=task_bucket["from_zone_code"],
