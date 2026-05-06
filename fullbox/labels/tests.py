@@ -151,6 +151,7 @@ class LabelServiceTests(TestCase):
         self.assertIn("data-print-refresh", html)
         self.assertIn("data-compact-status", html)
         self.assertIn("data-preview-block", html)
+        self.assertIn("data-label-scale-badge", html)
         self.assertIn('data-label-width="75"', html)
         self.assertIn('data-label-height="120"', html)
 

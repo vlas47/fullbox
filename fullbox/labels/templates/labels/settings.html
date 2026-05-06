@@ -293,6 +293,7 @@
       justify-self: center;
       align-self: start;
       width: min(100%, var(--preview-shell-width));
+      transition: width 0.18s ease;
     }
     .preview-block[data-preview-size="58x40"] {
       --preview-shell-width: 560px;
@@ -305,17 +306,18 @@
     }
     .preview-block .label-card {
       justify-self: center;
-      width: 100%;
-      max-width: 500px;
+      width: min(100%, var(--preview-card-width, 500px));
+      max-width: none;
       padding: 12px;
       gap: 10px;
+      transition: width 0.18s ease;
     }
     .preview-block[data-preview-size="75x120"] .label-card {
       max-width: 340px;
     }
     .preview-block .label-stage {
-      --label-scale: 1.58;
       margin: 0 auto;
+      transition: width 0.18s ease, height 0.18s ease;
     }
     .preview-block .label-preview[data-label-type="box"] .label-box-qr {
       transform: translateX(0.4mm);
@@ -803,8 +805,8 @@
                         </div>
                       </div>
                       <div class="label-sub">{{ label.description }}</div>
-                      <div class="label-stage" style="--label-width: {{ label.width_mm }}mm; --label-height: {{ label.height_mm }}mm; --label-scale: {{ label.preview_scale|default:'1.6' }};">
-                        <div class="label-size-badge">{{ label.width_mm }}x{{ label.height_mm }} мм</div>
+                      <div class="label-stage" style="--label-width: {{ label.width_mm }}mm; --label-height: {{ label.height_mm }}mm; --label-scale: 1;">
+                        <div class="label-size-badge" data-label-scale-badge>{{ label.width_mm }}x{{ label.height_mm }} мм · 100%</div>
                         <div class="label-preview" data-label-root data-label-type="{{ label.key }}">
                           {% if label.key == "item" %}
                             {% include "labels/_label_item.html" %}
@@ -1677,6 +1679,8 @@
       }
 
       const previewBlock = panel.querySelector('[data-preview-block]');
+      const labelsLayout = panel.querySelector('.labels-layout');
+      const controlsStack = panel.querySelector('.labels-control-stack');
       const table = panel.querySelector('[data-label-table]');
       const labelCards = Array.from(panel.querySelectorAll('[data-label-card]'));
       const labelRootByKey = new Map();
@@ -1796,6 +1800,10 @@
       const getActiveKey = () => (
         activeLabelKey || (labelCards[0] ? labelCards[0].dataset.labelCard : null)
       );
+      const getActiveCard = () => {
+        const key = getActiveKey();
+        return key ? labelCards.find((card) => card.dataset.labelCard === key) || null : null;
+      };
       const getStoredMode = () => {
         for (const key of modeStorageKeys) {
           const value = localStorage.getItem(key);
@@ -1919,6 +1927,93 @@
         return '58x40';
       };
 
+      const cssNumber = (styles, prop) => parseFloat(styles.getPropertyValue(prop)) || 0;
+      const horizontalSpace = (el) => {
+        if (!el) {
+          return 0;
+        }
+        const styles = window.getComputedStyle(el);
+        return cssNumber(styles, 'padding-left')
+          + cssNumber(styles, 'padding-right')
+          + cssNumber(styles, 'border-left-width')
+          + cssNumber(styles, 'border-right-width');
+      };
+      const verticalSpace = (el) => {
+        if (!el) {
+          return 0;
+        }
+        const styles = window.getComputedStyle(el);
+        return cssNumber(styles, 'padding-top')
+          + cssNumber(styles, 'padding-bottom')
+          + cssNumber(styles, 'border-top-width')
+          + cssNumber(styles, 'border-bottom-width');
+      };
+      const gridGap = (el) => {
+        if (!el) {
+          return 0;
+        }
+        const styles = window.getComputedStyle(el);
+        return cssNumber(styles, 'gap') || cssNumber(styles, 'row-gap') || 0;
+      };
+      const labelColumnWidth = () => {
+        if (!labelsLayout) {
+          return previewBlock ? previewBlock.parentElement.clientWidth : 0;
+        }
+        const layoutRect = labelsLayout.getBoundingClientRect();
+        const controlsRect = controlsStack ? controlsStack.getBoundingClientRect() : null;
+        const columnGap = cssNumber(window.getComputedStyle(labelsLayout), 'column-gap') || 18;
+        if (controlsRect && controlsRect.left > layoutRect.left && controlsRect.top < layoutRect.bottom) {
+          return Math.max(260, controlsRect.left - layoutRect.left - columnGap);
+        }
+        return layoutRect.width;
+      };
+      const fitActivePreview = (card) => {
+        if (!previewBlock || !card) {
+          return;
+        }
+        const stage = card.querySelector('.label-stage');
+        const root = card.querySelector('.label-preview');
+        if (!stage || !root) {
+          return;
+        }
+        const realWidth = root.offsetWidth || 1;
+        const realHeight = root.offsetHeight || 1;
+        const blockPadX = horizontalSpace(previewBlock);
+        const blockPadY = verticalSpace(previewBlock);
+        const cardPadX = horizontalSpace(card);
+        const cardPadY = verticalSpace(card);
+        const stagePadX = horizontalSpace(stage);
+        const stagePadY = verticalSpace(stage);
+        const blockGap = gridGap(previewBlock);
+        const cardGap = gridGap(card);
+        const header = card.querySelector('.label-card-header');
+        const subtitle = card.querySelector('.label-sub');
+        const sectionHead = previewBlock.querySelector('.section-head');
+        const headerHeight = header ? header.getBoundingClientRect().height : 0;
+        const subtitleHeight = subtitle ? subtitle.getBoundingClientRect().height : 0;
+        const sectionHeadHeight = sectionHead ? sectionHead.getBoundingClientRect().height : 0;
+        const availableBlockWidth = labelColumnWidth();
+        const availableBlockHeight = Math.max(260, window.innerHeight - previewBlock.getBoundingClientRect().top - 24);
+        const chromeWidth = blockPadX + cardPadX + stagePadX;
+        const chromeHeight = blockPadY + sectionHeadHeight + blockGap + cardPadY + headerHeight + subtitleHeight + (cardGap * 2) + stagePadY;
+        const widthScale = (availableBlockWidth - chromeWidth) / realWidth;
+        const heightScale = (availableBlockHeight - chromeHeight) / realHeight;
+        const scale = Math.max(0.25, Math.min(1, widthScale || 1, heightScale || 1));
+        const stageWidth = Math.ceil(realWidth * scale + stagePadX);
+        const stageHeight = Math.ceil(realHeight * scale + stagePadY);
+        const cardWidth = Math.ceil(Math.max(stageWidth, (header ? header.scrollWidth : 0), (subtitle ? subtitle.scrollWidth : 0)) + cardPadX);
+        const shellWidth = Math.ceil(cardWidth + blockPadX);
+        stage.style.setProperty('--label-scale', String(Math.round(scale * 1000) / 1000));
+        card.style.setProperty('--preview-card-width', `${cardWidth}px`);
+        previewBlock.style.setProperty('--preview-shell-width', `${shellWidth}px`);
+        const badge = card.querySelector('[data-label-scale-badge]');
+        if (badge) {
+          const width = Number(card.dataset.labelWidth) || 0;
+          const height = Number(card.dataset.labelHeight) || 0;
+          badge.textContent = `${width}x${height} мм · ${Math.round(scale * 100)}%`;
+        }
+      };
+
       const setLabelSize = (nextKey) => {
         const fallbackKey = labelCards[0] ? labelCards[0].dataset.labelCard : null;
         const selectedCard = labelCards.find((card) => card.dataset.labelCard === nextKey) || null;
@@ -1932,6 +2027,7 @@
         });
         if (previewBlock && activeCard) {
           previewBlock.dataset.previewSize = previewSizeForCard(activeCard);
+          window.requestAnimationFrame(() => fitActivePreview(activeCard));
         }
           if (normalized) {
             activeLabelKey = normalized;
@@ -2357,6 +2453,10 @@
         const sizes = readFontValues();
         const mode = resolveMode(key);
         updateLabelRoot(root, data, mode, sizes);
+        const activeCard = getActiveCard();
+        if (activeCard) {
+          window.requestAnimationFrame(() => fitActivePreview(activeCard));
+        }
       };
 
       const syncActiveSettings = () => {
@@ -2719,6 +2819,17 @@
           });
         });
       }
+
+      let resizeTimer = null;
+      window.addEventListener('resize', () => {
+        window.clearTimeout(resizeTimer);
+        resizeTimer = window.setTimeout(() => {
+          const activeCard = getActiveCard();
+          if (activeCard) {
+            fitActivePreview(activeCard);
+          }
+        }, 80);
+      });
 
       updateActivePreview();
     })();
