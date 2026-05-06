@@ -80,13 +80,46 @@ public sealed class PrintJobRunner
         {
             return false;
         }
-        var width = MmToHundredths(job.LabelWidthMm);
-        var height = MmToHundredths(job.LabelHeightMm);
+        var labelWidthMm = Math.Max(1, job.LabelWidthMm);
+        var labelHeightMm = Math.Max(1, job.LabelHeightMm);
+        var isLandscape = labelWidthMm > labelHeightMm;
+        var width = MmToHundredths(isLandscape ? labelHeightMm : labelWidthMm);
+        var height = MmToHundredths(isLandscape ? labelWidthMm : labelHeightMm);
         doc.DefaultPageSettings.PaperSize = new PaperSize("Label", width, height);
+        doc.DefaultPageSettings.Landscape = isLandscape;
         doc.DefaultPageSettings.Margins = new Margins(0, 0, 0, 0);
         doc.PrintPage += (_, args) =>
         {
-            args.Graphics.DrawImage(image, args.PageBounds);
+            var graphics = args.Graphics;
+            if (graphics == null)
+            {
+                args.HasMorePages = false;
+                return;
+            }
+            graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.None;
+            graphics.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.NearestNeighbor;
+            graphics.PixelOffsetMode = System.Drawing.Drawing2D.PixelOffsetMode.HighQuality;
+
+            var bounds = args.PageBounds;
+            var pageIsLandscape = bounds.Width > bounds.Height;
+            if (pageIsLandscape == isLandscape)
+            {
+                graphics.DrawImage(image, bounds);
+            }
+            else
+            {
+                if (isLandscape)
+                {
+                    graphics.TranslateTransform(bounds.Width, 0);
+                    graphics.RotateTransform(90);
+                }
+                else
+                {
+                    graphics.TranslateTransform(0, bounds.Height);
+                    graphics.RotateTransform(-90);
+                }
+                graphics.DrawImage(image, 0, 0, bounds.Height, bounds.Width);
+            }
             args.HasMorePages = false;
         };
         doc.Print();

@@ -102,10 +102,14 @@ function Print-Label {
     $imgDpiY = [Math]::Round([double]$img.VerticalResolution, 2)
     Write-Host ("Image pixels: {0}x{1}px (DPI {2}x{3})" -f $img.Width, $img.Height, $imgDpiX, $imgDpiY)
 
-    $widthHundredths = [int][Math]::Round(($widthMm / 25.4) * 100)
-    $heightHundredths = [int][Math]::Round(($heightMm / 25.4) * 100)
+    $isLandscape = $widthMm -gt $heightMm
+    $paperWidthMm = if ($isLandscape) { $heightMm } else { $widthMm }
+    $paperHeightMm = if ($isLandscape) { $widthMm } else { $heightMm }
+    $widthHundredths = [int][Math]::Round(($paperWidthMm / 25.4) * 100)
+    $heightHundredths = [int][Math]::Round(($paperHeightMm / 25.4) * 100)
     $paperSize = New-Object System.Drawing.Printing.PaperSize("Label", $widthHundredths, $heightHundredths)
     $printDoc.DefaultPageSettings.PaperSize = $paperSize
+    $printDoc.DefaultPageSettings.Landscape = $isLandscape
     $printDoc.DefaultPageSettings.Margins = New-Object System.Drawing.Printing.Margins(0, 0, 0, 0)
     $selectedResolution = $null
     try {
@@ -139,7 +143,19 @@ function Print-Label {
       $e.Graphics.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::NearestNeighbor
       $e.Graphics.PixelOffsetMode = [System.Drawing.Drawing2D.PixelOffsetMode]::HighQuality
       $e.Graphics.PageUnit = [System.Drawing.GraphicsUnit]::Display
-      $e.Graphics.DrawImage($img, 0, 0, $e.PageBounds.Width, $e.PageBounds.Height)
+      $pageIsLandscape = $e.PageBounds.Width -gt $e.PageBounds.Height
+      if ($pageIsLandscape -eq $isLandscape) {
+        $e.Graphics.DrawImage($img, 0, 0, $e.PageBounds.Width, $e.PageBounds.Height)
+      } else {
+        if ($isLandscape) {
+          $e.Graphics.TranslateTransform($e.PageBounds.Width, 0)
+          $e.Graphics.RotateTransform(90)
+        } else {
+          $e.Graphics.TranslateTransform(0, $e.PageBounds.Height)
+          $e.Graphics.RotateTransform(-90)
+        }
+        $e.Graphics.DrawImage($img, 0, 0, $e.PageBounds.Height, $e.PageBounds.Width)
+      }
       $e.HasMorePages = $false
     })
 
