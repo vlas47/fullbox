@@ -154,6 +154,7 @@ class LabelServiceTests(TestCase):
         self.assertIn("data-label-scale-badge", html)
         self.assertIn('data-label-width="75"', html)
         self.assertIn('data-label-height="120"', html)
+        self.assertIn("Math.min(2", html)
 
     def test_build_label_settings_context_exposes_online_agent_and_ports(self):
         DeviceAgent.objects.create(
