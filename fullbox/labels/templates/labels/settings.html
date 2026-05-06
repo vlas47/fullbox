@@ -315,19 +315,19 @@
     }
     .labels-layout {
       display: grid;
-      grid-template-columns: minmax(480px, 560px) minmax(320px, 380px) minmax(300px, 340px);
+      grid-template-columns: minmax(520px, 1fr) minmax(340px, 420px);
       gap: 18px;
       align-items: start;
-      justify-content: space-between;
+      justify-content: stretch;
       width: 100%;
     }
-    .labels-sidebar {
+    .labels-control-stack {
       display: grid;
       gap: 18px;
       min-width: 0;
       justify-self: end;
       width: 100%;
-      max-width: 340px;
+      max-width: 420px;
     }
     .section-block {
       display: grid;
@@ -419,15 +419,16 @@
       grid-template-rows: auto auto auto;
     }
     .labels-panel .label-stage {
-      --label-scale: 2;
-      width: calc(max(var(--label-width), var(--label-height)) * var(--label-scale) + 16px);
-      height: calc(min(var(--label-width), var(--label-height)) * var(--label-scale) + 16px);
+      width: calc(var(--label-width) * var(--label-scale) + 16px);
+      height: calc(var(--label-height) * var(--label-scale) + 16px);
+      max-width: 100%;
       padding: 8px;
       position: relative;
       display: inline-flex;
       align-items: flex-start;
       justify-content: flex-start;
       min-height: 0;
+      overflow: visible;
     }
     .label-card-header {
       display: flex;
@@ -461,6 +462,50 @@
       max-width: none;
       position: sticky;
       top: 0;
+    }
+    .compact-printer-card {
+      display: grid;
+      gap: 12px;
+      padding: 14px 16px;
+      border-radius: 18px;
+      border: 1px solid var(--stroke);
+      background: linear-gradient(135deg, rgba(14,107,91,0.08), rgba(242,183,71,0.12));
+    }
+    .compact-printer-card .section-head {
+      align-items: center;
+    }
+    .compact-printer-card .btn {
+      padding: 7px 10px;
+      font-size: 11px;
+    }
+    .compact-status-grid {
+      display: grid;
+      gap: 8px;
+    }
+    .compact-status-row {
+      display: grid;
+      grid-template-columns: 74px minmax(0, 1fr);
+      gap: 8px;
+      align-items: start;
+      padding: 8px 10px;
+      border-radius: 12px;
+      border: 1px solid rgba(28,31,26,0.08);
+      background: rgba(255,255,255,0.58);
+      font-size: 11px;
+      line-height: 1.35;
+    }
+    .compact-status-row span {
+      color: var(--muted);
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+      font-size: 9px;
+    }
+    .compact-status-row strong {
+      min-width: 0;
+      color: var(--ink);
+      font-weight: 700;
+      overflow-wrap: anywhere;
     }
     .label-printers-title {
       margin: 0;
@@ -740,7 +785,7 @@
                         </div>
                       </div>
                       <div class="label-sub">{{ label.description }}</div>
-                      <div class="label-stage" style="--label-width: {{ label.width_mm }}mm; --label-height: {{ label.height_mm }}mm;{% if label.key == "pallet" %} --label-scale: 1.7;{% endif %}">
+                      <div class="label-stage" style="--label-width: {{ label.width_mm }}mm; --label-height: {{ label.height_mm }}mm; --label-scale: {{ label.preview_scale|default:'1.6' }};">
                         <div class="label-size-badge">{{ label.width_mm }}x{{ label.height_mm }} мм</div>
                         <div class="label-preview" data-label-root data-label-type="{{ label.key }}">
                           {% if label.key == "item" %}
@@ -761,7 +806,8 @@
                 </div>
               </section>
 
-              <section class="section-block labels-config-block">
+              <aside class="labels-control-stack">
+                <section class="section-block labels-config-block">
                   <div class="section-head">
                     <div>
                       <h2 class="section-title">Этикетки</h2>
@@ -903,32 +949,14 @@
                       </tbody>
                     </table>
                   </div>
-              </section>
-              <aside class="labels-sidebar">
-                <section class="label-printers-card">
-                  <div>
-                    <h2 class="label-printers-title">Принтеры</h2>
-                    <div class="section-subtitle">Состояние сервера, агента и локального принтера на этом ПК.</div>
-                  </div>
-                  <div class="printer-meta" data-print-status>Сервер: {{ print_status_line }}</div>
-                  <div class="printer-meta" data-print-agent>Целевой агент: {{ print_agent_line }}</div>
-                  <div class="printer-meta" data-print-queue-pending>На сервере, ждут этот агент: {{ print_queue_pending }}</div>
-                  <div class="printer-meta" data-print-queue-printing>Сервер пометил как printing, подтверждения от агента нет: {{ print_queue_printing }}</div>
-                  <div class="printer-meta" data-print-queue-failed>Ошибки по этому агенту: {{ print_queue_failed }}</div>
-                  <div class="printer-meta" data-print-last-activity{% if not print_last_job_time %} style="display:none"{% endif %}>
-                    Последнее подтверждение от агента: {{ print_last_job_time }}
-                  </div>
-                  <div class="printer-meta" data-print-last-error{% if not print_last_error %} style="display:none"{% endif %}>
-                    Последняя ошибка от агента или принтера: {{ print_last_error }}
-                  </div>
-                  <div class="printer-meta" data-local-agent>Локальный агент на этом ПК: определяю…</div>
-                  <div class="printer-meta" data-local-agent-state>Ответ от локального агента: нет данных</div>
-                  <div class="printer-meta" data-local-print-state>Что сам агент сообщает о печати: нет данных</div>
-                  <div class="printer-meta" data-local-printer>Локальный принтер на этом ПК: не выбран</div>
-                  <div class="printer-meta" data-local-printer-jobs>Очередь Windows на этом ПК: 0</div>
-                  <div class="printer-meta" data-local-printer-status>Состояние локального принтера: нет данных</div>
-                  <div class="printer-meta">
-                    `На сервере` — сервер ещё не выдавал задание агенту. `printing` — сервер пометил задание как выданное, но подтверждения от агента о завершении ещё нет.
+                </section>
+                <section class="compact-printer-card">
+                  <div class="section-head">
+                    <div>
+                      <h2 class="label-printers-title">Принтер этикеток</h2>
+                      <div class="section-subtitle">Выбор принтера и быстрый статус от агента.</div>
+                    </div>
+                    <button class="btn" type="button" data-tab-target="printers">Диагностика</button>
                   </div>
                   <div class="printer-row">
                     <label for="label-printer-quick">Принтер этикеток</label>
@@ -939,26 +967,28 @@
                       {% endfor %}
                     </select>
                   </div>
-                  {% if available_pdf_printers %}
-                    <div class="printer-meta">PDF и виртуальные: {{ available_pdf_printers|join:", " }}</div>
-                  {% endif %}
-                  <div class="actions">
-                    <button class="btn" type="button" data-tab-target="printers">Все настройки</button>
-                  </div>
-                  <div class="actions">
-                    <button class="btn" type="button" data-print-recover>
-                      Сбросить контур печати на этом ПК
-                    </button>
-                    <a class="btn" href="/labels/scanners/agent/download/" target="_blank" rel="noopener">Скачать агента</a>
-                  </div>
-                  {% if available_printers_meta.updated_at %}
-                    <div class="printer-meta">
-                      Последнее обновление списка от агента: {{ available_printers_meta.updated_at }}
-                      {% if available_printers_meta.updated_by %} · {{ available_printers_meta.updated_by }}{% endif %}
+                  <div class="compact-status-grid">
+                    <div class="compact-status-row">
+                      <span>Сервер</span>
+                      <strong data-print-status data-compact-status>{{ print_status_line }}</strong>
                     </div>
-                  {% else %}
-                    <div class="printer-meta">Список принтеров появится после ответа локального агента.</div>
-                  {% endif %}
+                    <div class="compact-status-row">
+                      <span>Агент</span>
+                      <strong data-local-agent-state data-compact-status>проверяю…</strong>
+                    </div>
+                    <div class="compact-status-row">
+                      <span>Принтер</span>
+                      <strong data-local-printer-status data-compact-status>нет данных</strong>
+                    </div>
+                    <div class="compact-status-row">
+                      <span>Очередь</span>
+                      <strong data-local-printer-jobs data-compact-status>нет данных</strong>
+                    </div>
+                  </div>
+                  <div class="actions">
+                    <button class="btn" type="button" data-print-refresh>Обновить статус</button>
+                    <button class="btn" type="button" data-print-recover>Сбросить контур</button>
+                  </div>
                 </section>
               </aside>
             </div>
@@ -1319,6 +1349,13 @@
           element.textContent = text;
         });
       };
+      const setTextSmart = (elements, detailedText, compactText) => {
+        elements.forEach((element) => {
+          element.textContent = element.hasAttribute('data-compact-status')
+            ? compactText
+            : detailedText;
+        });
+      };
       const readPrinterDetails = (payload, printerName) => {
         if (!payload || typeof payload !== 'object') {
           return null;
@@ -1348,8 +1385,8 @@
         if (!payload || !payload.agentId) {
           setText(localPrintStateLines, 'Что сам агент сообщает о печати: нет данных');
           setText(localPrinterLines, 'Локальный принтер на этом ПК: агент не отвечает');
-          setText(localPrinterJobsLines, 'Очередь Windows на этом ПК: нет данных');
-          setText(localPrinterStatusLines, 'Состояние локального принтера: нет данных');
+          setTextSmart(localPrinterJobsLines, 'Очередь Windows на этом ПК: нет данных', 'нет данных');
+          setTextSmart(localPrinterStatusLines, 'Состояние локального принтера: нет данных', 'нет данных');
           return;
         }
         const detail = readPrinterDetails(payload, normalizedPrinter);
@@ -1359,8 +1396,8 @@
           || 'не выбран';
         setText(localPrinterLines, `Локальный принтер на этом ПК: ${printerLabel}`);
         if (!detail) {
-          setText(localPrinterJobsLines, 'Очередь Windows на этом ПК: агент не передал данные по этому принтеру');
-          setText(localPrinterStatusLines, 'Состояние локального принтера: нет данных');
+          setTextSmart(localPrinterJobsLines, 'Очередь Windows на этом ПК: агент не передал данные по этому принтеру', 'нет данных');
+          setTextSmart(localPrinterStatusLines, 'Состояние локального принтера: нет данных', 'нет данных');
           return;
         }
         const jobs = Number(detail.jobs) || 0;
@@ -1385,8 +1422,9 @@
         if (statusText) {
           parts.push(statusText);
         }
-        setText(localPrinterJobsLines, `Очередь Windows на этом ПК: ${jobs}`);
-        setText(localPrinterStatusLines, `Состояние локального принтера: ${parts.length ? parts.join(' · ') : 'готов'}`);
+        const printerState = parts.length ? parts.join(' · ') : 'готов';
+        setTextSmart(localPrinterJobsLines, `Очередь Windows на этом ПК: ${jobs}`, `${jobs}`);
+        setTextSmart(localPrinterStatusLines, `Состояние локального принтера: ${printerState}`, printerState);
       };
       const applyLocalPrintStatus = (payload) => {
         if (!payload || typeof payload !== 'object') {
@@ -1422,7 +1460,7 @@
       const applyLocalAgentBridgePayload = (payload) => {
         if (!payload || !payload.agentId) {
           setText(localAgentLines, 'Локальный агент на этом ПК: не найден');
-          setText(localAgentStateLines, 'Ответ от локального агента: localhost bridge не отвечает');
+          setTextSmart(localAgentStateLines, 'Ответ от локального агента: localhost bridge не отвечает', 'агент не отвечает');
           applyLocalPrintStatus(null);
           applyLocalPrinterDetails(null, '');
           return;
@@ -1438,7 +1476,7 @@
         if (baseUrl) {
           agentParts.push(baseUrl);
         }
-        setText(localAgentStateLines, `Ответ от локального агента: ${agentParts.join(' · ')}`);
+        setTextSmart(localAgentStateLines, `Ответ от локального агента: ${agentParts.join(' · ')}`, agentParts.join(' · '));
         applyLocalPrintStatus(payload);
         const preferredPrinter = (() => {
           for (const input of printerInputs) {
@@ -2657,6 +2695,7 @@
       const clearButtons = Array.from(document.querySelectorAll('[data-print-clear]'));
       const resetButtons = Array.from(document.querySelectorAll('[data-print-reset]'));
       const recoverButtons = Array.from(document.querySelectorAll('[data-print-recover]'));
+      const refreshButtons = Array.from(document.querySelectorAll('[data-print-refresh]'));
       const statusLines = Array.from(document.querySelectorAll('[data-print-status]'));
       const agentLines = Array.from(document.querySelectorAll('[data-print-agent]'));
       const queuePendingLines = Array.from(document.querySelectorAll('[data-print-queue-pending]'));
@@ -2665,7 +2704,7 @@
       const lastActivityLines = Array.from(document.querySelectorAll('[data-print-last-activity]'));
       const lastErrorLines = Array.from(document.querySelectorAll('[data-print-last-error]'));
       const localAgentStateLines = Array.from(document.querySelectorAll('[data-local-agent-state]'));
-      if (!pauseButtons.length && !clearButtons.length && !resetButtons.length && !recoverButtons.length) {
+      if (!pauseButtons.length && !clearButtons.length && !resetButtons.length && !recoverButtons.length && !refreshButtons.length) {
         return;
       }
 
@@ -2716,7 +2755,9 @@
 
       const setStatusLine = (text) => {
         statusLines.forEach((line) => {
-          line.textContent = `Сервер: ${text}`;
+          line.textContent = line.hasAttribute('data-compact-status')
+            ? text
+            : `Сервер: ${text}`;
         });
       };
 
@@ -2783,7 +2824,9 @@
         const payload = window.__fullboxLocalAgentBridgePayload || null;
         if (!payload || !payload.agentId) {
           localAgentStateLines.forEach((line) => {
-            line.textContent = 'Ответ от локального агента: localhost bridge не отвечает';
+            line.textContent = line.hasAttribute('data-compact-status')
+              ? 'агент не отвечает'
+              : 'Ответ от локального агента: localhost bridge не отвечает';
           });
           return;
         }
@@ -2800,7 +2843,9 @@
           parts.push(`внимание: сервер сейчас ждёт другой agent_id ${serverAgentId}`);
         }
         localAgentStateLines.forEach((line) => {
-          line.textContent = `Ответ от локального агента: ${parts.join(' · ')}`;
+          line.textContent = line.hasAttribute('data-compact-status')
+            ? parts.join(' · ')
+            : `Ответ от локального агента: ${parts.join(' · ')}`;
         });
       };
 
@@ -2914,6 +2959,12 @@
       window.setInterval(() => {
         refreshPrintBlock().catch(() => {});
       }, 5000);
+
+      refreshButtons.forEach((btn) => {
+        btn.addEventListener('click', () => {
+          refreshPrintBlock().catch(() => {});
+        });
+      });
 
       pauseButtons.forEach((btn) => {
         btn.addEventListener('click', () => {

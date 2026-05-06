@@ -146,6 +146,10 @@ class LabelServiceTests(TestCase):
         self.assertIn('data-label-key="item_5860"', html)
         self.assertIn('data-label-key="item_75120"', html)
         self.assertIn('data-label-key="pallet"', html)
+        self.assertIn("compact-printer-card", html)
+        self.assertIn("label-printer-quick", html)
+        self.assertIn("data-print-refresh", html)
+        self.assertIn("data-compact-status", html)
 
     def test_build_label_settings_context_exposes_online_agent_and_ports(self):
         DeviceAgent.objects.create(
