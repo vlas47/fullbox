@@ -288,12 +288,30 @@
       grid-template-columns: 1fr;
       justify-items: center;
     }
+    .preview-block {
+      --preview-shell-width: 560px;
+      justify-self: center;
+      align-self: start;
+      width: min(100%, var(--preview-shell-width));
+    }
+    .preview-block[data-preview-size="58x40"] {
+      --preview-shell-width: 560px;
+    }
+    .preview-block[data-preview-size="58x60"] {
+      --preview-shell-width: 500px;
+    }
+    .preview-block[data-preview-size="75x120"] {
+      --preview-shell-width: 380px;
+    }
     .preview-block .label-card {
       justify-self: center;
       width: 100%;
       max-width: 500px;
       padding: 12px;
       gap: 10px;
+    }
+    .preview-block[data-preview-size="75x120"] .label-card {
+      max-width: 340px;
     }
     .preview-block .label-stage {
       --label-scale: 1.58;
@@ -761,7 +779,7 @@
         <div class="tab-panels">
           <section class="tab-panel reveal workspace-panel labels-panel" data-tab="labels" style="--i:2">
             <div class="labels-layout">
-              <section class="section-block preview-block">
+              <section class="section-block preview-block" data-preview-block data-preview-size="58x40">
                 <div class="section-head">
                   <div>
                     <h2 class="section-title">Превью</h2>
@@ -1658,6 +1676,7 @@
         return;
       }
 
+      const previewBlock = panel.querySelector('[data-preview-block]');
       const table = panel.querySelector('[data-label-table]');
       const labelCards = Array.from(panel.querySelectorAll('[data-label-card]'));
       const labelRootByKey = new Map();
@@ -1888,17 +1907,32 @@
         });
       };
 
+      const previewSizeForCard = (card) => {
+        const width = Number(card && card.dataset ? card.dataset.labelWidth : 0) || 0;
+        const height = Number(card && card.dataset ? card.dataset.labelHeight : 0) || 0;
+        if (width === 75 && height === 120) {
+          return '75x120';
+        }
+        if (height === 60) {
+          return '58x60';
+        }
+        return '58x40';
+      };
+
       const setLabelSize = (nextKey) => {
         const fallbackKey = labelCards[0] ? labelCards[0].dataset.labelCard : null;
-        const normalized = labelCards.find((card) => card.dataset.labelCard === nextKey)
-          ? nextKey
-          : fallbackKey;
+        const selectedCard = labelCards.find((card) => card.dataset.labelCard === nextKey) || null;
+        const normalized = selectedCard ? nextKey : fallbackKey;
+        const activeCard = selectedCard || labelCards.find((card) => card.dataset.labelCard === normalized) || null;
         labelCards.forEach((card) => {
           card.style.display = card.dataset.labelCard === normalized ? 'inline-grid' : 'none';
         });
         labelSizeButtons.forEach((button) => {
           button.classList.toggle('primary', button.dataset.labelKey === normalized);
         });
+        if (previewBlock && activeCard) {
+          previewBlock.dataset.previewSize = previewSizeForCard(activeCard);
+        }
           if (normalized) {
             activeLabelKey = normalized;
             applyTableSettings(normalized);

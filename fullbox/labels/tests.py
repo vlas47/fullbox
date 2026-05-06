@@ -150,6 +150,9 @@ class LabelServiceTests(TestCase):
         self.assertIn("label-printer-quick", html)
         self.assertIn("data-print-refresh", html)
         self.assertIn("data-compact-status", html)
+        self.assertIn("data-preview-block", html)
+        self.assertIn('data-label-width="75"', html)
+        self.assertIn('data-label-height="120"', html)
 
     def test_build_label_settings_context_exposes_online_agent_and_ports(self):
         DeviceAgent.objects.create(
