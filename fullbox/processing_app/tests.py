@@ -1600,6 +1600,40 @@ class ProcessingWorkflowServiceTests(TestCase):
         self.assertEqual(context["return_url"], f"/orders/processing/{order_id}/work/")
         self.assertTrue(bool(context["card_processed"]))
         self.assertIn(f"/orders/processing/{order_id}/card/card-a/technical/", context["technical_card_url"])
+        self.assertIn("/labels/settings/?return=", context["label_settings_url"])
+        self.assertIn(f"%2Forders%2Fprocessing%2F{order_id}%2Fcard%2Fcard-a%2F", context["label_settings_url"])
+
+    def test_build_processing_card_page_context_keeps_expanded_label_keys_separate(self):
+        order_id = "623-labels"
+        payload = {
+            "status": "processing_in_work",
+            "status_label": "Взята в работу",
+            "marking_5860_qty": "1",
+            "marking_75120_qty": "3",
+            "cards": [
+                {
+                    "id": "card-a",
+                    "article": "SKU-A",
+                    "rows": [{"size": "42", "barcode": "BAR-42", "qty": "10"}],
+                }
+            ],
+        }
+        request = self.request_factory.get(f"/orders/processing/{order_id}/card/card-a/")
+        request.user = self.user
+
+        context = ProcessingWorkflowService.build_processing_card_page_context(
+            order_id=order_id,
+            card_id="card-a",
+            request=request,
+            payload=payload,
+            agency=self.agency,
+        )
+
+        print_items = context["results_rows"][0]["print_items"]
+        self.assertEqual(
+            [(item["label_key"], item["label_type"], item["required_qty"]) for item in print_items],
+            [("item_5860", "58/60", 10), ("item_75120", "75/120", 30)],
+        )
 
     def test_handle_processing_card_action_marks_card_done(self):
         order_id = "624"

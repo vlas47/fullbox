@@ -4,6 +4,7 @@ from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
+from django.template.loader import render_to_string
 from django.test import RequestFactory
 from django.test import TestCase
 from django.utils import timezone
@@ -126,6 +127,25 @@ class LabelServiceTests(TestCase):
         self.assertIsNotNone(pallet)
         self.assertEqual(pallet["width_mm"], 58)
         self.assertEqual(pallet["height_mm"], 60)
+
+    def test_label_settings_template_keeps_product_and_storage_groups_visible(self):
+        context = build_label_settings_context()
+        context.update(
+            {
+                "cabinet_url": "/team-manager/",
+                "return_url": "/team-manager/",
+                "workspace_role_label": "Сотрудник",
+                "return_label": "В кабинет",
+            }
+        )
+
+        html = render_to_string("labels/settings.html", context)
+
+        self.assertIn("Товарные этикетки", html)
+        self.assertIn("Складские этикетки", html)
+        self.assertIn('data-label-key="item_5860"', html)
+        self.assertIn('data-label-key="item_75120"', html)
+        self.assertIn('data-label-key="pallet"', html)
 
     def test_build_label_settings_context_exposes_online_agent_and_ports(self):
         DeviceAgent.objects.create(

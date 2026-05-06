@@ -260,6 +260,30 @@
       min-height: 0;
       padding: 0;
     }
+    .label-tabs {
+      display: grid;
+      gap: 12px;
+    }
+    .label-tabs-section {
+      display: grid;
+      gap: 8px;
+      padding: 10px;
+      border: 1px solid var(--stroke);
+      border-radius: 14px;
+      background: rgba(255,255,255,0.62);
+    }
+    .label-tabs-title {
+      color: var(--muted);
+      font-size: 10px;
+      font-weight: 800;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+    }
+    .label-tabs-group {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
     .preview-block .label-grid {
       grid-template-columns: 1fr;
       justify-items: center;
@@ -469,10 +493,9 @@
       color: var(--muted);
     }
     .label-tabs {
-      display: flex;
-      gap: 8px;
-      flex-wrap: wrap;
-      align-items: center;
+      display: grid;
+      gap: 12px;
+      align-items: stretch;
     }
     .label-tabs-group {
       display: flex;
@@ -749,16 +772,43 @@
                     </div>
                   </div>
                   <div class="label-tabs">
-                    <div class="label-tabs-group">
-                      {% for label in label_sizes %}
-                        <button class="btn" type="button" data-label-key="{{ label.key }}">
-                          {% if label.key == "item_cz" %}
-                            Товар {{ label.width_mm }}x{{ label.height_mm }} ЧЗ
-                          {% else %}
-                            {{ label.title }} {{ label.width_mm }}x{{ label.height_mm }}
+                    <div class="label-tabs-section">
+                      <div class="label-tabs-title">Товарные этикетки</div>
+                      <div class="label-tabs-group">
+                        {% for label in label_sizes %}
+                          {% if label.key == "item" %}
+                            <button class="btn" type="button" data-label-key="{{ label.key }}">58/40 · товар</button>
                           {% endif %}
-                        </button>
-                      {% endfor %}
+                        {% endfor %}
+                        {% for label in label_sizes %}
+                          {% if label.key == "item_5860" %}
+                            <button class="btn" type="button" data-label-key="{{ label.key }}">58/60 · товар</button>
+                          {% endif %}
+                        {% endfor %}
+                        {% for label in label_sizes %}
+                          {% if label.key == "item_75120" %}
+                            <button class="btn" type="button" data-label-key="{{ label.key }}">75/120 · товар</button>
+                          {% endif %}
+                        {% endfor %}
+                        {% for label in label_sizes %}
+                          {% if label.key == "item_cz" %}
+                            <button class="btn" type="button" data-label-key="{{ label.key }}">58/40 · товар ЧЗ</button>
+                          {% endif %}
+                        {% endfor %}
+                      </div>
+                    </div>
+                    <div class="label-tabs-section">
+                      <div class="label-tabs-title">Складские этикетки</div>
+                      <div class="label-tabs-group">
+                        {% for label in label_sizes %}
+                          {% if label.key == "box" %}
+                            <button class="btn" type="button" data-label-key="{{ label.key }}">Короб {{ label.width_mm }}x{{ label.height_mm }}</button>
+                          {% endif %}
+                          {% if label.key == "pallet" %}
+                            <button class="btn" type="button" data-label-key="{{ label.key }}">Паллета {{ label.width_mm }}x{{ label.height_mm }}</button>
+                          {% endif %}
+                        {% endfor %}
+                      </div>
                     </div>
                   </div>
                   <div class="label-table-row">

@@ -937,37 +937,12 @@
         <div class="side-value">{{ client_label|default:"-" }}</div>
       </div>
       <div class="side-block">
-        <div class="side-label">Доступные принтеры</div>
-        <div class="side-label">Локальный принтер</div>
-        <div class="printer-row">
-          <label for="label-printer">Принтер этикеток</label>
-          <input id="label-printer" list="label-printers" placeholder="Выберите или введите">
-          <datalist id="label-printers">
-            {% for printer in available_printers %}
-              <option value="{{ printer }}"></option>
-            {% endfor %}
-          </datalist>
-        </div>
-        <div class="label-mode">
-          <button class="btn small" type="button" data-label-mode="cz">С ЧЗ</button>
-          <button class="btn small" type="button" data-label-mode="no-cz">Без ЧЗ</button>
-        </div>
-        <label class="checkbox-row">
-          <input type="checkbox" id="label-preview-toggle">
-          Просмотр перед печатью
-        </label>
-        <a class="btn small" href="/orders/processing/print-agent/install/" target="_blank" rel="noopener">Автозапуск агента</a>
-        <button class="btn small" type="button" id="sync-printers-btn">Синхронизировать</button>
+        <div class="side-label">Оборудование</div>
+        <div class="side-value">Этикетки и принтер</div>
+        <a class="btn" href="{{ label_settings_url }}">Настройки оборудования</a>
         <div class="status-ticker" id="print-status-wrap" aria-live="polite">
           <span id="print-status">Готов к печати.</span>
         </div>
-        {% if label_print_buttons %}
-          <div class="label-print-actions">
-            {% for btn in label_print_buttons %}
-                    <a class="btn{% if btn.mode == 'cz' %} primary{% endif %}" href="{{ btn.url }}" data-save-before-print="1">{{ btn.label }}</a>
-            {% endfor %}
-          </div>
-        {% endif %}
       </div>
       <div class="side-actions">
         <a class="btn primary" href="{{ technical_card_url }}">Техкарта (превью)</a>
@@ -1052,7 +1027,7 @@
                       {% if label_print_buttons %}
                         {% for btn in label_print_buttons %}
                           {% if btn.row_label == row.label %}
-                            <a class="btn small" href="{{ btn.url }}">{{ btn.button_label|default:"Распечатать этикетки" }}</a>
+                            <a class="btn small" href="{{ btn.url }}" data-label-key="{{ btn.label_key|default:'' }}">{{ btn.button_label|default:"Распечатать этикетки" }}</a>
                             <span class="muted">Напечатано: {{ btn.printed_total|default:0 }}</span>
                           {% endif %}
                         {% endfor %}
@@ -1145,6 +1120,7 @@
                                 class="print-line"
                                 data-label-summary-row
                                 data-summary-mode="{{ print.mode|default:'no-cz' }}"
+                                data-summary-label-key="{{ print.label_key|default:'' }}"
                                 data-summary-barcode="{{ print.barcode|default:'' }}"
                                 data-summary-size="{{ print.size|default:'' }}"
                               >
@@ -1176,6 +1152,7 @@
                                             type="button"
                                             data-inline-print-row="1"
                                             data-inline-mode="{{ print.mode|default:'no-cz' }}"
+                                            data-inline-label-key="{{ print.label_key|default:'' }}"
                                             title="Печать этикеток"
                                             aria-label="Печать этикеток"
                                           >
@@ -1352,16 +1329,32 @@
         labelSizes = {};
       }
     }
-    const getLabelKeyForMode = (mode) => (mode === 'cz' ? 'item_cz' : 'item');
-    const getLabelSizeForMode = (mode) => {
-      const key = getLabelKeyForMode(mode);
+    const normalizeModeForLabelKey = (labelKey, mode) => {
+      if (labelKey === 'item_cz') {
+        return 'cz';
+      }
+      if (labelKey) {
+        return 'no-cz';
+      }
+      return mode === 'cz' ? 'cz' : 'no-cz';
+    };
+    const normalizeLabelKey = (labelKey, mode) => {
+      const key = String(labelKey || '').trim();
+      if (key && labelSizes && labelSizes[key]) {
+        return key;
+      }
+      return mode === 'cz' ? 'item_cz' : 'item';
+    };
+    const getLabelSizeForMode = (mode, labelKey) => {
+      const key = normalizeLabelKey(labelKey, mode);
       return (labelSizes && labelSizes[key]) || { width_mm: 58, height_mm: 40, preview_scale: 2.1 };
     };
-    const applyLabelDimensions = (target, mode, scaleValue) => {
+    const applyLabelDimensions = (target, mode, scaleValue, labelKey) => {
+      const normalizedKey = normalizeLabelKey(labelKey, mode);
       if (!target) {
-        return getLabelSizeForMode(mode);
+        return getLabelSizeForMode(mode, normalizedKey);
       }
-      const dims = getLabelSizeForMode(mode);
+      const dims = getLabelSizeForMode(mode, normalizedKey);
       target.style.setProperty('--label-width', `${dims.width_mm}mm`);
       target.style.setProperty('--label-height', `${dims.height_mm}mm`);
       if (scaleValue !== undefined && scaleValue !== null) {
@@ -1369,13 +1362,11 @@
       }
       target.dataset.labelWidth = dims.width_mm;
       target.dataset.labelHeight = dims.height_mm;
-      if (!target.dataset.labelType) {
-        target.dataset.labelType = getLabelKeyForMode(mode);
-      }
+      target.dataset.labelType = normalizedKey;
       return dims;
     };
-    const updateStageSizes = (mode) => {
-      const dims = getLabelSizeForMode(mode);
+    const updateStageSizes = (mode, labelKey) => {
+      const dims = getLabelSizeForMode(mode, labelKey);
       const scale = Number(dims.preview_scale) || 1;
       document.querySelectorAll('[data-label-stage]').forEach((stage) => {
         stage.style.setProperty('--label-width', `${dims.width_mm}mm`);
@@ -1387,12 +1378,12 @@
         }
       });
     };
-    const getLabelSettingsForMode = (mode) => {
-      const key = mode === 'cz' ? 'item_cz' : 'item';
+    const getLabelSettingsForMode = (mode, labelKey) => {
+      const key = normalizeLabelKey(labelKey, mode);
       return (labelSettingsData && labelSettingsData[key]) || {};
     };
-    const applyLabelSettingsForMode = (mode) => {
-      const settings = getLabelSettingsForMode(mode);
+    const applyLabelSettingsForMode = (mode, labelKey) => {
+      const settings = getLabelSettingsForMode(mode, labelKey);
       labelFontSizes = settings && settings.fonts ? settings.fonts : null;
       labelEnabled = settings && settings.enabled ? settings.enabled : null;
     };
@@ -1454,10 +1445,10 @@
       }
     };
 
-    const getPrintKey = (mode, barcode, size) => {
+    const getPrintKey = (mode, barcode, size, labelKey) => {
       const barcodeValue = (barcode || '').trim();
       const sizeValue = (size || '').trim();
-      return [mode, orderId || '', barcodeValue, sizeValue].join('|');
+      return [normalizeLabelKey(labelKey, mode), orderId || '', barcodeValue, sizeValue].join('|');
     };
 
     const normalizeResultField = (value) => {
@@ -1468,12 +1459,13 @@
       return normalized;
     };
 
-    const getLocalPrintedTotal = (mode, barcode, size) => {
+    const getLocalPrintedTotal = (mode, barcode, size, labelKey) => {
       const barcodeValue = normalizeResultField(barcode);
       const sizeValue = normalizeResultField(size);
       if (!mode || !orderId || !barcodeValue) {
         return 0;
       }
+      const normalizedLabelKey = normalizeLabelKey(labelKey, mode);
       let total = 0;
       Object.entries(printProgress).forEach(([key, value]) => {
         const parts = String(key || '').split('|');
@@ -1484,7 +1476,8 @@
         const keyOrder = String(parts[1] || '').trim();
         const keyBarcode = String(parts[2] || '').trim();
         const keySize = String(parts[3] || '').trim();
-        if (keyMode !== mode || keyOrder !== orderId || keyBarcode !== barcodeValue || keySize !== sizeValue) {
+        const isSameLabel = keyMode === normalizedLabelKey || keyMode === mode;
+        if (!isSameLabel || keyOrder !== orderId || keyBarcode !== barcodeValue || keySize !== sizeValue) {
           return;
         }
         const num = parseInt(value, 10);
@@ -1502,10 +1495,11 @@
       const orderKey = orderId || '';
       printCountLines.forEach((el) => {
         const mode = (el.dataset.printMode || 'cz').trim() || 'cz';
-        const prefix = `${mode}|${orderKey}|`;
+        const labelKey = normalizeLabelKey(el.dataset.printLabelKey || '', mode);
+        const prefixes = [`${labelKey}|${orderKey}|`, `${mode}|${orderKey}|`];
         let localTotal = 0;
         Object.entries(printProgress).forEach(([key, value]) => {
-          if (!key.startsWith(prefix)) {
+          if (!prefixes.some((prefix) => key.startsWith(prefix))) {
             return;
           }
           const num = parseInt(value, 10);
@@ -1530,9 +1524,10 @@
           return;
         }
         const mode = (row.dataset.summaryMode || 'no-cz').trim() || 'no-cz';
+        const labelKey = (row.dataset.summaryLabelKey || '').trim();
         const barcode = normalizeResultField(row.dataset.summaryBarcode || '');
         const size = normalizeResultField(row.dataset.summarySize || '');
-        const localTotal = getLocalPrintedTotal(mode, barcode, size);
+        const localTotal = getLocalPrintedTotal(mode, barcode, size, labelKey);
         const base = parseInt(cell.dataset.summaryBase || '0', 10);
         const baseTotal = Number.isFinite(base) ? base : 0;
         const total = Math.max(baseTotal, localTotal);
@@ -1540,11 +1535,11 @@
       });
     };
 
-    const addPrintedCount = (mode, barcode, size, delta) => {
+    const addPrintedCount = (mode, barcode, size, delta, labelKey) => {
       if (!mode) {
         return;
       }
-      const key = getPrintKey(mode, barcode, size);
+      const key = getPrintKey(mode, barcode, size, labelKey);
       const current = printProgress[key] || 0;
       printProgress[key] = Math.max(0, current + (delta || 0));
       savePrintProgress(printProgress);
@@ -1729,13 +1724,16 @@
       applyFontVar(root, '--font-country', sizes.country);
     };
 
-    const updateLabelPreview = (barcode, size, mode) => {
+    const updateLabelPreview = (barcode, size, mode, labelKey) => {
       if (!labelRoot) {
         return;
       }
-      applyLabelDimensions(labelRoot, mode);
+      const normalizedKey = normalizeLabelKey(labelKey, mode);
+      const normalizedMode = normalizeModeForLabelKey(normalizedKey, mode);
+      applyLabelSettingsForMode(normalizedMode, normalizedKey);
+      applyLabelDimensions(labelRoot, normalizedMode, null, normalizedKey);
       const preview = labelRoot;
-      preview.classList.toggle('no-cz', mode === 'no-cz');
+      preview.classList.toggle('no-cz', normalizedMode === 'no-cz');
       const base = labelBase || {};
       const nameRaw = isEnabled('name') ? (base.name || '') : '';
       const sizeValue = isEnabled('size') ? (size ? String(size).trim() : '') : '';
@@ -1772,7 +1770,7 @@
       renderBarcode(barcodeValue);
       const qrExtra = base.barcode_extra || articleText;
       const qrValue = barcodeValue ? [barcodeValue, qrExtra].filter(Boolean).join(' ') : '';
-      if (mode === 'cz') {
+      if (normalizedMode === 'cz') {
         renderQr(qrValue);
       } else {
         renderQr('');
@@ -1782,12 +1780,12 @@
       }
     };
 
-    const buildLabelImage = async (barcode, size, mode) => {
+    const buildLabelImage = async (barcode, size, mode, labelKey) => {
       if (!labelRoot || !window.html2canvas) {
         setPrintStatus('Ошибка: библиотека превью не загружена.', 'error');
         return '';
       }
-      updateLabelPreview(barcode, size, mode);
+      updateLabelPreview(barcode, size, mode, labelKey);
       const canvas = await window.html2canvas(labelRoot, {
         backgroundColor: '#ffffff',
         scale: 2.12,
@@ -1797,17 +1795,19 @@
       return canvas.toDataURL('image/png');
     };
 
-    const enqueuePrintJob = async (barcode, size, modeOverride) => {
+    const enqueuePrintJob = async (barcode, size, modeOverride, labelKeyOverride) => {
       const printer = getSelectedPrinter();
       if (!printer) {
         setPrintStatus('Ошибка: выберите принтер.', 'error');
         alert('Выберите принтер этикеток.');
         return false;
       }
-      const mode = modeOverride || localStorage.getItem(labelModeKey) || 'cz';
-      const dims = getLabelSizeForMode(mode);
+      const requestedMode = modeOverride || localStorage.getItem(labelModeKey) || 'cz';
+      const labelKey = normalizeLabelKey(labelKeyOverride, requestedMode);
+      const mode = normalizeModeForLabelKey(labelKey, requestedMode);
+      const dims = getLabelSizeForMode(mode, labelKey);
       setPrintStatus('Подготовка этикетки…');
-      const dataUrl = await buildLabelImage(barcode, size, mode);
+      const dataUrl = await buildLabelImage(barcode, size, mode, labelKey);
       const base64 = dataUrl.split(',')[1] || '';
       if (!base64) {
         setPrintStatus('Ошибка: не удалось сформировать этикетку.', 'error');
@@ -1842,7 +1842,7 @@
           return false;
         }
         setPrintStatus('Отправлено в очередь печати.', 'ok');
-        addPrintedCount(mode, barcode, size, 1);
+        addPrintedCount(mode, barcode, size, 1, labelKey);
         return true;
       } catch (err) {
         setPrintStatus('Ошибка: не удалось отправить задание.', 'error');
@@ -1851,8 +1851,10 @@
       }
     };
 
-    const exportLabelPdf = async (barcode, size, modeOverride, copiesOverride) => {
-      const mode = modeOverride || localStorage.getItem(labelModeKey) || 'cz';
+    const exportLabelPdf = async (barcode, size, modeOverride, copiesOverride, labelKeyOverride) => {
+      const requestedMode = modeOverride || localStorage.getItem(labelModeKey) || 'cz';
+      const labelKey = normalizeLabelKey(labelKeyOverride, requestedMode);
+      const mode = normalizeModeForLabelKey(labelKey, requestedMode);
       if (mode === 'cz') {
         setPrintStatus('PDF-печать для ЧЗ отключена.', 'error');
         return false;
@@ -1868,10 +1870,10 @@
         return false;
       }
       const copies = Math.max(1, Number.parseInt(String(copiesOverride || '1'), 10) || 1);
-      const dims = getLabelSizeForMode(mode);
+      const dims = getLabelSizeForMode(mode, labelKey);
       const orientation = dims.width_mm >= dims.height_mm ? 'landscape' : 'portrait';
       setPrintStatus(copies > 1 ? `Подготовка PDF: 1 / ${copies}` : 'Подготовка PDF…');
-      const image = await buildLabelImage(barcode, size, mode);
+      const image = await buildLabelImage(barcode, size, mode, labelKey);
       if (!image) {
         setPrintStatus('Ошибка формирования этикетки', 'error');
         alert('Не удалось сформировать этикетку.');
@@ -1897,7 +1899,7 @@
         .replace(/^_+|_+$/g, '');
       const barcodePart = sanitize(barcode) || 'no_barcode';
       doc.save(`L_${barcodePart}_${copies}.pdf`);
-      addPrintedCount(mode, barcode, size, copies);
+      addPrintedCount(mode, barcode, size, copies, labelKey);
       setPrintStatus(`PDF готов: ${copies} стр.`, 'ok');
       return true;
     };
@@ -1950,17 +1952,17 @@
       });
     }
 
-    const openPreviewModal = (barcode, size, mode) => {
+    const openPreviewModal = (barcode, size, mode, labelKey) => {
       if (!previewModal || !previewLoading || !previewLive) {
         return;
       }
-      updateStageSizes(mode);
+      updateStageSizes(mode, labelKey);
       setPrintStatus('Открыт просмотр этикетки…');
       previewModal.classList.add('active');
       previewModal.setAttribute('aria-hidden', 'false');
       previewLoading.style.display = 'block';
       previewLive.innerHTML = '';
-      updateLabelPreview(barcode, size, mode);
+      updateLabelPreview(barcode, size, mode, labelKey);
       requestAnimationFrame(() => {
         const clone = labelRoot ? labelRoot.cloneNode(true) : null;
         if (clone) {
@@ -1974,7 +1976,7 @@
         if (previewPrintBtn) {
           previewPrintBtn.onclick = () => {
             setPrintStatus('Отправка из просмотра…');
-            enqueuePrintJob(barcode, size, mode).then((ok) => {
+            enqueuePrintJob(barcode, size, mode, labelKey).then((ok) => {
               if (ok) {
                 previewModal.classList.remove('active');
                 previewModal.setAttribute('aria-hidden', 'true');
@@ -2001,12 +2003,12 @@
       return stored === '1';
     };
 
-    const renderPreview = (target, barcode, size, mode) => {
+    const renderPreview = (target, barcode, size, mode, labelKey) => {
       if (!target || !labelRoot) {
         return;
       }
-      updateStageSizes(mode);
-      updateLabelPreview(barcode, size, mode);
+      updateStageSizes(mode, labelKey);
+      updateLabelPreview(barcode, size, mode, labelKey);
       const clone = labelRoot.cloneNode(true);
       clone.id = 'print-label-preview-inline';
       if (labelFontSizes) {
@@ -2024,6 +2026,8 @@
       getMode,
       isPreviewEnabled,
       isPdfPrinter,
+      normalizeLabelKey,
+      normalizeModeForLabelKey,
       setStageSizes: updateStageSizes
     };
 
@@ -2217,6 +2221,7 @@
     const previewLoading = modal.querySelector('#label-print-preview-loading');
     const previewMeta = modal.querySelector('[data-print-preview-meta]');
     let activeMode = 'cz';
+    let activeLabelKey = 'item_cz';
     let activeBarcode = '';
     let activeSize = '';
 
@@ -2258,7 +2263,7 @@
         previewLoading.style.display = 'block';
         previewLoading.textContent = 'Готовим превью:';
       }
-      printerApi.renderPreview(previewLive, barcode, size, activeMode);
+      printerApi.renderPreview(previewLive, barcode, size, activeMode, activeLabelKey);
       if (previewLoading) {
         previewLoading.style.display = 'none';
       }
@@ -2271,24 +2276,37 @@
       renderPreview(activeBarcode, activeSize);
     };
 
-    const setMode = (mode) => {
-      activeMode = normalizeMode(mode);
+    const setMode = (mode, labelKey) => {
+      const requestedMode = normalizeMode(mode);
+      activeLabelKey = window.processingLabelPrint && window.processingLabelPrint.normalizeLabelKey
+        ? window.processingLabelPrint.normalizeLabelKey(labelKey, requestedMode)
+        : (labelKey || (requestedMode === 'cz' ? 'item_cz' : 'item'));
+      activeMode = window.processingLabelPrint && window.processingLabelPrint.normalizeModeForLabelKey
+        ? window.processingLabelPrint.normalizeModeForLabelKey(activeLabelKey, requestedMode)
+        : requestedMode;
       localStorage.setItem('processing_label_mode', activeMode);
       if (modeLine) {
-        modeLine.textContent = activeMode === 'cz' ? 'Режим: ЧЗ' : 'Режим: без ЧЗ';
+        const labelText = activeLabelKey === 'item_5860'
+          ? '58/60'
+          : activeLabelKey === 'item_75120'
+            ? '75/120'
+            : activeLabelKey === 'item_cz'
+              ? '58/40 ЧЗ'
+              : '58/40';
+        modeLine.textContent = `Этикетка: ${labelText}`;
       }
       document.querySelectorAll('[data-label-mode]').forEach((btn) => {
         btn.classList.toggle('primary', btn.dataset.labelMode === activeMode);
       });
       if (window.processingLabelPrint && window.processingLabelPrint.setStageSizes) {
-        window.processingLabelPrint.setStageSizes(activeMode);
+        window.processingLabelPrint.setStageSizes(activeMode, activeLabelKey);
       }
       renderPreview(activeBarcode, activeSize);
       return activeMode;
     };
 
-    const openModal = (mode) => {
-      setMode(mode);
+    const openModal = (mode, labelKey) => {
+      setMode(mode, labelKey);
       modal.classList.add('active');
       modal.setAttribute('aria-hidden', 'false');
       if (!activeBarcode && rowButtons.length) {
@@ -2301,11 +2319,12 @@
 
     const clearPrintParams = () => {
       const url = new URL(window.location.href);
-      if (!url.searchParams.has('label_print') && !url.searchParams.has('label_mode')) {
+      if (!url.searchParams.has('label_print') && !url.searchParams.has('label_mode') && !url.searchParams.has('label_size')) {
         return;
       }
       url.searchParams.delete('label_print');
       url.searchParams.delete('label_mode');
+      url.searchParams.delete('label_size');
       history.replaceState({}, '', url.toString());
     };
 
@@ -2344,11 +2363,11 @@
       const printerApi = window.processingLabelPrint || {};
       const mode = activeMode;
       if (isPreviewEnabled() && printerApi.openPreviewModal) {
-        printerApi.openPreviewModal(barcode, size, mode);
+        printerApi.openPreviewModal(barcode, size, mode, activeLabelKey);
         return;
       }
       if (printerApi.enqueuePrintJob) {
-        printerApi.enqueuePrintJob(barcode, size, mode);
+        printerApi.enqueuePrintJob(barcode, size, mode, activeLabelKey);
         return;
       }
       alert('Печать недоступна: модуль печати не найден.');
@@ -2365,7 +2384,7 @@
 
     const params = new URLSearchParams(window.location.search);
     if (params.get('label_print') === '1') {
-      openModal(params.get('label_mode'));
+      openModal(params.get('label_mode'), params.get('label_size'));
     }
   })();
 </script>
@@ -2410,7 +2429,12 @@
       } catch (err) {
       }
     };
-    const rowKey = (mode, barcode, size) => [String(mode || '').trim(), orderId, normalize(barcode), normalize(size)].join('|');
+    const rowKey = (mode, barcode, size, labelKey) => [
+      String(labelKey || mode || '').trim(),
+      orderId,
+      normalize(barcode),
+      normalize(size)
+    ].join('|');
     const currentPrintedForRow = (row) => {
       if (!row) {
         return 0;
@@ -2477,9 +2501,14 @@
       const row = button.closest('[data-label-summary-row]');
       const qtyInput = row ? row.querySelector('[data-inline-print-qty]') : null;
       const mode = String(button.dataset.inlineMode || (row ? row.dataset.summaryMode : '') || 'no-cz').trim() || 'no-cz';
+      const labelKey = String(
+        button.dataset.inlineLabelKey
+        || (row ? row.dataset.summaryLabelKey : '')
+        || (mode === 'cz' ? 'item_cz' : 'item')
+      ).trim();
       const barcode = normalize(row ? row.dataset.summaryBarcode : '');
       const size = normalize(row ? row.dataset.summarySize : '');
-      const key = rowKey(mode, barcode, size);
+      const key = rowKey(mode, barcode, size, labelKey);
       if (qtyInput) {
         const pendingQty = calcPendingForRow(row, qtyInput.dataset.inlineRequired || '0');
         const savedQty = Math.max(0, parseIntSafe(savedQtyMap[key], 0));
@@ -2554,14 +2583,14 @@
             && typeof api.exportLabelPdf === 'function';
           if (canPdfBulk) {
             setInlineStatus(statusEl, 'Подготовка PDF…');
-            const pdfReady = await api.exportLabelPdf(barcode, size, mode, printCount);
+            const pdfReady = await api.exportLabelPdf(barcode, size, mode, printCount, labelKey);
             if (pdfReady) {
               successCount = printCount;
             }
           } else {
             for (let idx = 0; idx < printCount; idx += 1) {
               setInlineStatus(statusEl, `Отправка ${idx + 1}/${printCount}…`);
-              const queued = await api.enqueuePrintJob(barcode, size, mode);
+              const queued = await api.enqueuePrintJob(barcode, size, mode, labelKey);
               if (!queued) {
                 break;
               }

@@ -2398,6 +2398,7 @@ class ProcessingWorkflowService:
         ctx["available_printers_all"] = printers
         ctx["available_printers_meta"] = printers_meta
         ctx["label_settings"] = processing_views.load_label_settings()
+        ctx["label_settings_url"] = f"/labels/settings/?{urlencode({'return': request.get_full_path()})}"
         label_sizes: dict[str, dict] = {}
         for entry in processing_views.LABEL_SIZES:
             key = entry.get("key")
@@ -2826,6 +2827,8 @@ class ProcessingWorkflowService:
 
         job_barcode_map: dict[tuple[str, str], int] = {}
         job_sku_map: dict[tuple[str, str], int] = {}
+        job_barcode_label_map: dict[tuple[str, str, str], int] = {}
+        job_sku_label_map: dict[tuple[str, str, str], int] = {}
         marking_barcode_map: dict[tuple[str, str], int] = {}
         marking_sku_map: dict[tuple[str, str], int] = {}
         if order_id:
@@ -2834,10 +2837,17 @@ class ProcessingWorkflowService:
                     order_id=str(order_id),
                     status=ProcessingPrintJob.STATUS_PRINTED,
                 )
-                .values("article", "barcode", "size")
+                .values("article", "barcode", "size", "label_width_mm", "label_height_mm")
                 .annotate(count=Count("id"))
             )
             for item in printed_jobs_qs:
+                label_key = (
+                    processing_views._processing_marking_label_key_from_dimensions(
+                        item.get("label_width_mm"),
+                        item.get("label_height_mm"),
+                    )
+                    or "item"
+                )
                 barcode_key = (
                     str(item.get("barcode") or "").strip(),
                     str(item.get("size") or "").strip().lower(),
@@ -2849,8 +2859,18 @@ class ProcessingWorkflowService:
                 count_value = int(item.get("count") or 0)
                 if barcode_key[0]:
                     job_barcode_map[barcode_key] = max(job_barcode_map.get(barcode_key, 0), count_value)
+                    label_barcode_key = (label_key, barcode_key[0], barcode_key[1])
+                    job_barcode_label_map[label_barcode_key] = max(
+                        job_barcode_label_map.get(label_barcode_key, 0),
+                        count_value,
+                    )
                 if sku_key[0]:
                     job_sku_map[sku_key] = max(job_sku_map.get(sku_key, 0), count_value)
+                    label_sku_key = (label_key, sku_key[0], sku_key[1])
+                    job_sku_label_map[label_sku_key] = max(
+                        job_sku_label_map.get(label_sku_key, 0),
+                        count_value,
+                    )
             marking_qs = MarkingCode.objects.filter(
                 order_type="processing",
                 order_id=order_id,
@@ -3009,39 +3029,34 @@ class ProcessingWorkflowService:
                 size_label_by_key[key] = size_label
 
         marking_qty_map = processing_views._processing_marking_qty_by_label_key(payload)
-        active_no_cz_labels = [
-            option
-            for option in processing_views.PROCESSING_MARKING_LABELS
-            if marking_qty_map.get(option["label_key"], 0) > 0
-        ]
-        no_cz_multiplier = sum(marking_qty_map.get(option["label_key"], 0) for option in active_no_cz_labels)
-        if len(active_no_cz_labels) == 1:
-            no_cz_label_type = active_no_cz_labels[0]["label_type"]
-        elif active_no_cz_labels:
-            no_cz_label_type = "Без ЧЗ"
-        else:
-            no_cz_label_type = "58/40"
         marking_each_qty = marking_qty_map.get(processing_views.PROCESSING_CZ_LABEL_KEY, 0)
         label_summary_rows: list[dict] = []
         for key in sorted(received_by_key.keys()):
             article_key, size_key = key
             barcode_value = barcode_by_key.get(key, "-")
             received_qty = received_by_key.get(key, 0)
-            printed_no_cz = job_sku_map.get(key, 0)
-            if barcode_value and barcode_value != "-":
-                printed_no_cz = max(printed_no_cz, job_barcode_map.get((barcode_value, size_key), 0))
-            required_no_cz = received_qty * no_cz_multiplier
-            if no_cz_multiplier > 0 or printed_no_cz > 0:
-                label_summary_rows.append(
-                    {
-                        "article": article_key,
-                        "size": size_label_by_key.get(key) or size_key or "-",
-                        "barcode": barcode_value or "-",
-                        "label_type": no_cz_label_type,
-                        "required_qty": required_no_cz,
-                        "printed_qty": printed_no_cz,
-                    }
-                )
+            for option in processing_views.PROCESSING_MARKING_LABELS:
+                label_key = option["label_key"]
+                multiplier = marking_qty_map.get(label_key, 0)
+                printed_no_cz = job_sku_label_map.get((label_key, article_key, size_key), 0)
+                if barcode_value and barcode_value != "-":
+                    printed_no_cz = max(
+                        printed_no_cz,
+                        job_barcode_label_map.get((label_key, barcode_value, size_key), 0),
+                    )
+                required_no_cz = received_qty * multiplier
+                if multiplier > 0 or printed_no_cz > 0:
+                    label_summary_rows.append(
+                        {
+                            "article": article_key,
+                            "size": size_label_by_key.get(key) or size_key or "-",
+                            "barcode": barcode_value or "-",
+                            "label_key": label_key,
+                            "label_type": option["label_type"],
+                            "required_qty": required_no_cz,
+                            "printed_qty": printed_no_cz,
+                        }
+                    )
             printed_cz = marking_sku_map.get(key, 0)
             if barcode_value and barcode_value != "-":
                 printed_cz = max(printed_cz, marking_barcode_map.get((barcode_value, size_key), 0))
@@ -3052,6 +3067,7 @@ class ProcessingWorkflowService:
                         "article": article_key,
                         "size": size_label_by_key.get(key) or size_key or "-",
                         "barcode": barcode_value or "-",
+                        "label_key": processing_views.PROCESSING_CZ_LABEL_KEY,
                         "label_type": processing_views.PROCESSING_CZ_LABEL_TYPE,
                         "required_qty": required_cz,
                         "printed_qty": printed_cz,
@@ -3064,10 +3080,12 @@ class ProcessingWorkflowService:
             article_key = str(item.get("article") or "").strip().lower()
             size_key = str(item.get("size") or "").strip().lower()
             barcode_key = str(item.get("barcode") or "").strip()
-            mode = "cz" if str(item.get("label_type") or "").strip() == processing_views.PROCESSING_CZ_LABEL_TYPE else "no-cz"
+            label_key = str(item.get("label_key") or "").strip() or "item"
+            mode = "cz" if label_key == processing_views.PROCESSING_CZ_LABEL_KEY else "no-cz"
             normalized_item = {
                 "mode": mode,
-                "label_type": str(item.get("label_type") or no_cz_label_type).strip() or no_cz_label_type,
+                "label_key": label_key,
+                "label_type": str(item.get("label_type") or "").strip() or "58/40",
                 "required_qty": int(item.get("required_qty") or 0),
                 "printed_qty": int(item.get("printed_qty") or 0),
                 "barcode": barcode_key or "-",
