@@ -764,7 +764,6 @@
       <aside class="side">
         <div class="brand">
           <div class="brand-title">FULLBOX</div>
-          <div class="brand-subtitle">Параметры печати для рабочего места кладовщика.</div>
         </div>
         <nav class="side-nav">
           <a class="side-link" href="{{ return_url|default:cabinet_url }}">В кабинет</a>
@@ -782,7 +781,6 @@
                 <div class="section-head">
                   <div>
                     <h2 class="section-title">Превью</h2>
-                    <div class="section-subtitle">Проверка макета перед печатью и PDF.</div>
                   </div>
                 </div>
                 <div class="label-grid">
@@ -801,7 +799,6 @@
                           <button class="label-print-btn secondary" type="button" data-label-pdf>PDF</button>
                         </div>
                       </div>
-                      <div class="label-sub">{{ label.description }}</div>
                       <div class="label-stage" style="--label-width: {{ label.width_mm }}mm; --label-height: {{ label.height_mm }}mm; --label-scale: 1;">
                         <div class="label-size-badge" data-label-scale-badge>{{ label.width_mm }}x{{ label.height_mm }} мм · 100%</div>
                         <div class="label-preview" data-label-root data-label-type="{{ label.key }}">
@@ -828,7 +825,6 @@
                   <div class="section-head">
                     <div>
                       <h2 class="section-title">Этикетки</h2>
-                      <div class="section-subtitle">Шаблон и размеры для товара, короба и паллеты.</div>
                     </div>
                     <div class="label-actions">
                       <button class="btn primary" type="button" id="label-save-btn">Сохранить</button>
@@ -971,7 +967,6 @@
                   <div class="section-head">
                     <div>
                       <h2 class="label-printers-title">Принтер этикеток</h2>
-                      <div class="section-subtitle">Выбор принтера и быстрый статус от агента.</div>
                     </div>
                     <button class="btn" type="button" data-tab-target="printers">Диагностика</button>
                   </div>
