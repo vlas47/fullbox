@@ -17,6 +17,8 @@ class ProcessingScannerAgentTemplateRegressionTests(SimpleTestCase):
                 self.assertIn("http://127.0.0.1:17841/whoami", template_source)
                 self.assertIn("const scheduleLocalAgentSelectionRefresh = (delay = 0) => {", template_source)
                 self.assertIn("refreshLocalAgentSelection().catch(() => {});", template_source)
+                self.assertIn("status: agentOnline ? 'онлайн' : 'нет связи',", template_source)
+                self.assertNotIn("setAgentStatus(scannerState.text, isError);", template_source)
 
 
 class ReceivingScannerAgentTemplateRegressionTests(SimpleTestCase):

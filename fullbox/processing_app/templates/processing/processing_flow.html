@@ -2268,13 +2268,13 @@
           renderAll();
           return;
         }
-        if (!agentId) {
-          resetFlowState();
-          renderAll();
-          return;
-        }
         try {
-          const resp = await fetch(`${flowSessionUrl}?agent_id=${encodeURIComponent(agentId)}`, {
+          const params = new URLSearchParams();
+          if (agentId) {
+            params.set('agent_id', agentId);
+          }
+          const url = params.toString() ? `${flowSessionUrl}?${params.toString()}` : flowSessionUrl;
+          const resp = await fetch(url, {
             credentials: 'same-origin',
           });
           const data = await resp.json().catch(() => ({}));
@@ -3135,8 +3135,17 @@
         return { text: 'Сканер: нет данных', level: 'muted' };
       };
       const applyScannerState = (data, agentOnline) => {
+        const selected = agentSelect ? agentSelect.selectedOptions[0] : null;
+        const agentLabel = selected
+          ? (selected.dataset.title || selected.value || agentId || 'агент')
+          : (agentId || 'агент');
+        updateSelectedAgentDataset({
+          online: agentOnline,
+          status: agentOnline ? 'онлайн' : 'нет связи',
+          lastSeen: data && data.agent_last_seen ? String(data.agent_last_seen) : '',
+        });
+        setAgentStatus(`${agentLabel} · ${agentOnline ? 'онлайн' : 'нет связи'}`, !agentOnline);
         if (!agentOnline) {
-          setAgentStatus(`агент не в сети${agentId ? `: ${agentId}` : ''}`, true);
           setAgentIndicator('error', 'нет связи');
           setScannerStatusIfIdle('Агент не в сети', true, false);
           return;
@@ -3144,7 +3153,6 @@
         const scannerState = describeScannerState(data);
         const isError = scannerState.level === 'error';
         const isWarn = scannerState.level === 'warn';
-        setAgentStatus(scannerState.text, isError);
         if (scannerState.level === 'ok') {
           setAgentIndicator('ok', 'готов');
         } else if (isError) {
@@ -4403,10 +4411,6 @@ ${labels}
           setScannerStatus('Контекст упаковки не готов', true);
           return;
         }
-        if (!agentId) {
-          setScannerStatus('Агент не выбран', true);
-          return;
-        }
         const value = String(rawValue || '').trim();
         if (!value) {
           return;
@@ -5650,6 +5654,15 @@ ${labels}
             }
             if (patch.errorCode !== undefined) {
               selected.dataset.comErrorCode = patch.errorCode || '';
+            }
+            if (patch.online !== undefined) {
+              selected.dataset.online = patch.online ? '1' : '0';
+            }
+            if (patch.status !== undefined) {
+              selected.dataset.status = patch.status || '';
+            }
+            if (patch.lastSeen !== undefined) {
+              selected.dataset.lastSeen = patch.lastSeen || '';
             }
           updateAgentMeta();
         };
