@@ -118,6 +118,34 @@
       flex-wrap: wrap;
     }
     .section-title { font-weight: 600; margin: 0; }
+    .section-head-actions {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+    .goods-type-inline-form {
+      display: flex;
+      gap: 8px;
+      align-items: end;
+      flex-wrap: wrap;
+      padding: 10px 12px;
+      border: 1px solid var(--stroke);
+      border-radius: 12px;
+      background: rgba(15,23,42,0.03);
+    }
+    .goods-type-inline-field {
+      display: grid;
+      gap: 4px;
+      min-width: 190px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .goods-type-inline-field select {
+      min-width: 0;
+      width: 100%;
+    }
     .opt-flow-note {
       margin: -2px 0 8px;
       font-size: 12px;
@@ -638,6 +666,9 @@
           <h4 class="side-title">Действия</h4>
           <div class="side-actions">
             <a class="tab" href="/orders/receiving/{{ order_id }}/">К заявке</a>
+            {% if current_agency_id %}
+              <a class="tab" href="/client/{{ current_agency_id }}/sku/?return_to={{ request.get_full_path|urlencode }}">Номенклатура клиента</a>
+            {% endif %}
             <a class="tab" href="/labels/settings/?return={{ request.get_full_path|urlencode }}">Настройка оборудования</a>
             {% if act_print_url %}
               <a class="tab" href="{{ act_print_url }}">Акт приемки (печатная форма)</a>
@@ -749,6 +780,11 @@
           {% if error %}
             <div class="error">Не удалось завершить приемку. Проверьте данные.</div>
           {% endif %}
+          {% if goods_type_updated %}
+            <div class="notice success">Тип поставки обновлен. Новые позиции будут добавляться по выбранным правилам.</div>
+          {% elif goods_type_error %}
+            <div class="notice warn">Не удалось изменить тип поставки. Попробуйте еще раз, пока приемка не завершена.</div>
+          {% endif %}
           {% if warehouse_move_status == "ok" %}
             <div class="notice success">
               Задание ричтракеру на склад отправлено.
@@ -793,24 +829,41 @@
             <div class="split-col">
               <div class="section-head">
                 <div class="section-title">Неразмещенные товары</div>
-                {% if goods_type == "op" and not flow_locked %}
-                  <button class="btn" type="button" id="opt-add-item-btn">NEW</button>
-                {% endif %}
+                <div class="section-head-actions">
+                  {% if can_change_goods_type %}
+                    <button class="btn" type="button" id="change-goods-type-toggle">Изменить тип поставки</button>
+                    <form method="post" id="change-goods-type-form" class="goods-type-inline-form is-hidden">
+                      {% csrf_token %}
+                      <input type="hidden" name="flow_action" value="set_goods_type">
+                      <input type="hidden" name="receiving_mode" value="{{ receiving_mode|default:'standard' }}">
+                      <label class="goods-type-inline-field" for="change-goods-type-select">
+                        <span>Тип поставки</span>
+                        <select name="goods_type" id="change-goods-type-select" class="qty-input">
+                          {% for choice_value, choice_label in goods_type_choices %}
+                            <option value="{{ choice_value }}"{% if goods_type == choice_value %} selected{% endif %}>{{ choice_label }}</option>
+                          {% endfor %}
+                        </select>
+                      </label>
+                      <button class="btn primary" type="submit">Сохранить</button>
+                      <button class="btn" type="button" id="change-goods-type-cancel">Отмена</button>
+                    </form>
+                  {% endif %}
+                  {% if not flow_locked %}
+                    <button class="btn" type="button" id="opt-add-item-btn">NEW</button>
+                  {% endif %}
+                </div>
               </div>
-              {% if goods_type == "op" %}
-                <div class="muted opt-flow-note">Для новой оптовой позиции введите артикул, наименование, бренд, цвет, размер и количество прямо в верхней строке таблицы.</div>
-              {% endif %}
+              <div class="muted opt-flow-note">Для новой позиции введите артикул, наименование, бренд, цвет, размер и количество прямо в верхней строке таблицы. Если артикул уже есть у клиента, система подтянет существующую номенклатуру и при необходимости добавит новый размер.</div>
               <div class="table-wrap remaining-table">
                 <table>
                   <thead>
                     <tr>
                       <th>SKU</th>
                       <th>Наименование</th>
-                      {% if goods_type == "op" %}
-                        <th>Бренд</th>
-                        <th>Цвет</th>
-                      {% endif %}
+                      <th>Бренд</th>
+                      <th>Цвет</th>
                       <th>Размер</th>
+                      <th>ШК</th>
                       <th>По заявке</th>
                       <th>Факт</th>
                       <th>В короб</th>
@@ -1133,7 +1186,7 @@
       const labelSettingsData = labelSettingsDataEl ? JSON.parse(labelSettingsDataEl.textContent || '{}') : {};
       const flowLocked = Boolean(window.__flowLocked);
       const goodsType = String("{{ goods_type|escapejs }}").trim().toLowerCase();
-      const isOptGoodsType = goodsType === 'op';
+      const isOptGoodsType = true;
       const receivingMode = String("{{ receiving_mode|escapejs }}").trim().toLowerCase() || 'standard';
       const isCzMode = receivingMode === 'cz';
       const markingScanUrl = String("{{ marking_scan_url|escapejs }}").trim();
@@ -1147,6 +1200,10 @@
       const catalogColorList = document.getElementById('catalog-color-list');
       const catalogSizeList = document.getElementById('catalog-size-list');
       const optAddItemBtn = document.getElementById('opt-add-item-btn');
+      const changeGoodsTypeToggle = document.getElementById('change-goods-type-toggle');
+      const changeGoodsTypeForm = document.getElementById('change-goods-type-form');
+      const changeGoodsTypeSelect = document.getElementById('change-goods-type-select');
+      const changeGoodsTypeCancel = document.getElementById('change-goods-type-cancel');
       const currentBoxSection = document.getElementById('current-box-section');
       const currentBoxItems = document.getElementById('current-box-items');
       const currentBoxCode = document.getElementById('current-box-code');
@@ -1259,6 +1316,30 @@
           }))
         : [];
       let warehouseMovePickerTargetRow = null;
+      const shouldOpenGoodsTypeEditor = {{ goods_type_error|yesno:"true,false" }};
+
+      const toggleGoodsTypeEditor = (open) => {
+        if (!changeGoodsTypeForm) {
+          return;
+        }
+        changeGoodsTypeForm.classList.toggle('is-hidden', !open);
+        if (changeGoodsTypeToggle) {
+          changeGoodsTypeToggle.classList.toggle('is-hidden', open);
+        }
+        if (open && changeGoodsTypeSelect) {
+          window.requestAnimationFrame(() => changeGoodsTypeSelect.focus());
+        }
+      };
+
+      if (changeGoodsTypeToggle) {
+        changeGoodsTypeToggle.addEventListener('click', () => toggleGoodsTypeEditor(true));
+      }
+      if (changeGoodsTypeCancel) {
+        changeGoodsTypeCancel.addEventListener('click', () => toggleGoodsTypeEditor(false));
+      }
+      if (shouldOpenGoodsTypeEditor) {
+        toggleGoodsTypeEditor(true);
+      }
 
       const applyFlowState = (rawState) => {
         if (!rawState || typeof rawState !== 'object') {
@@ -1752,6 +1833,7 @@
 
       const plannedItems = itemsData.map((item) => ({
         sku_code: normalizeText(item.sku_code),
+        barcode: normalizeText(item.barcode),
         name: normalizeText(item.name),
         brand: normalizeText(item.brand),
         color: normalizeText(item.color),
@@ -1856,9 +1938,6 @@
         return plannedByKey.get(normalizedKey) || null;
       };
       const duplicateFlowItemWithSize = (itemKey, rawSize) => {
-        if (!isOptGoodsType) {
-          return { ok: false, error: 'Добавление размера доступно только для оптовой приемки.' };
-        }
         if (flowLocked) {
           return { ok: false, error: 'Поток приемки закрыт.' };
         }
@@ -1971,6 +2050,7 @@
       });
       const normalizeMappedItem = (mapped) => ({
         sku_code: normalizeText(mapped.sku_code || mapped.sku || ''),
+        barcode: normalizeText(mapped.barcode || ''),
         name: normalizeText(mapped.name || ''),
         brand: normalizeText(mapped.brand || ''),
         color: normalizeText(mapped.color || ''),
@@ -1989,6 +2069,7 @@
         }
         const entry = {
           sku_code: normalized.sku_code,
+          barcode: normalized.barcode,
           name: normalized.name || normalized.sku_code,
           brand: normalized.brand,
           color: normalized.color,
@@ -2064,7 +2145,7 @@
       };
       (catalogItems || []).forEach(addCatalogItem);
       itemsData.forEach(addCatalogItem);
-      Object.values(barcodeMap || {}).forEach(addCatalogItem);
+      Object.entries(barcodeMap || {}).forEach(([barcode, item]) => addCatalogItem({ ...(item || {}), barcode }));
       const addToCatalogIndex = (map, rawValue, item) => {
         const key = normalizeText(rawValue).toLowerCase();
         if (!key) {
@@ -2191,6 +2272,7 @@
       let lastFocusedRowKey = '';
       let suppressBlurApply = false;
       let addRowSku = '';
+      let addRowBarcode = '';
       let addRowName = '';
       let addRowBrand = '';
       let addRowColor = '';
@@ -2315,7 +2397,7 @@
       };
 
       const ensureOpenContainers = (forceOpen = false) => {
-        const shouldOpen = forceOpen || hasRemaining();
+        const shouldOpen = forceOpen || !flowLocked;
         let activePallet = getPallet(state.activePallet);
         if (!activePallet || activePallet.sealed) {
           activePallet = state.pallets.find((pallet) => !pallet.sealed) || null;
@@ -2391,10 +2473,14 @@
         const existing = (box.items || []).find((entry) => makeKey(entry) === item.key);
         if (existing) {
           existing.qty = Number(existing.qty || 0) + qty;
+          if (!existing.barcode && item.barcode) {
+            existing.barcode = item.barcode;
+          }
         } else {
           box.items.push({
             sku_code: item.sku_code,
             sku: item.sku_code,
+            barcode: item.barcode || '',
             name: item.name,
             brand: item.brand,
             color: item.color,
@@ -2406,19 +2492,41 @@
         return true;
       };
       const buildManualOptAddItem = () => {
-        if (!isOptGoodsType) {
-          return null;
-        }
         const skuCode = normalizeText(addRowSku);
+        const barcode = normalizeText(addRowBarcode);
         const name = normalizeText(addRowName);
         const brand = normalizeText(addRowBrand);
         const color = normalizeText(addRowColor);
         const size = normalizeText(addRowSize);
-        if (!skuCode && !name) {
+        if (!skuCode && !barcode && !name && !brand && !color && !size) {
+          return null;
+        }
+        const knownSkuItems = skuCode ? (catalogBySku.get(skuCode.toLowerCase()) || []) : [];
+        const knownSkuItem = knownSkuItems.length ? pickCatalogItem(knownSkuItems) : null;
+        if (knownSkuItem) {
+          const resolvedSize = size || normalizeText(knownSkuItem.size);
+          if (!resolvedSize) {
+            alert('Укажите размер для выбранного артикула.');
+            return null;
+          }
+          return {
+            sku_code: knownSkuItem.sku_code || skuCode,
+            barcode,
+            name: name || knownSkuItem.name || skuCode,
+            brand: brand || knownSkuItem.brand || '',
+            color: color || knownSkuItem.color || '',
+            size: resolvedSize,
+            qty: 0,
+            weight_kg: getItemWeightKg(knownSkuItem),
+          };
+        }
+        if (!skuCode || !name || !brand || !color || !size) {
+          alert('Для новой позиции укажите артикул, наименование, бренд, цвет и размер.');
           return null;
         }
         return {
           sku_code: skuCode,
+          barcode,
           name: name || skuCode,
           brand,
           color,
@@ -2428,6 +2536,7 @@
       };
       const resetAddRowDraft = (keepFocus = false) => {
         addRowSku = '';
+        addRowBarcode = '';
         addRowName = '';
         addRowBrand = '';
         addRowColor = '';
@@ -2488,10 +2597,14 @@
         }
         if (existing) {
           existing.qty = qty;
+          if (!existing.barcode && item.barcode) {
+            existing.barcode = item.barcode;
+          }
         } else {
           box.items.push({
             sku_code: item.sku_code,
             sku: item.sku_code,
+            barcode: item.barcode || '',
             name: item.name,
             brand: item.brand,
             color: item.color,
@@ -2565,21 +2678,18 @@
             state.activeBox = '';
           }
           markDraftDirty();
-          if (autoNext && hasRemaining()) {
-            const pallet = getPallet(state.activePallet);
-            if (pallet && !pallet.sealed) {
-              openNewBox(pallet);
-            } else {
-              openNewPallet();
-            }
+          if (autoNext) {
+            ensureOpenContainers(false);
           }
           return;
         }
         box.sealed = true;
+        if (state.activeBox === box.code) {
+          state.activeBox = '';
+        }
         markDraftDirty();
-        if (autoNext && hasRemaining()) {
-          const pallet = getPallet(state.activePallet);
-          openNewBox(pallet);
+        if (autoNext) {
+          ensureOpenContainers(false);
         }
       };
 
@@ -2611,8 +2721,8 @@
             state.activeBox = '';
           }
           markDraftDirty();
-          if (autoNext && hasRemaining()) {
-            openNewPallet();
+          if (autoNext) {
+            ensureOpenContainers(false);
           }
           return;
         }
@@ -2639,8 +2749,8 @@
         pallet.sealed = true;
         const closedPalletCode = String(pallet.code || '').trim();
         markDraftDirty();
-        if (autoNext && hasRemaining()) {
-          openNewPallet();
+        if (autoNext) {
+          ensureOpenContainers(false);
         }
         if (printAfterClose && closedPalletCode) {
           enqueueReceivingPalletLabel(closedPalletCode);
@@ -2814,7 +2924,7 @@
         pendingFocusEl = null;
         remainingBody.innerHTML = '';
         const remaining = getRemaining();
-        const columnsCount = isOptGoodsType ? 8 : 6;
+        const columnsCount = isOptGoodsType ? 9 : 7;
         const addRow = document.createElement('tr');
         addRow.innerHTML = isOptGoodsType
           ? `
@@ -2825,9 +2935,11 @@
               <td></td>
               <td class="muted">-</td>
               <td class="muted">-</td>
+              <td class="muted">-</td>
               <td></td>
             `
           : `
+              <td></td>
               <td></td>
               <td></td>
               <td></td>
@@ -2840,14 +2952,16 @@
         const brandCell = isOptGoodsType ? addRow.children[2] : null;
         const colorCell = isOptGoodsType ? addRow.children[3] : null;
         const sizeCell = isOptGoodsType ? addRow.children[4] : addRow.children[2];
-        const plannedCell = isOptGoodsType ? addRow.children[5] : addRow.children[3];
-        const factCell = isOptGoodsType ? addRow.children[6] : addRow.children[4];
-        const qtyCell = isOptGoodsType ? addRow.children[7] : addRow.children[5];
+        const barcodeCell = isOptGoodsType ? addRow.children[5] : addRow.children[3];
+        const plannedCell = isOptGoodsType ? addRow.children[6] : addRow.children[4];
+        const factCell = isOptGoodsType ? addRow.children[7] : addRow.children[5];
+        const qtyCell = isOptGoodsType ? addRow.children[8] : addRow.children[6];
         const skuInput = document.createElement('input');
         const nameInput = document.createElement('input');
         const brandInput = document.createElement('input');
         const colorInput = document.createElement('input');
         const sizeInput = document.createElement('input');
+        const barcodeInput = document.createElement('input');
         const qtyInput = document.createElement('input');
         skuInput.type = 'text';
         skuInput.className = 'catalog-input';
@@ -2874,12 +2988,17 @@
         sizeInput.placeholder = 'Размер';
         sizeInput.setAttribute('list', 'catalog-size-list');
         sizeInput.value = addRowSize;
+        barcodeInput.type = 'text';
+        barcodeInput.className = 'catalog-input';
+        barcodeInput.placeholder = 'ШК';
+        barcodeInput.value = addRowBarcode;
         if (flowLocked) {
           skuInput.disabled = true;
           nameInput.disabled = true;
           brandInput.disabled = true;
           colorInput.disabled = true;
           sizeInput.disabled = true;
+          barcodeInput.disabled = true;
         }
         const setDraftMetaCell = (cell, html) => {
           if (!cell) {
@@ -2909,10 +3028,11 @@
             normalizeText(addRowBrand).length >= 2,
             normalizeText(addRowColor).length >= 2,
             normalizeText(addRowSize).length >= 1,
+            normalizeText(addRowBarcode).length >= 4,
           ].filter(Boolean).length;
           const isNewCandidate = isOptGoodsType && !selected && evidence >= 2;
           addRow.classList.toggle('row-new-candidate', isNewCandidate);
-          [skuInput, nameInput, brandInput, colorInput, sizeInput]
+          [skuInput, nameInput, brandInput, colorInput, sizeInput, barcodeInput]
             .filter(Boolean)
             .forEach((field) => field.classList.toggle('is-new-draft', isNewCandidate));
           if (isNewCandidate) {
@@ -2949,6 +3069,10 @@
           if (!addRowSize && addRowItem.size) {
             addRowSize = addRowItem.size;
             sizeInput.value = addRowSize;
+          }
+          if (!addRowBarcode && addRowItem.barcode) {
+            addRowBarcode = addRowItem.barcode;
+            barcodeInput.value = addRowBarcode;
           }
           syncAddRowDraftState(addRowItem);
         };
@@ -3009,6 +3133,15 @@
           updateAddRowItem();
         });
         sizeInput.addEventListener('keydown', handleAddRowEnter);
+        barcodeInput.addEventListener('input', () => {
+          addRowBarcode = barcodeInput.value;
+          updateAddRowItem();
+        });
+        barcodeInput.addEventListener('change', () => {
+          addRowBarcode = barcodeInput.value;
+          updateAddRowItem();
+        });
+        barcodeInput.addEventListener('keydown', handleAddRowEnter);
         qtyInput.type = 'number';
         qtyInput.min = '0';
         qtyInput.step = '1';
@@ -3068,6 +3201,7 @@
           colorCell.appendChild(colorInput);
         }
         sizeCell.appendChild(sizeInput);
+        barcodeCell.appendChild(barcodeInput);
         const addRowActions = document.createElement('div');
         addRowActions.className = isOptGoodsType ? 'row-actions add-row-actions' : 'row-actions';
         addRowActions.appendChild(qtyInput);
@@ -3083,7 +3217,7 @@
         if (isOptGoodsType) {
           qtyCell.appendChild(addRowActions);
         }
-        addRowRefs = { skuInput, nameInput, brandInput, colorInput, sizeInput, qtyInput };
+        addRowRefs = { skuInput, nameInput, brandInput, colorInput, sizeInput, barcodeInput, qtyInput };
         syncAddRowDraftState(addRowItem);
         remainingBody.appendChild(addRow);
         if (pendingAddRowFocus) {
@@ -3107,6 +3241,7 @@
             <td>${item.name || '-'}</td>
             ${isOptGoodsType ? `<td>${item.brand || '-'}</td><td>${item.color || '-'}</td>` : ''}
             <td data-item-field="size">${item.size || '-'}</td>
+            <td>${item.barcode || '-'}</td>
             <td>${item.qty}</td>
             <td>${factValue}</td>
             <td></td>
@@ -3188,7 +3323,11 @@
           currentBoxCode.textContent = box ? box.code : '-';
         }
         if (currentBoxStatus) {
-          currentBoxStatus.textContent = box && !box.sealed ? 'Открыт' : 'Закрыт';
+          if (!box) {
+            currentBoxStatus.textContent = 'Нет открытого короба';
+          } else {
+            currentBoxStatus.textContent = box && !box.sealed ? 'Открыт' : 'Закрыт';
+          }
         }
         renderCurrentBoxQr(box);
         if (!currentBoxItems) {
@@ -3198,7 +3337,11 @@
         if (!box || !(box.items || []).length) {
           const empty = document.createElement('div');
           empty.className = 'muted';
-          empty.textContent = 'Товаров в коробе пока нет.';
+          if (!box) {
+            empty.textContent = 'Открытого короба сейчас нет. Поток приемки продолжится, как только появится новый короб.';
+          } else {
+            empty.textContent = 'Товаров в коробе пока нет.';
+          }
           currentBoxItems.appendChild(empty);
           return;
         }
@@ -3602,6 +3745,8 @@
       let agentPollTimer = null;
       let agentStatusTimer = null;
       let agentContextTimer = null;
+      let localAgentRefreshTimer = null;
+      let localAgentRefreshPending = false;
       const postJson = async (url, payload) => {
         return fetch(url, {
           method: 'POST',
@@ -3765,6 +3910,25 @@
           setScannerHint(`Локальный агент: ${label}.`, false);
         }
         return true;
+      };
+      const refreshLocalAgentSelection = async () => {
+        if (localAgentRefreshPending) {
+          return false;
+        }
+        localAgentRefreshPending = true;
+        try {
+          return await ensureLocalAgentSelection();
+        } finally {
+          localAgentRefreshPending = false;
+        }
+      };
+      const scheduleLocalAgentSelectionRefresh = (delay = 0) => {
+        if (localAgentRefreshTimer) {
+          clearTimeout(localAgentRefreshTimer);
+        }
+        localAgentRefreshTimer = setTimeout(() => {
+          refreshLocalAgentSelection().catch(() => {});
+        }, Math.max(0, Number(delay) || 0));
       };
       const chooseDefaultAgentId = () => {
         if (preferredAgentLocked && preferredAgentId) {
@@ -3959,6 +4123,9 @@
           agentSelect.addEventListener('change', () => {
             applyAgentId(agentSelect.value || '');
           });
+          agentSelect.addEventListener('pointerdown', () => {
+            scheduleLocalAgentSelectionRefresh(0);
+          });
         }
         if (agentClaimForce) {
           agentClaimForce.addEventListener('click', async () => {
@@ -3979,7 +4146,15 @@
         applyScannerMode(savedMode);
         const defaultAgentId = chooseDefaultAgentId();
         applyAgentId(defaultAgentId);
-        ensureLocalAgentSelection().catch(() => {});
+        refreshLocalAgentSelection().catch(() => {});
+        document.addEventListener('visibilitychange', () => {
+          if (!document.hidden) {
+            scheduleLocalAgentSelectionRefresh(200);
+          }
+        });
+        window.addEventListener('focus', () => {
+          scheduleLocalAgentSelectionRefresh(200);
+        });
       };
 
       const escapeHtml = (value) =>

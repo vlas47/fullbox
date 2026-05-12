@@ -886,6 +886,7 @@
         const flowStateShared = flowStateSharedEl ? JSON.parse(flowStateSharedEl.textContent || '{}') : {};
         const scannerAgentsDataEl = document.getElementById('scanner-agents-data');
         const scannerAgentsData = scannerAgentsDataEl ? JSON.parse(scannerAgentsDataEl.textContent || '[]') : [];
+        const localAgentBridgeState = { detected: null };
         const flowLocked = Boolean(window.__flowLocked);
         const flowReopened = Boolean(window.__flowReopened);
         const czRequired = Boolean(window.__czRequired);
@@ -941,6 +942,52 @@
             suspendBarcodeFocus(1200);
           }
         });
+      const localAgentBridgeUrls = [
+        'http://127.0.0.1:17841/whoami',
+        'http://localhost:17841/whoami',
+      ];
+      const fetchLocalAgentBridgePayload = async (url) => {
+        const controller = new AbortController();
+        const timer = window.setTimeout(() => controller.abort(), 1200);
+        try {
+          const resp = await fetch(url, {
+            method: 'GET',
+            mode: 'cors',
+            cache: 'no-store',
+            signal: controller.signal,
+          });
+          if (!resp.ok) {
+            return null;
+          }
+          const data = await resp.json().catch(() => null);
+          if (!data || data.ok === false || !data.agentId) {
+            return null;
+          }
+          return {
+            agentId: String(data.agentId || '').trim(),
+            name: String(data.name || '').trim(),
+            host: String(data.host || '').trim(),
+            defaultPrinter: String(data.defaultPrinter || '').trim(),
+            printers: Array.isArray(data.printers)
+              ? data.printers.map((value) => String(value || '').trim()).filter(Boolean)
+              : [],
+          };
+        } catch (err) {
+          return null;
+        } finally {
+          window.clearTimeout(timer);
+        }
+      };
+      const detectLocalAgentBridge = async () => {
+        for (const url of localAgentBridgeUrls) {
+          const payload = await fetchLocalAgentBridgePayload(url);
+          if (payload && payload.agentId) {
+            localAgentBridgeState.detected = payload;
+            return payload;
+          }
+        }
+        return null;
+      };
       const serialBaud = document.getElementById('serial-baud');
       const serialEol = document.getElementById('serial-eol');
       const serialConnect = document.getElementById('serial-connect');
@@ -5146,7 +5193,119 @@ ${labels}
         let agentContextId = '';
         let agentContextTimer = null;
         let agentStatusTimer = null;
+        let localAgentRefreshTimer = null;
+        let localAgentRefreshPending = false;
         let scannerModeValue = localStorage.getItem('fullbox_scanner_mode') || '';
+        const applyAgentOptionData = (option, agent) => {
+          const normalizedAgentId = String(agent?.agent_id || agent?.agentId || '').trim();
+          if (!option || !normalizedAgentId) {
+            return null;
+          }
+          const title = String(
+            agent?.title
+              || agent?.name
+              || agent?.host
+              || agent?.agent_id
+              || agent?.agentId
+              || normalizedAgentId
+          ).trim() || normalizedAgentId;
+          const ports = Array.isArray(agent?.ports)
+            ? agent.ports.map((value) => String(value || '').trim()).filter(Boolean)
+            : [];
+          option.value = normalizedAgentId;
+          option.textContent = `${title} · ${normalizedAgentId}`;
+          option.dataset.title = title;
+          option.dataset.status = String(agent?.status || '').trim();
+          option.dataset.online = agent?.is_online ? '1' : '0';
+          option.dataset.host = String(agent?.host || '').trim();
+          option.dataset.version = String(agent?.version || '').trim();
+          option.dataset.lastSeen = String(agent?.last_seen || '').trim();
+          option.dataset.ports = ports.join(',');
+          option.dataset.comPort = String(agent?.com_port || '').trim();
+          option.dataset.comEnabled = agent?.com_enabled ? '1' : '0';
+          option.dataset.comConnected = agent?.com_connected ? '1' : '0';
+          option.dataset.comError = String(agent?.com_error || '').trim();
+          option.dataset.comErrorType = String(agent?.com_error_type || '').trim();
+          option.dataset.comErrorCode =
+            agent?.com_error_code !== undefined && agent?.com_error_code !== null
+              ? String(agent.com_error_code)
+              : '';
+          option.dataset.comBaud =
+            agent?.com_baud !== undefined && agent?.com_baud !== null
+              ? String(agent.com_baud)
+              : '';
+          option.dataset.comEol = String(agent?.com_eol || '').trim();
+          option.dataset.comIdle =
+            agent?.com_idle !== undefined && agent?.com_idle !== null
+              ? String(agent.com_idle)
+              : '';
+          return option;
+        };
+        const populateAgentSelect = () => {
+          if (!agentSelect || !Array.isArray(scannerAgentsData)) {
+            return;
+          }
+          const optionsByValue = new Map(
+            Array.from(agentSelect.options || [])
+              .filter((option) => option.value)
+              .map((option) => [option.value, option])
+          );
+          scannerAgentsData.forEach((agent) => {
+            const normalizedAgentId = String(agent?.agent_id || '').trim();
+            if (!normalizedAgentId) {
+              return;
+            }
+            let option = optionsByValue.get(normalizedAgentId);
+            if (!option) {
+              option = document.createElement('option');
+              agentSelect.appendChild(option);
+              optionsByValue.set(normalizedAgentId, option);
+            }
+            applyAgentOptionData(option, agent);
+          });
+        };
+        const upsertScannerAgentOption = (agentInfo) => {
+          const normalizedAgentId = String(agentInfo?.agentId || '').trim();
+          if (!normalizedAgentId) {
+            return;
+          }
+          const normalized = {
+            agent_id: normalizedAgentId,
+            title: String(agentInfo?.name || agentInfo?.host || normalizedAgentId).trim() || normalizedAgentId,
+            host: String(agentInfo?.host || '').trim(),
+            version: '',
+            status: 'онлайн',
+            is_online: true,
+            last_seen: '',
+            ports: [],
+            com_port: '',
+            com_enabled: false,
+            com_connected: false,
+            com_error: '',
+            com_error_type: '',
+            com_error_code: '',
+            com_baud: '',
+            com_eol: '',
+            com_idle: '',
+          };
+          const existing = Array.isArray(scannerAgentsData)
+            ? scannerAgentsData.find((agent) => agent && String(agent.agent_id || '').trim() === normalizedAgentId)
+            : null;
+          if (existing) {
+            Object.assign(existing, normalized);
+          } else if (Array.isArray(scannerAgentsData)) {
+            scannerAgentsData.unshift(normalized);
+          }
+          if (!agentSelect) {
+            return;
+          }
+          let option = Array.from(agentSelect.options || []).find((item) => item.value === normalizedAgentId);
+          if (!option) {
+            option = document.createElement('option');
+            agentSelect.appendChild(option);
+          }
+          applyAgentOptionData(option, normalized);
+        };
         const resolveDefaultAgentId = () => {
           if (agentId) {
             return agentId;
@@ -5172,6 +5331,37 @@ ${labels}
           }
           return agentId;
         };
+        const ensureLocalAgentSelection = async () => {
+          const payload = await detectLocalAgentBridge();
+          if (!payload || !payload.agentId) {
+            return false;
+          }
+          upsertScannerAgentOption(payload);
+          applyAgentId(payload.agentId);
+          const label = payload.name || payload.host || payload.agentId;
+          setAgentHint(`Локальный агент: ${label}.`, false);
+          return true;
+        };
+        const refreshLocalAgentSelection = async () => {
+          if (localAgentRefreshPending) {
+            return false;
+          }
+          localAgentRefreshPending = true;
+          try {
+            return await ensureLocalAgentSelection();
+          } finally {
+            localAgentRefreshPending = false;
+          }
+        };
+        const scheduleLocalAgentSelectionRefresh = (delay = 0) => {
+          if (localAgentRefreshTimer) {
+            clearTimeout(localAgentRefreshTimer);
+          }
+          localAgentRefreshTimer = setTimeout(() => {
+            refreshLocalAgentSelection().catch(() => {});
+          }, Math.max(0, Number(delay) || 0));
+        };
+        populateAgentSelect();
         agentId = resolveDefaultAgentId();
         const applyScannerMode = (value) => {
           const mode = value === 'webserial' ? 'webserial' : 'agent';
@@ -5710,6 +5900,9 @@ ${labels}
             }
             applyAgentId(value);
           });
+          agentSelect.addEventListener('pointerdown', () => {
+            scheduleLocalAgentSelectionRefresh(0);
+          });
         }
         if (agentPort) {
           agentPort.addEventListener('change', () => {
@@ -5869,6 +6062,15 @@ ${labels}
         syncAgentFields();
         updateAgentMeta();
         applyAgentId(agentId);
+        refreshLocalAgentSelection().catch(() => {});
+        document.addEventListener('visibilitychange', () => {
+          if (!document.hidden) {
+            scheduleLocalAgentSelectionRefresh(200);
+          }
+        });
+        window.addEventListener('focus', () => {
+          scheduleLocalAgentSelectionRefresh(200);
+        });
         if (scannerMode) {
           scannerMode.addEventListener('change', async () => {
             scannerModeValue = applyScannerMode(scannerMode.value);
